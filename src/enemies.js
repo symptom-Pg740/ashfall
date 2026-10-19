@@ -1,0 +1,286 @@
+import * as THREE from 'three';
+import { heightAt } from './terrain.js';
+import { makeRng, clamp } from './rng.js';
+import { box, merge, PALETTE } from './geo.js';
+
+const POOL = 64;
+const _o = new THREE.Object3D();
+const _c = new THREE.Color();
+
+function ghoulGeometry() {
+  const p = [];
+  // legs
+  p.push(box(0.17, 0.72, 0.2, '#41473a', -0.16, 0.37, 0));
+  p.push(box(0.17, 0.72, 0.2, '#41473a', 0.16, 0.37, 0));
+  p.push(box(0.2, 0.12, 0.3, '#2f332b', -0.16, 0.06, 0.06));
+  p.push(box(0.2, 0.12, 0.3, '#2f332b', 0.16, 0.06, 0.06));
+  // torso leaning forward
+  p.push(box(0.54, 0.58, 0.34, PALETTE.ghoul, 0, 0.98, 0.02, 0.24));
+  p.push(box(0.58, 0.18, 0.38, '#565d48', 0, 0.72, 0.02, 0.12));
+  p.push(box(0.3, 0.22, 0.1, '#4b4f3d', 0.1, 1.02, 0.2, 0.15, 0, 0.2));
+  // head + jaw
+  p.push(box(0.3, 0.26, 0.3, '#969a78', 0, 1.36, 0.18, 0.25));
+  p.push(box(0.2, 0.09, 0.12, '#5e624a', 0, 1.23, 0.34));
+  p.push(box(0.06, 0.04, 0.03, '#1c1c17', -0.07, 1.4, 0.33));
+  p.push(box(0.06, 0.04, 0.03, '#1c1c17', 0.07, 1.4, 0.33));
+  p.push(box(0.035, 0.028, 0.02, '#e0704c', -0.07, 1.4, 0.348));
+  p.push(box(0.035, 0.028, 0.02, '#e0704c', 0.07, 1.4, 0.348));
+  // long arms
+  p.push(box(0.13, 0.78, 0.14, '#7d8264', -0.39, 0.83, 0.14, 0.15, 0, 0.13));
+  p.push(box(0.13, 0.78, 0.14, '#7d8264', 0.39, 0.83, 0.14, 0.15, 0, -0.13));
+  p.push(box(0.15, 0.16, 0.17, '#63684f', -0.44, 0.44, 0.22));
+  p.push(box(0.15, 0.16, 0.17, '#63684f', 0.44, 0.44, 0.22));
+  // spines / rags
+  p.push(box(0.06, 0.2, 0.06, '#8d9170', -0.2, 1.24, -0.12, 0.4, 0, 0.5));
+  p.push(box(0.06, 0.16, 0.06, '#8d9170', 0.15, 1.3, -0.13, 0.2, 0, -0.4));
+  p.push(box(0.48, 0.1, 0.36, '#3e4034', 0, 0.76, 0.0));
+  return merge(p);
+}
+
+export class Enemies {
+  constructor(scene, seed = 0x6d0f1) {
+    this.rng = makeRng(seed);
+    this.pool = [];
+    this.active = 0;
+    this.maxActive = 22;
+    this.onPlayerHit = null;
+
+    const geo = ghoulGeometry();
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    this.mesh = new THREE.InstancedMesh(geo, material, POOL);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.frustumCulled = false;
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
+    scene.add(this.mesh);
+
+    for (let i = 0; i < POOL; i++) {
+      this.pool.push({
+        active: false,
+        x: 0,
+        z: 0,
+        y: 0,
+        hp: 0,
+        speed: 1.5,
+        phase: this.rng() * 6.28,
+        attackCd: 0,
+        hitTimer: 0,
+        knockX: 0,
+        knockZ: 0,
+        scale: 1,
+      });
+      _o.position.set(0, -50, 0);
+      _o.scale.setScalar(0.0001);
+      _o.updateMatrix();
+      this.mesh.setMatrixAt(i, _o.matrix);
+      _c.setRGB(1, 1, 1);
+      this.mesh.setColorAt(i, _c);
+    }
+    this.mesh.instanceColor.needsUpdate = true;
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  spawn(count, aroundX = 0, aroundZ = 0, spread = 34) {
+    let spawned = 0;
+    for (let n = 0; n < count; n++) {
+      const e = this.pool.find((x) => !x.active);
+      if (!e) break;
+      const a = this.rng() * Math.PI * 2;
+      const r = spread + this.rng.range(-4, 8);
+      e.x = clamp(aroundX + Math.cos(a) * r, -50, 50);
+      e.z = clamp(aroundZ + Math.sin(a) * r, -50, 50);
+      e.y = heightAt(e.x, e.z);
+      e.active = true;
+      e.hp = 46;
+      e.speed = this.rng.range(1.35, 1.95);
+      e.phase = this.rng() * 6.28;
+      e.attackCd = this.rng.range(0, 1);
+      e.hitTimer = 0;
+      e.knockX = 0;
+      e.knockZ = 0;
+      e.scale = this.rng.range(1.0, 1.2);
+      const i = this.pool.indexOf(e);
+      _c.set(this.rng.pick(['#c3c6a1', '#a9ad8d', '#d2d0ac', '#9aa07c']));
+      this.mesh.setColorAt(i, _c);
+      spawned++;
+    }
+    if (spawned) this.mesh.instanceColor.needsUpdate = true;
+    return spawned;
+  }
+
+  clear() {
+    for (let i = 0; i < this.pool.length; i++) {
+      const e = this.pool[i];
+      e.active = false;
+      _o.position.set(0, -60, 0);
+      _o.scale.setScalar(0.0001);
+      _o.updateMatrix();
+      this.mesh.setMatrixAt(i, _o.matrix);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  get activeCount() {
+    return this.pool.reduce((n, e) => n + (e.active ? 1 : 0), 0);
+  }
+
+  update(dt, player, buildings, obstacles) {
+    const px = player.x;
+    const pz = player.z;
+    let count = 0;
+
+    for (let i = 0; i < POOL; i++) {
+      const e = this.pool[i];
+      if (!e.active) continue;
+      count++;
+
+      e.attackCd = Math.max(0, e.attackCd - dt);
+      e.hitTimer = Math.max(0, e.hitTimer - dt);
+
+      let dx = px - e.x;
+      let dz = pz - e.z;
+      let dist = Math.hypot(dx, dz);
+      const nx = dist > 0.001 ? dx / dist : 0;
+      const nz = dist > 0.001 ? dz / dist : 0;
+
+      // knockback
+      e.x += e.knockX * dt;
+      e.z += e.knockZ * dt;
+      e.knockX *= Math.exp(-9 * dt);
+      e.knockZ *= Math.exp(-9 * dt);
+
+      if (dist > 1.35) {
+        e.x += nx * e.speed * dt;
+        e.z += nz * e.speed * dt;
+      } else if (e.attackCd <= 0) {
+        e.attackCd = this.rng.range(1.3, 1.8);
+        if (this.onPlayerHit) this.onPlayerHit(4.5, e);
+      }
+
+      // separate the horde so it doesn't collapse into one silhouette
+      for (let j = i + 1; j < POOL; j++) {
+        const o = this.pool[j];
+        if (!o.active) continue;
+        const sx = o.x - e.x;
+        const sz = o.z - e.z;
+        const sd = Math.hypot(sx, sz);
+        if (sd > 0.001 && sd < 0.78) {
+          const push = (0.78 - sd) * 0.5;
+          e.x -= (sx / sd) * push;
+          e.z -= (sz / sd) * push;
+          o.x += (sx / sd) * push;
+          o.z += (sz / sd) * push;
+        }
+      }
+
+      // buildings are solid — push the ghouls out of the footprint
+      for (let b = 0; b < buildings.length; b++) {
+        const bd = buildings[b];
+        const bx = e.x - bd.x;
+        const bz = e.z - bd.z;
+        const rad = bd.radius + 0.35;
+        const bdist = Math.hypot(bx, bz);
+        if (bdist > 0.001 && bdist < rad) {
+          e.x = bd.x + (bx / bdist) * rad;
+          e.z = bd.z + (bz / bdist) * rad;
+        }
+      }
+
+      // and so is the pre-existing wreckage
+      if (obstacles) {
+        for (let o = 0; o < obstacles.length; o++) {
+          const ob = obstacles[o];
+          const bx = e.x - ob.x;
+          const bz = e.z - ob.z;
+          const rad = ob.r + 0.3;
+          const bdist = Math.hypot(bx, bz);
+          if (bdist > 0.001 && bdist < rad) {
+            e.x = ob.x + (bx / bdist) * rad;
+            e.z = ob.z + (bz / bdist) * rad;
+          }
+        }
+      }
+
+      const rr = Math.hypot(e.x, e.z);
+      if (rr > 50) {
+        e.x *= 50 / rr;
+        e.z *= 50 / rr;
+      }
+
+      e.y = heightAt(e.x, e.z);
+      dx = px - e.x;
+      dz = pz - e.z;
+      dist = Math.hypot(dx, dz);
+      const yaw = Math.atan2(dx, dz);
+      e.phase += dt * (6.2 + e.speed);
+
+      const hitPulse = e.hitTimer > 0 ? 1 + e.hitTimer * 0.55 : 1;
+      const bob = Math.abs(Math.sin(e.phase)) * 0.045;
+      _o.position.set(e.x, e.y + bob, e.z);
+      _o.rotation.set(Math.sin(e.phase * 0.5) * 0.025, yaw, Math.sin(e.phase) * 0.035);
+      _o.scale.set(e.scale * hitPulse, e.scale, e.scale * hitPulse);
+      _o.updateMatrix();
+      this.mesh.setMatrixAt(i, _o.matrix);
+    }
+
+    this.active = count;
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  damage(index, amount, fromX, fromZ) {
+    const e = this.pool[index];
+    if (!e || !e.active) return false;
+    e.hp -= amount;
+    e.hitTimer = 0.22;
+    const dx = e.x - fromX;
+    const dz = e.z - fromZ;
+    const d = Math.hypot(dx, dz) || 1;
+    e.knockX = (dx / d) * 5.5;
+    e.knockZ = (dz / d) * 5.5;
+    if (e.hp <= 0) {
+      e.active = false;
+      _o.position.set(e.x, -60, e.z);
+      _o.scale.setScalar(0.0001);
+      _o.updateMatrix();
+      this.mesh.setMatrixAt(index, _o.matrix);
+      this.mesh.instanceMatrix.needsUpdate = true;
+      return true;
+    }
+    return false;
+  }
+
+  /** Damage all ghouls in a radius; returns hit positions and kills. */
+  strike(x, z, radius, amount) {
+    const results = [];
+    for (let i = 0; i < POOL; i++) {
+      const e = this.pool[i];
+      if (!e.active) continue;
+      if (Math.hypot(e.x - x, e.z - z) <= radius) {
+        const killed = this.damage(i, amount, x, z);
+        results.push({ x: e.x, z: e.z, killed });
+      }
+    }
+    return results;
+  }
+
+  nearest(x, z, maxDist) {
+    let best = -1;
+    let bestD = maxDist * maxDist;
+    for (let i = 0; i < POOL; i++) {
+      const e = this.pool[i];
+      if (!e.active) continue;
+      const dx = e.x - x;
+      const dz = e.z - z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  getAt(index) {
+    return this.pool[index];
+  }
+}

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#15130f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>ASHFALL — wasteland settlement protocol</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2315130f'/%3E%3Cpath d='M7 7h7l5 18h-7z' fill='%23f0a95e'/%3E%3Cpath d='M18 7h7l1 18h-6z' fill='%23e8d9ba'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="vignette"></div>
+
+    <div id="ui">
+      <!-- top hud -->
+      <div class="hud-top">
+        <div class="brand">
+          <span class="brand-mark">A</span>
+          <div>
+            <strong>ASHFALL</strong>
+            <small>PROTOCOL 0.1</small>
+          </div>
+        </div>
+
+        <div class="resources">
+          <div class="res-chip" title="Scrap">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l8-4 8 4v8l-8 4-8-4z" /><path d="M12 4v16M4 8l8 4 8-4" /></svg>
+            <b id="hud-scrap">26</b><small>SCRAP</small>
+          </div>
+          <div class="res-chip" title="Water">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3 4.5 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-6.5 6-11z" /></svg>
+            <b id="hud-water">0</b><small>WATER</small>
+          </div>
+          <div class="res-chip" title="Ghouls put down">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a7 7 0 0 0-7 7v4l2 2v4h3v-3h4v3h3v-4l2-2v-4a7 7 0 0 0-7-7z" /><circle cx="9" cy="11" r="1.2" /><circle cx="15" cy="11" r="1.2" /></svg>
+            <b id="hud-kills">0</b><small>PUT DOWN</small>
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <button id="fs-btn" class="fs-btn" aria-label="Toggle fullscreen" aria-pressed="false" title="Fullscreen">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path class="fs-expand" d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+              <path class="fs-compress" d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />
+            </svg>
+          </button>
+          <button id="perf-btn" class="perf-btn" aria-label="Performance panel">PERF</button>
+        </div>
+      </div>
+
+      <div class="vitals">
+        <div class="hp-shell"><div id="hp-fill"></div></div>
+        <span id="hp-text">100</span>
+        <span class="vitals-label">VITALS</span>
+      </div>
+
+      <div id="hint" class="hint"></div>
+
+      <!-- touch controls -->
+      <div class="joystick-wrap">
+        <div id="joystick" class="joystick" aria-label="Movement stick">
+          <div class="joy-ring"></div>
+          <div id="joy-knob" class="knob"></div>
+          <span class="joy-tick up"></span><span class="joy-tick right"></span>
+          <span class="joy-tick down"></span><span class="joy-tick left"></span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="gather-btn" class="act act-small hidden">
+          <span class="act-key">E</span><span>GATHER</span>
+        </button>
+        <button id="build-btn" class="act act-small">
+          <span class="act-key">B</span><span>BUILD</span>
+        </button>
+        <button id="strike-btn" class="act act-strike">
+          <span class="strike-glyph">⌁</span><span>STRIKE</span>
+        </button>
+      </div>
+
+      <!-- build tray -->
+      <div id="build-bar" class="build-bar hidden">
+        <div class="build-head">
+          <span><b>RAISE STRUCTURE</b> <em id="build-scrap">26 scrap available</em></span>
+          <button id="build-close" class="mini-x" aria-label="Close build menu">✕</button>
+        </div>
+        <div id="build-list" class="build-list"></div>
+        <div id="place-bar" class="place-bar hidden">
+          <div class="place-left">
+            <span id="place-name">BARRICADE</span>
+            <small id="place-status">Tap the ground to position</small>
+          </div>
+          <button id="place-cancel" class="btn-ghost">CANCEL</button>
+          <button id="place-confirm" class="btn-solid">PLACE</button>
+        </div>
+      </div>
+
+      <!-- perf lab -->
+      <section id="perf-panel" class="perf-panel hidden" aria-label="Performance lab">
+        <header>
+          <span>PERF LAB</span>
+          <button id="perf-close" class="mini-x" aria-label="Close performance panel">✕</button>
+        </header>
+
+        <div class="perf-fps">
+          <div><b id="p-fps">--</b><small>FPS</small></div>
+          <div><b id="p-ms">--</b><small>MS</small></div>
+          <div><b id="p-min">--</b><small>1% LOW</small></div>
+        </div>
+        <canvas id="fps-graph" width="300" height="54"></canvas>
+
+        <div class="stat-grid">
+          <span>DRAWS</span><b id="p-draws">--</b>
+          <span>TRIANGLES</span><b id="p-tris">--</b>
+          <span>RESOLUTION</span><b id="p-res">--</b>
+          <span>BUFFER DPR</span><b id="p-dpr">--</b>
+          <span>GHOULS</span><b id="p-ghouls">--</b>
+          <span>GPU</span><b id="p-gpu" class="gpu">--</b>
+        </div>
+
+        <div class="perf-group">
+          <span class="group-label">QUALITY</span>
+          <div class="seg" id="quality-seg">
+            <button data-q="low">LOW</button>
+            <button data-q="balanced" class="on">BAL</button>
+            <button data-q="high">HIGH</button>
+          </div>
+        </div>
+
+        <div class="perf-group">
+          <span class="group-label">SWITCHES</span>
+          <div class="toggles">
+            <button data-toggle="adaptive" class="on">ADAPTIVE RES</button>
+            <button data-toggle="fog" class="on">FOG</button>
+            <button data-toggle="grass" class="on">GRASS</button>
+            <button data-toggle="embers" class="on">DUST</button>
+            <button data-toggle="shadows" class="on">SHADOWS</button>
+          </div>
+        </div>
+
+        <div class="perf-group">
+          <span class="group-label">STRESS</span>
+          <div class="stress-row">
+            <button data-stress="debris">+100 DEBRIS</button>
+            <button data-stress="ghouls">+20 GHOULS</button>
+            <button data-stress="clear">CLEAR</button>
+          </div>
+        </div>
+
+        <p class="perf-note">All geometry is procedural. If FPS drops, adaptive resolution rescales the canvas before touching the scene.</p>
+      </section>
+
+      <div id="toast" class="toast" role="status"></div>
+      <div id="death-screen" class="death-screen hidden">
+        <strong>YOU DIED</strong>
+        <span>the wastes remember</span>
+      </div>
+      <div id="flash"></div>
+    </div>
+
+    <!-- start screen -->
+    <div id="start-screen" class="start-screen">
+      <div class="start-grain"></div>
+      <div class="start-inner">
+        <div class="start-kicker">A PROCEDURAL WASTELAND</div>
+        <h1>ASH<span>FALL</span></h1>
+        <div class="start-sub">SETTLEMENT PROTOCOL // MOBILE-FIRST PROTOTYPE</div>
+        <p class="start-copy">
+          Scavenge the dust. Raise a camp. Keep the ghouls outside the firelight.
+          Every mesh, texture and gust of ash is generated at runtime.
+        </p>
+        <button id="start-btn" class="start-btn">ENTER THE WASTELAND</button>
+        <div class="start-tags">
+          <span>TOP-DOWN 3D</span><span>SETTLEMENT</span><span>PERF LAB</span><span>0 ASSET FILES</span>
+        </div>
+        <div class="start-hint">Left stick to move · Strike to fight · Build to raise the camp · PERF for the lab</div>
+        <div class="start-best">BEST EXPERIENCED IN LANDSCAPE</div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

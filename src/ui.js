@@ -1,0 +1,418 @@
+import { BUILDINGS } from './settlement.js';
+
+export class UI {
+  constructor() {
+    this.cb = {};
+    this.last = { scrap: -1, water: -1, kills: -1, health: -1, canGather: null, canPlace: null, reason: '' };
+    this.lastStrikeCooling = null;
+    this.toastTimer = 0;
+    this.hintTimer = 0;
+    this.perfOpen = false;
+    this.buildOpen = false;
+    this.perfLastHistory = 0;
+    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true };
+
+    this.el = {
+      scrap: document.getElementById('hud-scrap'),
+      water: document.getElementById('hud-water'),
+      kills: document.getElementById('hud-kills'),
+      hpFill: document.getElementById('hp-fill'),
+      hpText: document.getElementById('hp-text'),
+      hint: document.getElementById('hint'),
+      toast: document.getElementById('toast'),
+      flash: document.getElementById('flash'),
+      death: document.getElementById('death-screen'),
+      gather: document.getElementById('gather-btn'),
+      build: document.getElementById('build-btn'),
+      strike: document.getElementById('strike-btn'),
+      buildBar: document.getElementById('build-bar'),
+      buildList: document.getElementById('build-list'),
+      buildClose: document.getElementById('build-close'),
+      buildScrap: document.getElementById('build-scrap'),
+      placeBar: document.getElementById('place-bar'),
+      placeName: document.getElementById('place-name'),
+      placeStatus: document.getElementById('place-status'),
+      placeConfirm: document.getElementById('place-confirm'),
+      placeCancel: document.getElementById('place-cancel'),
+      perfBtn: document.getElementById('perf-btn'),
+      fsBtn: document.getElementById('fs-btn'),
+      perfPanel: document.getElementById('perf-panel'),
+      perfClose: document.getElementById('perf-close'),
+      graph: document.getElementById('fps-graph'),
+      start: document.getElementById('start-screen'),
+      startBtn: document.getElementById('start-btn'),
+      pFps: document.getElementById('p-fps'),
+      pMs: document.getElementById('p-ms'),
+      pMin: document.getElementById('p-min'),
+      pDraws: document.getElementById('p-draws'),
+      pTris: document.getElementById('p-tris'),
+      pRes: document.getElementById('p-res'),
+      pDpr: document.getElementById('p-dpr'),
+      pGhouls: document.getElementById('p-ghouls'),
+      pGpu: document.getElementById('p-gpu'),
+      qualitySeg: document.getElementById('quality-seg'),
+      toggles: document.querySelectorAll('[data-toggle]'),
+      stress: document.querySelectorAll('[data-stress]'),
+    };
+
+    this.gctx = this.el.graph.getContext('2d');
+    this.buildCards();
+    this.bind();
+  }
+
+  on(name, fn) {
+    this.cb[name] = fn;
+    return this;
+  }
+
+  buildCards() {
+    this.el.buildList.innerHTML = '';
+    BUILDINGS.forEach((def, i) => {
+      const card = document.createElement('button');
+      card.className = 'build-card';
+      card.dataset.type = def.id;
+      card.dataset.cost = String(def.cost);
+      card.innerHTML = `
+        <span class="bc-top"><span class="bc-name">${def.name}</span><span class="bc-cost">${def.cost} ⬡</span></span>
+        <span class="bc-desc">${def.desc}</span>
+        <span class="bc-key">${i + 1}</span>
+      `;
+      card.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.cb.buildSelect?.(def.id);
+      });
+      this.el.buildList.appendChild(card);
+    });
+  }
+
+  bind() {
+    const start = (e) => {
+      e.preventDefault();
+      this.start();
+    };
+    this.el.startBtn.addEventListener('pointerdown', start);
+    this.el.startBtn.addEventListener('click', start);
+
+    this.el.build.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.cb.buildToggle?.();
+    });
+    this.el.buildClose.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.cb.buildClose?.();
+    });
+    this.el.placeConfirm.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (!this.el.placeConfirm.disabled) this.cb.place?.();
+    });
+    this.el.placeCancel.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.cb.cancelPlace?.();
+    });
+
+    this.el.strike.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.cb.strike?.();
+    });
+    this.el.gather.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.cb.gather?.();
+    });
+
+    this.el.perfBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.togglePerf();
+    });
+    this.el.fsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.handleFullscreenGesture();
+    });
+    const syncFs = () => this.syncFullscreen();
+    document.addEventListener('fullscreenchange', syncFs);
+    document.addEventListener('webkitfullscreenchange', syncFs);
+    this.el.perfClose.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.togglePerf(false);
+    });
+
+    this.el.qualitySeg.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const q = btn.dataset.q;
+        this.cb.quality?.(q);
+      });
+    });
+
+    this.el.toggles.forEach((btn) => {
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const key = btn.dataset.toggle;
+        this.toggleState[key] = !this.toggleState[key];
+        btn.classList.toggle('on', this.toggleState[key]);
+        this.cb.toggle?.(key, this.toggleState[key]);
+      });
+    });
+
+    this.el.stress.forEach((btn) => {
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.cb.stress?.(btn.dataset.stress);
+      });
+    });
+
+    // Stop taps on UI chrome from ever reaching the world.
+    for (const root of [this.el.buildBar, this.el.perfPanel, document.querySelector('.hud-top'), document.querySelector('.actions'), document.querySelector('.joystick-wrap')]) {
+      if (!root) continue;
+      root.addEventListener('pointerdown', (e) => e.stopPropagation());
+    }
+  }
+
+  start() {
+    if (this.el.start.classList.contains('gone')) return;
+    this.el.start.classList.add('gone');
+    document.body.classList.add('playing');
+    this.cb.started?.();
+  }
+
+  togglePerf(force) {
+    this.perfOpen = typeof force === 'boolean' ? force : !this.perfOpen;
+    this.el.perfPanel.classList.toggle('hidden', !this.perfOpen);
+  }
+
+  syncFullscreen() {
+    const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    this.el.fsBtn.classList.toggle('is-fs', active);
+    this.el.fsBtn.setAttribute('aria-pressed', String(active));
+    this.el.fsBtn.title = active ? 'Exit fullscreen' : 'Fullscreen';
+    // The viewport changes when browser chrome disappears; reframe on the next tick.
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
+  }
+
+  handleFullscreenGesture() {
+    this.toggleFullscreen();
+  }
+
+  toggleFullscreen() {
+    const doc = document;
+    const root = document.documentElement;
+    const active = doc.fullscreenElement || doc.webkitFullscreenElement;
+    if (active) {
+      const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+      if (exit) {
+        try {
+          exit.call(doc);
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+    const request = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (!request) {
+      this.toast('FULLSCREEN UNSUPPORTED · ADD TO HOME SCREEN', true);
+      return;
+    }
+    try {
+      const result = request.call(root);
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => this.toast('FULLSCREEN BLOCKED BY BROWSER', true));
+      }
+    } catch {
+      this.toast('FULLSCREEN BLOCKED BY BROWSER', true);
+    }
+  }
+
+  showBuildMenu(open) {
+    this.buildOpen = open;
+    this.el.buildBar.classList.toggle('hidden', !open);
+    document.body.classList.toggle('build-open', open);
+    if (open) {
+      this.el.toast.classList.remove('show');
+      this.el.buildList.scrollLeft = 0;
+    } else {
+      this.el.toast.style.bottom = '';
+      this.showPlacement(false);
+    }
+  }
+
+  setSelectedBuilding(id) {
+    this.el.buildList.querySelectorAll('.build-card').forEach((card) => {
+      card.classList.toggle('selected', card.dataset.type === id);
+    });
+  }
+
+  showPlacement(active, def = null) {
+    this.el.placeBar.classList.toggle('hidden', !active);
+    if (active && def) {
+      this.el.placeName.textContent = def.name;
+      this.last.reason = '';
+      this.last.canPlace = null;
+    }
+    if (!active) {
+      this.setSelectedBuilding(null);
+      this.el.buildList.querySelectorAll('.build-card').forEach((c) => c.classList.remove('selected'));
+    }
+  }
+
+  setPlaceStatus(canPlace, reason) {
+    if (canPlace === this.last.canPlace && reason === this.last.reason) return;
+    this.last.canPlace = canPlace;
+    this.last.reason = reason;
+    this.el.placeConfirm.disabled = !canPlace;
+    this.el.placeStatus.textContent = canPlace
+      ? 'Tap the ground to aim · confirm to raise'
+      : reason || 'Invalid spot';
+    this.el.placeStatus.style.color = canPlace ? '' : 'var(--red)';
+  }
+
+  setQuality(name) {
+    this.el.qualitySeg.querySelectorAll('button').forEach((b) => {
+      b.classList.toggle('on', b.dataset.q === name);
+    });
+  }
+
+  setToggle(key, value) {
+    this.toggleState[key] = value;
+    this.el.toggles.forEach((b) => {
+      if (b.dataset.toggle === key) b.classList.toggle('on', value);
+    });
+  }
+
+  updateHUD(state) {
+    if (state.scrap !== this.last.scrap) {
+      this.last.scrap = state.scrap;
+      this.el.scrap.textContent = String(state.scrap);
+      this.el.buildScrap.textContent = `${state.scrap} scrap available`;
+      this.el.buildList.querySelectorAll('.build-card').forEach((card) => {
+        card.classList.toggle('cant', Number(card.dataset.cost) > state.scrap);
+      });
+    }
+    if (state.water !== this.last.water) {
+      this.last.water = state.water;
+      this.el.water.textContent = String(state.water);
+    }
+    if (state.kills !== this.last.kills) {
+      this.last.kills = state.kills;
+      this.el.kills.textContent = String(state.kills);
+    }
+    const hp = Math.max(0, Math.round(state.health));
+    if (hp !== this.last.health) {
+      this.last.health = hp;
+      this.el.hpFill.style.width = `${(hp / state.maxHealth) * 100}%`;
+      this.el.hpText.textContent = String(hp);
+    }
+  }
+
+  setGather(visible) {
+    if (visible === this.last.canGather) return;
+    this.last.canGather = visible;
+    this.el.gather.classList.toggle('hidden', !visible);
+  }
+
+  setStrikeCooling(cooling) {
+    if (cooling === this.lastStrikeCooling) return;
+    this.lastStrikeCooling = cooling;
+    this.el.strike.classList.toggle('cooling', cooling);
+  }
+
+  toast(msg, bad = false) {
+    const el = this.el.toast;
+    el.textContent = msg;
+    el.classList.toggle('bad', bad);
+    if (this.buildOpen) {
+      const top = this.el.buildBar.getBoundingClientRect().top;
+      el.style.bottom = `${Math.max(12, window.innerHeight - top + 10)}px`;
+    } else {
+      el.style.bottom = '';
+    }
+    el.classList.add('show');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => el.classList.remove('show'), 1900);
+  }
+
+  hint(msg, duration = 2600) {
+    const el = this.el.hint;
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(this.hintTimer);
+    this.hintTimer = setTimeout(() => el.classList.remove('show'), duration);
+  }
+
+  hideHint() {
+    clearTimeout(this.hintTimer);
+    this.el.hint.classList.remove('show');
+  }
+
+  flashDamage() {
+    const el = this.el.flash;
+    el.classList.remove('hit');
+    void el.offsetWidth;
+    el.classList.add('hit');
+    clearTimeout(this.flashTimer);
+    this.flashTimer = setTimeout(() => el.classList.remove('hit'), 90);
+  }
+
+  showDeath(show) {
+    this.el.death.classList.toggle('hidden', !show);
+  }
+
+  updatePerf(perf, ghouls) {
+    const s = perf.stats;
+    this.el.pFps.textContent = String(s.fps);
+    this.el.pFps.style.color = s.fps < 30 ? 'var(--red)' : s.fps < 50 ? 'var(--amber)' : 'var(--amber-hot)';
+    this.el.pMs.textContent = s.ms;
+    this.el.pMin.textContent = String(s.min);
+    this.el.pDraws.textContent = String(s.calls);
+    this.el.pTris.textContent = s.tris > 9999 ? `${(s.tris / 1000).toFixed(0)}k` : String(s.tris);
+    this.el.pRes.textContent = `${s.scale.toFixed(2)}x`;
+    this.el.pDpr.textContent = s.dpr.toFixed(2);
+    this.el.pGhouls.textContent = String(ghouls);
+    this.el.pGpu.textContent = s.gpu;
+    if (perf.history.length !== this.perfLastHistory) {
+      this.perfLastHistory = perf.history.length;
+    }
+    if (this.perfOpen) this.drawGraph(perf.history);
+  }
+
+  drawGraph(history) {
+    const ctx = this.gctx;
+    const w = this.el.graph.width;
+    const h = this.el.graph.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(0, 0, w, h);
+
+    const yFor = (fps) => h - Math.min(1, Math.max(0, fps / 90)) * (h - 4) - 2;
+
+    ctx.strokeStyle = 'rgba(240,169,94,0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, yFor(60));
+    ctx.lineTo(w, yFor(60));
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(225,113,81,0.16)';
+    ctx.beginPath();
+    ctx.moveTo(0, yFor(30));
+    ctx.lineTo(w, yFor(30));
+    ctx.stroke();
+
+    if (history.length < 2) return;
+    const step = w / (90 - 1);
+    const start = w - (history.length - 1) * step;
+    ctx.beginPath();
+    history.forEach((fps, i) => {
+      const x = start + i * step;
+      const y = yFor(fps);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#f0a95e';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.lineTo(start + (history.length - 1) * step, h);
+    ctx.lineTo(start, h);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(240,169,94,0.09)';
+    ctx.fill();
+  }
+}
