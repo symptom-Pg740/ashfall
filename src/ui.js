@@ -10,7 +10,7 @@ export class UI {
     this.perfOpen = false;
     this.buildOpen = false;
     this.perfLastHistory = 0;
-    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true };
+    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: false };
 
     this.el = {
       scrap: document.getElementById('hud-scrap'),

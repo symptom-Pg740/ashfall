@@ -34,12 +34,25 @@ renderer.info.autoReset = true;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.5, 220);
+// orthographic twin, used only when ortho mode is toggled (style assessment)
+const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 220);
+let orthoMode = false;
+let activeCamera = camera;
 
 function applyCameraFraming() {
   const portrait = window.innerHeight > window.innerWidth;
+  const aspect = window.innerWidth / window.innerHeight;
   camera.fov = portrait ? 44 : 34;
-  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = aspect;
   camera.updateProjectionMatrix();
+  // match the perspective camera's visible height at its follow distance
+  const dist = Math.hypot(portrait ? 30 : 24, portrait ? 32 : 28);
+  const h = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  orthoCamera.top = h / 2;
+  orthoCamera.bottom = -h / 2;
+  orthoCamera.left = (-h * aspect) / 2;
+  orthoCamera.right = (h * aspect) / 2;
+  orthoCamera.updateProjectionMatrix();
 }
 applyCameraFraming();
 
@@ -169,6 +182,8 @@ ui.on('toggle', (key, value) => {
     particles.setEmbersVisible(value);
   } else if (key === 'shadows') {
     applyShadowState(value, QUALITY[perf.quality].shadowSize);
+  } else if (key === 'ortho') {
+    setOrtho(value);
   }
 });
 ui.on('stress', (kind) => doStress(kind));
@@ -421,6 +436,7 @@ function collidePlayer() {
 }
 
 function updateCamera(dt, moveX, moveZ) {
+  const cam = activeCamera;
   const portrait = window.innerHeight > window.innerWidth;
   const height = portrait ? 30 : 24;
   const back = portrait ? 32 : 28;
@@ -434,13 +450,13 @@ function updateCamera(dt, moveX, moveZ) {
 
   camDesired.set(camTarget.x, camTarget.y + height, camTarget.z + back);
   if (!cameraReady) {
-    camera.position.copy(camDesired);
+    cam.position.copy(camDesired);
     cameraReady = true;
   } else {
     const l = 1 - Math.exp(-7 * dt);
-    camera.position.lerp(camDesired, l);
+    cam.position.lerp(camDesired, l);
   }
-  camera.lookAt(camTarget.x, camTarget.y + 0.55, camTarget.z - 1.4);
+  cam.lookAt(camTarget.x, camTarget.y + 0.55, camTarget.z - 1.4);
 
   // keep the shadow volume centred on the visible camp
   atmosphere.sun.target.position.set(camTarget.x, 0, camTarget.z - 4);
@@ -450,12 +466,29 @@ function updateCamera(dt, moveX, moveZ) {
   atmosphere.sun.target.updateMatrixWorld();
 
   if (cameraShake > 0.001) {
-    camera.position.x += (Math.random() - 0.5) * cameraShake;
-    camera.position.y += (Math.random() - 0.5) * cameraShake * 0.6;
-    camera.position.z += (Math.random() - 0.5) * cameraShake;
+    cam.position.x += (Math.random() - 0.5) * cameraShake;
+    cam.position.y += (Math.random() - 0.5) * cameraShake * 0.6;
+    cam.position.z += (Math.random() - 0.5) * cameraShake;
     cameraShake *= Math.exp(-7 * dt);
   }
 }
+
+// orthographic view for style assessment — toggled via perf menu or key C
+function setOrtho(on) {
+  if (orthoMode === on) return;
+  orthoMode = on;
+  activeCamera = on ? orthoCamera : camera;
+  // carry over the current pose so the switch is seamless
+  activeCamera.position.copy(on ? camera.position : orthoCamera.position);
+  activeCamera.quaternion.copy(on ? camera.quaternion : orthoCamera.quaternion);
+  input.camera = activeCamera;
+  cameraReady = false;
+  ui.setToggle('ortho', on);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'c' || e.key === 'C') setOrtho(!orthoMode);
+});
 
 // ---------------------------------------------------------------------------
 // simulation
@@ -561,7 +594,7 @@ function loop(now) {
 
   ui.updateHUD(state);
 
-  renderer.render(scene, camera);
+  renderer.render(scene, activeCamera);
   perf.frame(rawMs);
 
   if (now - lastPerfPaint > 260) {

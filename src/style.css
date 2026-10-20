@@ -781,7 +781,8 @@ strong {
   gap: 4px;
 }
 
-.toggles button[data-toggle="shadows"] {
+.toggles button[data-toggle="shadows"],
+.toggles button[data-toggle="ortho"] {
   grid-column: span 2;
 }
 
