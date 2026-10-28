@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { createTerrain, heightAt } from './terrain.js';
+import { createTerrain, heightAt, worldField } from './terrain.js';
+import { WORLD_SEED, deriveSeed } from './rng.js';
 import { createAtmosphere, SUN_DIR } from './sky.js';
 import { createWasteland } from './props.js';
 import { ScrapField } from './resources.js';
@@ -10,7 +11,14 @@ import { Settlement, BUILDINGS } from './settlement.js';
 import { Perf, QUALITY } from './perf.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
+import { CampFolk } from './npcs.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { readSave, writeSave } from './save.js';
+import { itemLabel } from './wardrobe.js';
 import { paint } from './geo.js';
+import { TargetRegistry } from './actors.js';
+import { Firearms } from './firearms.js';
+import { FX } from './fx.js';
 
 // ---------------------------------------------------------------------------
 // renderer / scene
@@ -25,44 +33,95 @@ const renderer = new THREE.WebGLRenderer({
   powerPreference: 'high-performance',
 });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.LinearToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.shadowMap.autoUpdate = true;
 renderer.info.autoReset = true;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.5, 220);
-// orthographic twin, used only when ortho mode is toggled (style assessment)
-const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 220);
-let orthoMode = false;
-let activeCamera = camera;
+const pmrem = new THREE.PMREMGenerator(renderer);
+const room = new RoomEnvironment();
+scene.environment = pmrem.fromScene(room, 0.04).texture;
+scene.environmentIntensity = 0.35;
+room.dispose();
+pmrem.dispose();
+
+// Main gameplay camera: fixed-pitch orthographic rig. Landscape is the primary framing; portrait
+// widens the frustum so the player still sees enough ground either side of them.
+const CAMERA = {
+  pitch: THREE.MathUtils.degToRad(40),
+  halfHeightLandscape: 11,
+  halfHeightPortrait: 17,
+  minGroundWidth: 17,
+  maxHalfHeight: 22,
+  distance: 45,
+  near: 0.5,
+  far: 140,
+};
+
+let viewHalfHeight = 11;
+let viewZoom = 1;
+let viewZoomTarget = 1;
+
+const cameraRig = new THREE.Object3D();
+cameraRig.name = 'camera-rig';
+scene.add(cameraRig);
+
+const camera = new THREE.PerspectiveCamera(34, window.innerWidth / window.innerHeight, CAMERA.near, CAMERA.far);
+const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, CAMERA.near, CAMERA.far);
+let orthoMode = true;
+let activeCamera = orthoCamera;
+
+const camOffsetY = Math.sin(CAMERA.pitch) * CAMERA.distance;
+const camOffsetZ = Math.cos(CAMERA.pitch) * CAMERA.distance;
+for (const cam of [camera, orthoCamera]) {
+  cam.position.set(0, camOffsetY, camOffsetZ);
+  cam.rotation.x = -CAMERA.pitch;
+  cameraRig.add(cam);
+}
 
 function applyCameraFraming() {
-  const portrait = window.innerHeight > window.innerWidth;
   const aspect = window.innerWidth / window.innerHeight;
-  camera.fov = portrait ? 44 : 34;
-  camera.aspect = aspect;
-  camera.updateProjectionMatrix();
-  // match the perspective camera's visible height at its follow distance
-  const dist = Math.hypot(portrait ? 30 : 24, portrait ? 32 : 28);
-  const h = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-  orthoCamera.top = h / 2;
-  orthoCamera.bottom = -h / 2;
-  orthoCamera.left = (-h * aspect) / 2;
-  orthoCamera.right = (h * aspect) / 2;
+  const portrait = aspect < 1;
+  // Keep the same framing on landscape phones/desktops, and guarantee a usable width on tall
+  // screens instead of letting the ortho view collapse into a keyhole.
+  viewHalfHeight = THREE.MathUtils.clamp(
+    Math.max(
+      portrait ? CAMERA.halfHeightPortrait : CAMERA.halfHeightLandscape,
+      CAMERA.minGroundWidth / aspect / 2,
+    ),
+    CAMERA.halfHeightLandscape,
+    CAMERA.maxHalfHeight,
+  );
+  const halfWidth = viewHalfHeight * aspect;
+  orthoCamera.top = viewHalfHeight;
+  orthoCamera.bottom = -viewHalfHeight;
+  orthoCamera.left = -halfWidth;
+  orthoCamera.right = halfWidth;
+  orthoCamera.zoom = viewZoom;
   orthoCamera.updateProjectionMatrix();
+
+  // Perspective stays as a debug comparison; keep its lens long and its aspect correct.
+  camera.aspect = aspect;
+  camera.fov = portrait ? 44 : 34;
+  camera.updateProjectionMatrix();
 }
 applyCameraFraming();
 
+const fx = new FX(scene, renderer, activeCamera);
+
 const atmosphere = createAtmosphere(scene, renderer);
 createTerrain(scene);
-const wasteland = createWasteland(scene, 0x51a7);
+const wasteland = createWasteland(scene, deriveSeed('wasteland'));
 const particles = new Particles(scene);
-const scrapField = new ScrapField(scene, 0x5c4a9);
+const scrapField = new ScrapField(scene, deriveSeed('scrap'));
 const player = new Player(scene);
-const enemies = new Enemies(scene, 0x6d0f1);
+const enemies = new Enemies(scene, deriveSeed('enemies'));
+const charStyle = new URLSearchParams(window.location.search).get('chars');
+const npcStyle = charStyle === 'blocky' ? 'blocky' : charStyle === 'smooth' ? 'smooth' : 'skinned';
+const campFolk = new CampFolk(scene, 3, { style: npcStyle });
 
 const state = {
   started: false,
@@ -76,6 +135,54 @@ const state = {
   time: 0,
   lastDamage: -99,
 };
+
+// Shared target registry: the player, camp folk and ghouls all describe themselves the same way.
+const registry = new TargetRegistry();
+const playerTarget = {
+  id: 'player',
+  faction: 'player',
+  x: 0, y: 0, z: 0,
+  hp: 100, maxHp: 100,
+  radius: 0.38,
+  height: 1.8,
+  dead: false,
+};
+const playerAimActor = { x: 0, y: 0, z: 0, heading: 0 };
+const campTargets = campFolk.people.map((p, i) => ({
+  id: `camp:${i}`,
+  faction: 'camp',
+  x: 0, y: 0, z: 0,
+  hp: 100, maxHp: 100,
+  radius: 0.38,
+  height: 1.8,
+  dead: false,
+  ref: p,
+}));
+registry.add(enemies);
+registry.add({
+  forEachTarget(cb) {
+    playerTarget.x = player.x;
+    playerTarget.y = player.pos.y;
+    playerTarget.z = player.z;
+    playerTarget.hp = state.health;
+    playerTarget.maxHp = state.maxHealth;
+    playerTarget.dead = state.dead;
+    if (!state.dead) cb(playerTarget);
+  },
+});
+registry.add({
+  forEachTarget(cb) {
+    for (let i = 0; i < campFolk.people.length; i++) {
+      const t = campTargets[i];
+      const pos = campFolk.people[i].rig.group.position;
+      t.x = pos.x;
+      t.y = pos.y;
+      t.z = pos.z;
+      t.hp = campFolk.people[i].rig.hp || 100;
+      cb(t);
+    }
+  },
+});
 
 const ui = new UI();
 const settlement = new Settlement({
@@ -96,12 +203,14 @@ const settlement = new Settlement({
   obstacles: wasteland.obstacles,
 });
 const perf = new Perf(renderer);
+const firearms = new Firearms({ enemies, settlement, wasteland, fx });
+player.aim.los = (x1, y1, z1, x2, y2, z2) => firearms.hasLineOfSight(x1, y1, z1, x2, y2, z2);
 
 // ---------------------------------------------------------------------------
 // input wiring
 // ---------------------------------------------------------------------------
 
-const input = new Input(canvas, camera, {
+const input = new Input(canvas, activeCamera, {
   strike: doStrike,
   gather: doGather,
   buildToggle: toggleBuild,
@@ -110,11 +219,17 @@ const input = new Input(canvas, camera, {
   place: doPlace,
   cancelPlace: cancelPlacement,
   perf: () => ui.togglePerf(),
+  wardrobe: () => ui.toggleWardrobe(),
   fullscreen: () => ui.handleFullscreenGesture(),
+  pan: (dx, dy) => panCamera(dx, dy),
+  zoom: (factor) => {
+    viewZoomTarget = THREE.MathUtils.clamp(viewZoomTarget * factor, 0.8, 2.2);
+  },
   cancel: () => {
     if (settlement.placing) cancelPlacement();
     else if (ui.buildOpen) closeBuild();
     else if (ui.perfOpen) ui.togglePerf(false);
+    else if (ui.wardrobeOpen) ui.toggleWardrobe(false);
   },
   isPlacing: () => settlement.placing,
   playerY: () => player.pos.y,
@@ -132,21 +247,31 @@ let autoLowTime = 0;
 window.__ashfall = {
   state,
   ui,
+  seed: WORLD_SEED,
+  worldField,
+  campFolk,
   settlement,
   player,
   enemies,
+  firearms,
+  fx,
+  registry,
   perf,
   renderer,
   scene,
   camera,
+  orthoCamera,
+  cameraRig,
   scrapField,
   wasteland,
   input,
-  actions: { doPlace, doGather, doStrike, doStress, applyQuality },
+  actions: { doPlace, doGather, doStrike, doStress, applyQuality, setOrtho, rotateBy, saveGame, loadGame, validateWorld },
 };
 let spawnAt = 0;
 let spawnWarned = false;
 let nextSpawnGap = 16;
+let resumedGame = false;
+let lastSave = 0;
 let cameraShake = 0;
 let lastUIUpdate = 0;
 let stressMesh = null;
@@ -156,7 +281,7 @@ ui.on('started', () => {
   if (state.started) return;
   state.started = true;
   input.setEnabled(true);
-  spawnAt = state.time + 45;
+  spawnAt = resumedGame ? Math.max(spawnAt, state.time + 8) : state.time + 45;
   spawnWarned = false;
   ui.hint('SCAVENGE · BUILD · KEEP THE FIRE BURNING', 3800);
   ui.toast('THE WASTES ARE LISTENING');
@@ -187,6 +312,17 @@ ui.on('toggle', (key, value) => {
   }
 });
 ui.on('stress', (kind) => doStress(kind));
+ui.on('compassRotate', (rad) => rotateBy(rad));
+ui.on('compassNorth', () => {
+  yaw.target = 0;
+});
+ui.on('recenter', () => recenterCamera());
+ui.on('wardrobeCycle', (slot, dir) => {
+  const id = player.rig.cycleEquipment(slot, dir);
+  ui.buildWardrobe(player.rig.equipment);
+  ui.toast(`${slot.toUpperCase()} · ${itemLabel(slot, id)}`);
+  saveGame();
+});
 
 function applyShadowState(enabled, size) {
   const changed = enabled !== shadowsOn;
@@ -212,6 +348,7 @@ function applyQuality(name, silent = false) {
   scene.fog.density = ui.toggleState.fog ? q.fogDensity : 0.0001;
   enemies.maxActive = q.enemies;
   applyShadowState(q.shadows, q.shadowSize);
+  fx.setQuality(name);
   ui.setQuality(name);
   ui.setToggle('adaptive', perf.adaptive);
   ui.setToggle('shadows', q.shadows);
@@ -283,6 +420,7 @@ function doPlace() {
   ui.updateHUD(state);
   ui.setPlaceStatus(settlement.canPlace, settlement.reason);
   cameraShake = Math.max(cameraShake, 0.12);
+  saveGame();
 }
 
 function doGather() {
@@ -301,10 +439,33 @@ function doGather() {
   nearScrap = -1;
   ui.setGather(false);
   player.strike();
+  saveGame();
+}
+
+function awardKills(kills) {
+  if (!kills) return;
+  state.kills += kills;
+  state.scrap += kills * 2;
+  ui.updateHUD(state);
+  ui.toast(`+${kills * 2} SCRAP`);
+  saveGame();
 }
 
 function doStrike() {
   if (!state.started || state.dead) return;
+  if (player.armed) {
+    const shot = player.tryFire();
+    if (!shot) {
+      ui.setAmmo(player.ammoState());
+      return;
+    }
+    const result = firearms.fire(player, shot);
+    ui.setAmmo(player.ammoState());
+    if (result.hit) ui.hitMarker(result.killed > 0);
+    if (result.killed) awardKills(result.killed);
+    cameraShake = Math.max(cameraShake, shot.weapon.shake);
+    return;
+  }
   if (!player.strike()) return;
   const hits = enemies.strike(player.x, player.z, 2.55, 34);
   if (hits.length) {
@@ -313,12 +474,7 @@ function doStrike() {
       particles.burst(hit.x, heightAt(hit.x, hit.z) + 0.8, hit.z, hit.killed ? '#a8c07a' : '#c4644a', hit.killed ? 16 : 7, 2.2);
       if (hit.killed) kills++;
     }
-    if (kills) {
-      state.kills += kills;
-      state.scrap += kills * 2;
-      ui.updateHUD(state);
-      ui.toast(`+${kills * 2} SCRAP`);
-    }
+    if (kills) awardKills(kills);
     cameraShake = Math.max(cameraShake, 0.3);
   }
 }
@@ -401,6 +557,114 @@ function respawn() {
   spawnAt = state.time + 25;
   spawnWarned = false;
   ui.hint('THE CAMP DRAGS YOU BACK', 2600);
+  saveGame();
+}
+
+// ---------------------------------------------------------------------------
+// save / load
+// ---------------------------------------------------------------------------
+
+function saveGame() {
+  if (!state.started || state.dead) return;
+  writeSave({
+    v: 1,
+    seed: WORLD_SEED,
+    savedAt: Date.now(),
+    state: {
+      scrap: state.scrap,
+      water: state.water,
+      kills: state.kills,
+      health: state.health,
+      maxHealth: state.maxHealth,
+      time: state.time,
+    },
+    player: { x: player.x, z: player.z, heading: player.heading },
+    equipment: { ...player.rig.equipment },
+    buildings: settlement.serialize().buildings,
+    scrap: scrapField.serialize(),
+    timers: {
+      spawnAt,
+      nextSpawnGap,
+      prodTimer: settlement.prodTimer,
+      houseTimer: settlement.houseTimer,
+    },
+  });
+}
+
+function loadGame() {
+  const save = readSave();
+  if (!save || save.seed !== WORLD_SEED || !save.player) return false;
+  const s = save.state || {};
+  const num = (v, fallback) => (Number.isFinite(v) ? v : fallback);
+
+  state.scrap = num(s.scrap, 26);
+  state.water = num(s.water, 0);
+  state.kills = num(s.kills, 0);
+  state.health = num(s.health, 100);
+  state.maxHealth = Math.max(100, num(s.maxHealth, 100));
+  state.time = num(s.time, 0);
+  state.dead = false;
+  state.deadAt = 0;
+  state.lastDamage = state.time - 10;
+
+  player.pos.set(save.player.x, heightAt(save.player.x, save.player.z), save.player.z);
+  player.heading = num(save.player.heading, 0);
+  player.targetHeading = player.heading;
+  player.group.rotation.y = player.heading;
+  if (save.equipment) player.rig.setEquipment(save.equipment);
+
+  settlement.restore(save.buildings);
+  scrapField.restore(save.scrap);
+  if (save.timers) {
+    spawnAt = num(save.timers.spawnAt, state.time + 45);
+    nextSpawnGap = num(save.timers.nextSpawnGap, 16);
+    settlement.prodTimer = num(save.timers.prodTimer, 0);
+    settlement.houseTimer = num(save.timers.houseTimer, 0);
+  }
+
+  focus.set(player.x, 0, player.z);
+  camTarget.set(player.x, player.pos.y, player.z);
+  cameraFollow = true;
+  cameraReady = false;
+  resumedGame = true;
+  return true;
+}
+
+function validateWorld() {
+  const issues = [];
+  const b = settlement.buildings;
+  for (let i = 0; i < b.length; i++) {
+    for (let j = i + 1; j < b.length; j++) {
+      const d = Math.hypot(b[i].x - b[j].x, b[i].z - b[j].z);
+      if (d < b[i].radius + b[j].radius - 0.05) {
+        issues.push(`overlapping buildings: ${b[i].type} / ${b[j].type}`);
+      }
+    }
+  }
+  for (const node of scrapField.nodes) {
+    if (!node.active) continue;
+    for (const building of b) {
+      if (Math.hypot(node.x - building.x, node.z - building.z) < building.radius + 0.4) {
+        issues.push(`scrap inside ${building.type}`);
+      }
+    }
+  }
+  for (const obstacle of wasteland.obstacles) {
+    for (const building of b) {
+      if (Math.hypot(obstacle.x - building.x, obstacle.z - building.z) < building.radius + obstacle.r - 0.2) {
+        issues.push(`prop inside ${building.type}`);
+      }
+    }
+  }
+  if (Math.hypot(player.x, player.z) > 52) issues.push('player outside the world');
+  if (issues.length) {
+    console.warn('[ashfall] validation', issues);
+    ui.toast(`VALIDATION · ${issues.length} ISSUE${issues.length === 1 ? '' : 'S'}`, true);
+  } else {
+    console.info('[ashfall] validation: ok');
+    ui.toast('VALIDATION · OK');
+  }
+  return issues;
 }
 
 // ---------------------------------------------------------------------------
@@ -408,9 +672,151 @@ function respawn() {
 // ---------------------------------------------------------------------------
 
 const camTarget = new THREE.Vector3(player.x, player.pos.y, player.z);
-const camDesired = new THREE.Vector3();
+const focus = new THREE.Vector3(player.x, 0, player.z);
 const lookAhead = new THREE.Vector3();
+const yaw = { current: 0, target: 0 };
+const PAN_LIMIT = 58;
+let cameraFollow = true;
+const moveWorld = { x: 0, z: 0 };
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const shadowRight = new THREE.Vector3();
+const shadowUp = new THREE.Vector3();
+const shadowFocus = new THREE.Vector3();
 let cameraReady = false;
+
+function rotateBy(radians) {
+  yaw.target += radians;
+}
+
+// One-finger pan. Converts screen pixels to metres on the ground: horizontally the ortho scale is
+// uniform, vertically it is stretched by 1/sin(pitch) because the camera looks down at an angle.
+function panCamera(dx, dy) {
+  const worldPerPixel = (2 * viewHalfHeight) / viewZoom / window.innerHeight;
+  const c = Math.cos(yaw.current);
+  const s = Math.sin(yaw.current);
+  const rightX = c;
+  const rightZ = -s;
+  const upX = -s;
+  const upZ = -c;
+  const vertical = worldPerPixel / Math.sin(CAMERA.pitch);
+  focus.x += -dx * worldPerPixel * rightX + dy * vertical * upX;
+  focus.z += -dx * worldPerPixel * rightZ + dy * vertical * upZ;
+  const d = Math.hypot(focus.x, focus.z);
+  if (d > PAN_LIMIT) {
+    focus.x *= PAN_LIMIT / d;
+    focus.z *= PAN_LIMIT / d;
+  }
+  cameraFollow = false;
+}
+
+function recenterCamera() {
+  cameraFollow = true;
+}
+
+function shortestAngle(from, to) {
+  let d = (to - from) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+// Input arrives in screen space (W = up the screen). Rotate it into world space so movement always
+// matches what the player sees after orbiting the camera.
+function cameraRelativeMove(x, z, out = moveWorld) {
+  const c = Math.cos(yaw.current);
+  const s = Math.sin(yaw.current);
+  out.x = x * c + z * s;
+  out.z = -x * s + z * c;
+  return out;
+}
+
+function updateCamera(dt, moveX, moveZ) {
+  if (Math.abs(viewZoomTarget - viewZoom) > 0.0005) {
+    viewZoom += (viewZoomTarget - viewZoom) * (1 - Math.exp(-9 * dt));
+    orthoCamera.zoom = viewZoom;
+    orthoCamera.updateProjectionMatrix();
+  }
+
+  // Orbit toward the requested yaw along the shortest arc.
+  yaw.current += shortestAngle(yaw.current, yaw.target) * (1 - Math.exp(-16 * dt));
+  cameraRig.rotation.y = yaw.current;
+
+  lookAhead.x = THREE.MathUtils.damp(lookAhead.x, moveX * 1.25, 4, dt);
+  lookAhead.z = THREE.MathUtils.damp(lookAhead.z, moveZ * 1.25, 4, dt);
+
+  if (cameraFollow) {
+    focus.x = player.x + lookAhead.x;
+    focus.z = player.z + lookAhead.z;
+  }
+  camTarget.x = THREE.MathUtils.damp(camTarget.x, focus.x, 10, dt);
+  camTarget.z = THREE.MathUtils.damp(camTarget.z, focus.z, 10, dt);
+  camTarget.y = THREE.MathUtils.damp(camTarget.y, player.pos.y, 5, dt);
+
+  if (!cameraReady) {
+    camTarget.set(focus.x, player.pos.y, focus.z);
+    cameraReady = true;
+  }
+  cameraRig.position.copy(camTarget);
+
+  // Shadow volume follows the rig. Snap the focus to shadow-map texels *in light space* so the map
+  // does not crawl as the rig moves (an XZ-only snap leaks shimmer on a tilted sun).
+  const sun = atmosphere.sun;
+  const shadowCam = sun.shadow.camera;
+  const texel = (shadowCam.right - shadowCam.left) / sun.shadow.mapSize.x;
+  shadowRight.crossVectors(WORLD_UP, SUN_DIR).normalize();
+  shadowUp.crossVectors(SUN_DIR, shadowRight).normalize();
+  shadowFocus.set(camTarget.x, 0, camTarget.z - 4);
+  const sr = shadowFocus.dot(shadowRight);
+  const su = shadowFocus.dot(shadowUp);
+  shadowFocus
+    .addScaledVector(shadowRight, Math.round(sr / texel) * texel - sr)
+    .addScaledVector(shadowUp, Math.round(su / texel) * texel - su);
+  sun.target.position.copy(shadowFocus);
+  sun.position.copy(shadowFocus).addScaledVector(SUN_DIR, 60);
+  sun.target.updateMatrixWorld();
+
+  // Shake lives in camera-local space: it rattles the view without changing the rig's heading.
+  const cam = activeCamera;
+  if (cameraShake > 0.001) {
+    cam.position.x = (Math.random() - 0.5) * cameraShake;
+    cam.position.y = camOffsetY + (Math.random() - 0.5) * cameraShake * 0.6;
+    cameraShake *= Math.exp(-7 * dt);
+  } else {
+    cam.position.x = 0;
+    cam.position.y = camOffsetY;
+  }
+}
+
+// Orthographic is the main camera. Perspective stays available as a comparison/debug view.
+function setOrtho(on) {
+  if (orthoMode === on) return;
+  orthoMode = on;
+  activeCamera = on ? orthoCamera : camera;
+  activeCamera.position.x = 0;
+  activeCamera.position.y = camOffsetY;
+  input.camera = activeCamera;
+  fx.setCamera(activeCamera);
+  ui.setToggle('ortho', on);
+}
+
+canvas.addEventListener(
+  'wheel',
+  (e) => {
+    e.preventDefault();
+    viewZoomTarget = THREE.MathUtils.clamp(viewZoomTarget * Math.exp(-e.deltaY * 0.0012), 0.8, 2.2);
+  },
+  { passive: false },
+);
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 'c') setOrtho(!orthoMode);
+  else if (k === ',') rotateBy(Math.PI / 4);
+  else if (k === '.') rotateBy(-Math.PI / 4);
+  else if (k === 'r') yaw.target = 0;
+  else if (k === 'h') recenterCamera();
+});
 
 function collidePlayer() {
   let x = player.pos.x;
@@ -435,61 +841,6 @@ function collidePlayer() {
   player.pos.z = z;
 }
 
-function updateCamera(dt, moveX, moveZ) {
-  const cam = activeCamera;
-  const portrait = window.innerHeight > window.innerWidth;
-  const height = portrait ? 30 : 24;
-  const back = portrait ? 32 : 28;
-
-  lookAhead.x = THREE.MathUtils.damp(lookAhead.x, moveX * 1.25, 4, dt);
-  lookAhead.z = THREE.MathUtils.damp(lookAhead.z, moveZ * 1.25, 4, dt);
-
-  camTarget.x = THREE.MathUtils.damp(camTarget.x, player.x + lookAhead.x, 7, dt);
-  camTarget.z = THREE.MathUtils.damp(camTarget.z, player.z + lookAhead.z, 7, dt);
-  camTarget.y = THREE.MathUtils.damp(camTarget.y, player.pos.y, 5, dt);
-
-  camDesired.set(camTarget.x, camTarget.y + height, camTarget.z + back);
-  if (!cameraReady) {
-    cam.position.copy(camDesired);
-    cameraReady = true;
-  } else {
-    const l = 1 - Math.exp(-7 * dt);
-    cam.position.lerp(camDesired, l);
-  }
-  cam.lookAt(camTarget.x, camTarget.y + 0.55, camTarget.z - 1.4);
-
-  // keep the shadow volume centred on the visible camp
-  atmosphere.sun.target.position.set(camTarget.x, 0, camTarget.z - 4);
-  atmosphere.sun.position
-    .copy(atmosphere.sun.target.position)
-    .addScaledVector(SUN_DIR, 60);
-  atmosphere.sun.target.updateMatrixWorld();
-
-  if (cameraShake > 0.001) {
-    cam.position.x += (Math.random() - 0.5) * cameraShake;
-    cam.position.y += (Math.random() - 0.5) * cameraShake * 0.6;
-    cam.position.z += (Math.random() - 0.5) * cameraShake;
-    cameraShake *= Math.exp(-7 * dt);
-  }
-}
-
-// orthographic view for style assessment — toggled via perf menu or key C
-function setOrtho(on) {
-  if (orthoMode === on) return;
-  orthoMode = on;
-  activeCamera = on ? orthoCamera : camera;
-  // carry over the current pose so the switch is seamless
-  activeCamera.position.copy(on ? camera.position : orthoCamera.position);
-  activeCamera.quaternion.copy(on ? camera.quaternion : orthoCamera.quaternion);
-  input.camera = activeCamera;
-  cameraReady = false;
-  ui.setToggle('ortho', on);
-}
-
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'c' || e.key === 'C') setOrtho(!orthoMode);
-});
-
 // ---------------------------------------------------------------------------
 // simulation
 // ---------------------------------------------------------------------------
@@ -500,12 +851,21 @@ function simulate(dt) {
   if (state.dead) {
     settlement.update(dt, state.time, player, enemies);
     enemies.update(dt, player, settlement.buildings, wasteland.obstacles);
+    fx.update(dt);
     if (state.time - state.deadAt > 2.4) respawn();
     return;
   }
 
   const move = input.update();
-  player.update(dt, move.x, move.z);
+  const wm = cameraRelativeMove(move.x, move.z);
+  playerAimActor.x = player.x;
+  playerAimActor.y = player.pos.y;
+  playerAimActor.z = player.z;
+  playerAimActor.heading = player.heading;
+  player.aim.update(dt, playerAimActor, registry, player.weapon);
+  player.update(dt, wm.x, wm.z);
+  ui.setWeapon(player.armed, player.weapon?.name);
+  ui.setAmmo(player.ammoState());
   collidePlayer();
 
   if (Math.hypot(player.x, player.z) > 50 && !boundaryWarned) {
@@ -517,6 +877,7 @@ function simulate(dt) {
 
   settlement.update(dt, state.time, player, enemies);
   enemies.update(dt, player, settlement.buildings, wasteland.obstacles);
+  fx.update(dt);
 
   // campfire / chapel healing + slow passive regen
   if (settlement.isNearHealer(player.x, player.z)) {
@@ -546,7 +907,7 @@ function simulate(dt) {
   ui.setGather(nearScrap >= 0 && !settlement.placing);
 
   if (settlement.placing) ui.setPlaceStatus(settlement.canPlace, settlement.reason);
-  ui.setStrikeCooling(player.attackCooldown > 0.05);
+  ui.setStrikeCooling(player.attackCooldown > 0.05 || player.reloadTimer > 0);
 
   // Last-resort mobile fallback: if adaptive resolution is already at the floor
   // and we still cannot hold ~40 fps, drop the shadow pass before the experience degrades.
@@ -588,9 +949,18 @@ function loop(now) {
     enemies.update(dt, player, settlement.buildings, wasteland.obstacles);
   }
 
+  campFolk.update(dt, state.time, player, settlement.buildings);
+  if (state.started && !state.dead && now - lastSave > 5000) {
+    lastSave = now;
+    saveGame();
+  }
   scrapField.update(state.time);
   particles.update(dt, state.time);
-  updateCamera(dt, state.started ? input.move.x : 0, state.started ? input.move.z : 0);
+  wasteland.updateWind(state.time);
+  const wm = state.started ? cameraRelativeMove(input.move.x, input.move.z) : { x: 0, z: 0 };
+  updateCamera(dt, wm.x, wm.z);
+  settlement.updateOcclusion(activeCamera, player, dt);
+  ui.setCompass(yaw.current, !cameraFollow);
 
   ui.updateHUD(state);
 
@@ -617,8 +987,21 @@ ui.setToggle('fog', true);
 ui.setToggle('grass', true);
 ui.setToggle('embers', true);
 ui.setToggle('shadows', shadowsOn);
+ui.setToggle('ortho', orthoMode);
+ui.setSeed(WORLD_SEED);
+input.camera = activeCamera;
 ui.updateHUD(state);
 ui.setQuality(coarse ? 'balanced' : 'high');
+
+resumedGame = loadGame();
+ui.setResume(resumedGame);
+ui.buildWardrobe(player.rig.equipment);
+ui.setWeapon(player.armed, player.weapon?.name);
+ui.setAmmo(player.ammoState());
+if (resumedGame) {
+  ui.updateHUD(state);
+  ui.setGather(false);
+}
 
 window.addEventListener('resize', () => {
   applyCameraFraming();
@@ -627,7 +1010,9 @@ window.addEventListener('resize', () => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  last = performance.now();
+  if (document.hidden) saveGame();
+  else last = performance.now();
 });
+window.addEventListener('pagehide', saveGame);
 
 requestAnimationFrame(loop);

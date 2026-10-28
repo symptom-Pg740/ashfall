@@ -6,6 +6,14 @@ import { box, merge, PALETTE } from './geo.js';
 const POOL = 64;
 const _o = new THREE.Object3D();
 const _c = new THREE.Color();
+const _ray = new THREE.Ray();
+const _rayOrigin = new THREE.Vector3();
+const _rayDir = new THREE.Vector3();
+const _capA = new THREE.Vector3();
+const _capB = new THREE.Vector3();
+const _pRay = new THREE.Vector3();
+const _pSeg = new THREE.Vector3();
+const _tmp = new THREE.Vector3();
 
 function ghoulGeometry() {
   const p = [];
@@ -68,6 +76,19 @@ export class Enemies {
         knockX: 0,
         knockZ: 0,
         scale: 1,
+        target: {
+          id: `ghoul:${i}`,
+          faction: 'hostile',
+          x: 0,
+          y: 0,
+          z: 0,
+          hp: 0,
+          maxHp: 46,
+          radius: 0.32,
+          height: 1.5,
+          dead: true,
+          ref: i,
+        },
       });
       _o.position.set(0, -50, 0);
       _o.scale.setScalar(0.0001);
@@ -227,7 +248,7 @@ export class Enemies {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
-  damage(index, amount, fromX, fromZ) {
+  damage(index, amount, fromX, fromZ, knock = 1) {
     const e = this.pool[index];
     if (!e || !e.active) return false;
     e.hp -= amount;
@@ -235,8 +256,8 @@ export class Enemies {
     const dx = e.x - fromX;
     const dz = e.z - fromZ;
     const d = Math.hypot(dx, dz) || 1;
-    e.knockX = (dx / d) * 5.5;
-    e.knockZ = (dz / d) * 5.5;
+    e.knockX = (dx / d) * 5.5 * knock;
+    e.knockZ = (dz / d) * 5.5 * knock;
     if (e.hp <= 0) {
       e.active = false;
       _o.position.set(e.x, -60, e.z);
@@ -261,6 +282,61 @@ export class Enemies {
       }
     }
     return results;
+  }
+
+  /** Iterate the active pool without allocating per-ghoul records. */
+  forEachTarget(cb) {
+    for (let i = 0; i < POOL; i++) {
+      const e = this.pool[i];
+      if (!e.active) {
+        e.target.dead = true;
+        continue;
+      }
+      const t = e.target;
+      t.x = e.x;
+      t.y = e.y;
+      t.z = e.z;
+      t.hp = e.hp;
+      t.radius = 0.32 * e.scale;
+      t.height = 1.5 * e.scale;
+      t.dead = false;
+      cb(t);
+    }
+  }
+
+  /**
+   * Ray against every active ghoul capsule. Returns the nearest hit or null.
+   * `dir` must be normalized; `maxDist` is in metres.
+   */
+  raycast(ox, oy, oz, dx, dy, dz, maxDist) {
+    _rayOrigin.set(ox, oy, oz);
+    _rayDir.set(dx, dy, dz);
+    _ray.set(_rayOrigin, _rayDir);
+    let bestT = maxDist;
+    let bestIndex = -1;
+    _pSeg.set(0, 0, 0);
+    for (let i = 0; i < POOL; i++) {
+      const e = this.pool[i];
+      if (!e.active) continue;
+      const scale = e.scale;
+      _capA.set(e.x, e.y + 0.35 * scale, e.z);
+      _capB.set(e.x, e.y + 1.35 * scale, e.z);
+      const d2 = _ray.distanceSqToSegment(_capA, _capB, _pRay, _pSeg);
+      const r = 0.32 * scale;
+      if (d2 > r * r) continue;
+      const t = _tmp.subVectors(_pRay, _rayOrigin).dot(_rayDir);
+      if (t < 0 || t > bestT) continue;
+      bestT = t;
+      bestIndex = i;
+    }
+    if (bestIndex < 0) return null;
+    const e = this.pool[bestIndex];
+    return {
+      index: bestIndex,
+      t: bestT,
+      point: new THREE.Vector3(ox + dx * bestT, oy + dy * bestT, oz + dz * bestT),
+      dead: e.hp <= 0,
+    };
   }
 
   nearest(x, z, maxDist) {

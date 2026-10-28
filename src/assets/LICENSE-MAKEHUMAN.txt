@@ -1,0 +1,10 @@
+MakeHuman base mesh (hm08) — CC0
+=================================
+
+Source:
+https://github.com/makehumancommunity/makehuman/blob/master/makehuman/data/3dobjs/base.obj
+
+This asset was explicitly released as CC0 in September 2020. The full license text is in the
+MakeHuman repository root. The head-only extraction in this folder keeps the same CC0 terms.
+
+The mesh was cut above the neck and re-pivoted at the neck joint for `src/baseHead.js`.

@@ -48,18 +48,27 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Action | Touch | Desktop |
 | --- | --- | --- |
 | Move | Left stick | `WASD` / arrows |
-| Strike | `STRIKE` button | `Space` |
+| Strike / fire | `STRIKE` / `FIRE` button | `Space` |
 | Gather scrap | `GATHER` button (appears near a pile) | `E` |
 | Open build tray | `BUILD` | `B` |
 | Pick structure | Tap a card / swipe the tray | `1`–`6` |
 | Aim placement | Tap / drag the ground | Move mouse, click ground |
 | Confirm / cancel | `PLACE` / `CANCEL` | `Enter` / `Esc` |
+| Wardrobe | `OUTFIT` | `O` |
 | Perf lab | `PERF` | `P` |
 | Fullscreen | ⛶ button, top right | `F` |
+| Orient / lock rotation | phone button, top right | — |
+| Pan the camera | drag the ground | drag the ground |
+| Zoom | pinch | mouse wheel |
+| Rotate the camera | drag the compass | compass, `,` / `.` |
+| Face north / recenter | tap compass / tap its centre | `R` / `H` |
 | Close menus | `✕` | `Esc` |
 
-The camera is deliberately fixed — no camera drag. This keeps touch input unambiguous and removes a
-whole class of mobile usability and performance problems.
+The camera is a **fixed-pitch orthographic rig** — no free pitch or zoom. One finger drags the ground
+to **pan**; the compass ring is the only touch control that **rotates** the camera (drag it, or tap
+to face north). Tapping the compass centre re-centres the camera on the player. Movement stays
+screen-relative, so `W` is always "up", and during placement the same ground drag aims the ghost
+instead of panning. This leaves the world drag free for the upcoming RTS click-and-send controls.
 
 ---
 
@@ -94,6 +103,8 @@ The in-game **PERF** panel is the point of this prototype.
 - **+100 DEBRIS** — 100 extra instances in **one draw call**.
 - **+20 GHOULS** — adds to the fixed 64-instance ghoul pool.
 - **CLEAR** — hides the stress horde and debris.
+- **WORLD** — shows the current seed (`?seed=` in the URL). **REROLL SEED** reloads with a new one;
+  terrain, props, scrap and ghouls all derive from it, so the whole world changes.
 
 Read **FPS, ms, 1% low, draw calls, triangles, resolution scale, buffer DPR, ghouls and GPU**.
 The graph keeps the last ~45 seconds.
@@ -106,17 +117,42 @@ The graph keeps the last ~45 seconds.
 
 ## What is implemented
 
-- **Procedural terrain** — a shared height field drives the mesh, props, player, buildings and enemies.
-  Vertex-coloured, flat-shaded, with cracked-earth texture, a winding dirt road, a cross street and
-  ash/rust patches.
+- **Procedural terrain** — a seeded, baked 384² height/slope/moisture/road field (fBm, domain warp,
+  ridged rim, soft terraces, droplet erosion) drives the mesh, props, player, buildings and enemies.
+  Vertex-coloured with a generated tiling sand albedo + normal map, winding dirt road, cross street
+  and ash/rust patches.
 - **Art direction** — sun-bleached sand, warm key light, cool fill, **real-time crisp shadows**,
   red adobe, cream stucco, terracotta roofs, blue shutters, exposed beams, cacti, shrubs and mesas.
 - **Procedural props** — rocks, dead trees, saguaro cacti, desert shrubs, broken ruins, wrecked cars,
   a bus landmark, an **abandoned adobe ruin with a piano**, a camp banner, scrap piles, planks,
-  barrels, rubble, clustered dry grass and distant mesas.
-- **Procedural survivor** — a low-poly rig with walk/idle/strike animation and a blob shadow.
+  barrels, rubble, clustered dry grass and distant mesas. Placed with blue-noise scatter masked by
+  slope, moisture and roads; grass and shrubs sway in a vertex shader. Rocks use a cracked-rock
+  albedo + normal set; houses use plaster detail and baked base AO.
+- **Continue a run** — seed + player state + equipment + buildings + scrap + production timers are
+  auto-saved to localStorage. Reload shows **CONTINUE**; **NEW RUN** clears the save, and PERF has
+  **RESET SAVE**.
+- **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
+  jitter. The player is a skinned R4 character: the MakeHuman `hm08` head (CC0) with a procedural
+  hair shell, eyes and brows, on a slim 20-bone skinned body with automatic weights, two-bone foot
+  IK, PBR-lite, IBL and a character atlas with skin/cloth/leather/metal regions. The three camp folk
+  use the same skinned builder at a lower detail level, with a **static merged far LOD** above 24 m;
+  `?chars=blocky` and `?chars=smooth` keep the older rigs for comparison.
+- **Wardrobe** — 10 equipment slots (head, face, torso, legs, feet, shoulders, hands, back, waist,
+  weapon) with multiple items each. Torso/legs/feet rebuild a skinned outfit layer that shares the
+  body skeleton; the rest are meshes on bone sockets. Changes are live, saved with the run, and the
+  far LOD is re-baked for NPCs. Open it with **OUTFIT** / `O` and tap a slot to cycle.
+- **Firearms (phase 1)** — the player starts with a **scrap pistol** (12-round magazine, 1.3 s
+  reload, 300 rpm). Shots are hitscan rays tested against analytic ghoul capsules; a shared target
+  registry auto-aims the character, while firing stays on the player's input. The shot is presented
+  with a travelling tracer, muzzle flash and smoke, surface-specific impacts and ground decals.
+  Ammo is infinite in phase 1; the weapon can be swapped for the blade/club in the wardrobe. The
+  same aim/fire policy is wired for future armed camp folk and raiders.
+- **Pinch or the mouse wheel zooms 0.8–2.2×.**
+
 - **Six settlement structures** — Barricade, Campfire, Rain Catcher, Adobe House, Watchtower and Chapel.
-  Generated geometry, ghost placement, costs, production, healing and auto-fire.
+  Generated geometry, ghost placement, costs, production, healing and auto-fire. The Adobe House is
+  assembled from a modular kit (facade bays, roof, parapet, porch, rooftop clutter) and gets a seeded
+  variant per placement; the other five stay hand-authored parametric shells.
 - **Combat** — an instanced ghoul pool, chase/attack/knockback, separation, solid buildings and
   wreckage, strike arc, loot, death and respawn.
 - **Atmosphere** — warm dusk sky, dust motes, campfire glow pools, contact shadows, fog, vignette.
@@ -196,7 +232,8 @@ Observations:
 
 ## Design choices for mobile comfort
 
-1. **A fixed, slightly isometric camera** with damped follow, framed separately for portrait/landscape.
+1. **A fixed-pitch orthographic camera** with compass-driven yaw, drag-to-pan, a recenter control,
+   damped follow and a separately tuned portrait framing (landscape is the primary view).
 2. **One low-resolution shadow map focused on the camp**, not a cascaded shadow stack. Casters are
    limited to meaningful scenery; grass only receives.
 3. **Instancing and merging everywhere.** Terrain is one mesh; scenery groups, grass, contact shadows,

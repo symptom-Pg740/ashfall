@@ -44,15 +44,36 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a7 7 0 0 0-7 7v4l2 2v4h3v-3h4v3h3v-4l2-2v-4a7 7 0 0 0-7-7z" /><circle cx="9" cy="11" r="1.2" /><circle cx="15" cy="11" r="1.2" /></svg>
             <b id="hud-kills">0</b><small>PUT DOWN</small>
           </div>
+          <div class="res-chip hidden" id="ammo-chip" title="Magazine">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16H7z" /><path d="M9 4v6h6V4M9 20v-6h6v6" /></svg>
+            <b id="hud-ammo">12</b><small>AMMO</small>
+          </div>
         </div>
 
         <div class="top-actions">
+          <button
+            id="orient-btn"
+            class="fs-btn"
+            aria-label="Lock screen orientation"
+            aria-pressed="false"
+            title="Lock landscape / portrait"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="8" y="2.5" width="8" height="19" rx="1.8" />
+              <path d="M10.5 5h3M10.5 19h3" />
+              <path d="M4 8.5a8 8 0 0 0 0 7" />
+              <path d="M2.5 15.5 4 16.8l1.2-1.7" />
+              <path d="M20 15.5a8 8 0 0 0 0-7" />
+              <path d="M21.5 8.5 20 7.2l-1.2 1.7" />
+            </svg>
+          </button>
           <button id="fs-btn" class="fs-btn" aria-label="Toggle fullscreen" aria-pressed="false" title="Fullscreen">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path class="fs-expand" d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
               <path class="fs-compress" d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />
             </svg>
           </button>
+          <button id="outfit-btn" class="perf-btn" aria-label="Wardrobe">OUTFIT</button>
           <button id="perf-btn" class="perf-btn" aria-label="Performance panel">PERF</button>
         </div>
       </div>
@@ -61,6 +82,33 @@
         <div class="hp-shell"><div id="hp-fill"></div></div>
         <span id="hp-text">100</span>
         <span class="vitals-label">VITALS</span>
+      </div>
+
+      <div
+        id="compass"
+        class="compass"
+        role="slider"
+        aria-label="Compass — drag to rotate, tap to face north"
+        aria-valuemin="0"
+        aria-valuemax="359"
+        aria-valuenow="0"
+        title="Drag to rotate · tap to face north"
+      >
+        <div class="compass-dial">
+          <i class="compass-tick t0"></i><i class="compass-tick t90"></i>
+          <i class="compass-tick t180"></i><i class="compass-tick t270"></i>
+        </div>
+        <div id="compass-needle" class="compass-needle">
+          <span class="compass-n">N</span>
+          <span class="compass-arrow"></span>
+          <span class="compass-tail"></span>
+        </div>
+        <button id="compass-home" class="compass-home" aria-label="Recenter on player" title="Recenter on player">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.2" />
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+          </svg>
+        </button>
       </div>
 
       <div id="hint" class="hint"></div>
@@ -144,7 +192,7 @@
             <button data-toggle="grass" class="on">GRASS</button>
             <button data-toggle="embers" class="on">DUST</button>
             <button data-toggle="shadows" class="on">SHADOWS</button>
-            <button data-toggle="ortho">ORTHO CAM</button>
+            <button data-toggle="ortho" class="on">ORTHO CAM</button>
           </div>
         </div>
 
@@ -157,9 +205,29 @@
           </div>
         </div>
 
+        <div class="perf-group">
+          <span class="group-label">WORLD</span>
+          <div class="world-row">
+            <button id="seed-reroll" class="btn-ghost" title="Generate a new world">REROLL SEED</button>
+            <button id="save-reset" class="btn-ghost" title="Delete the save and start fresh">RESET SAVE</button>
+            <code id="p-seed" class="perf-seed">--------</code>
+          </div>
+        </div>
+
         <p class="perf-note">All geometry is procedural. If FPS drops, adaptive resolution rescales the canvas before touching the scene.</p>
       </section>
 
+      <!-- wardrobe -->
+      <section id="wardrobe-panel" class="wardrobe-panel hidden" aria-label="Wardrobe">
+        <header>
+          <span>WARDROBE</span>
+          <button id="wardrobe-close" class="mini-x" aria-label="Close wardrobe">✕</button>
+        </header>
+        <div id="wardrobe-list" class="wardrobe-list"></div>
+        <p class="perf-note">Tap a slot to cycle its item. Changes apply immediately and save with the run.</p>
+      </section>
+
+      <div id="hit-marker" class="hit-marker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <div id="toast" class="toast" role="status"></div>
       <div id="death-screen" class="death-screen hidden">
         <strong>YOU DIED</strong>
@@ -180,10 +248,11 @@
           Every mesh, texture and gust of ash is generated at runtime.
         </p>
         <button id="start-btn" class="start-btn">ENTER THE WASTELAND</button>
+        <button id="new-run-btn" class="start-new hidden">NEW RUN</button>
         <div class="start-tags">
           <span>TOP-DOWN 3D</span><span>SETTLEMENT</span><span>PERF LAB</span><span>0 ASSET FILES</span>
         </div>
-        <div class="start-hint">Left stick to move · Strike to fight · Build to raise the camp · PERF for the lab</div>
+        <div class="start-hint">Left stick to move · drag the ground to pan · drag the compass to rotate · Strike to fight</div>
         <div class="start-best">BEST EXPERIENCED IN LANDSCAPE</div>
       </div>
     </div>

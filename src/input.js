@@ -18,6 +18,10 @@ export class Input {
     this.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.hit = new THREE.Vector3();
     this.dragId = null;
+    this.dragX = 0;
+    this.dragY = 0;
+    this.pointers = new Map();
+    this.pinchDist = 0;
 
     this.base = document.getElementById('joystick');
     this.knob = document.getElementById('joy-knob');
@@ -29,7 +33,12 @@ export class Input {
 
   setEnabled(v) {
     this.enabled = v;
-    if (!v) this.resetJoystick();
+    if (!v) {
+      this.resetJoystick();
+      this.pointers.clear();
+      this.pinchDist = 0;
+      this.dragId = null;
+    }
   }
 
   resetJoystick() {
@@ -107,6 +116,7 @@ export class Input {
       else if (k === 'e') this.cb.gather?.();
       else if (k === 'b') this.cb.buildToggle?.();
       else if (k === 'p') this.cb.perf?.();
+      else if (k === 'o') this.cb.wardrobe?.();
       else if (k === 'f') this.cb.fullscreen?.();
       else if (k === 'escape') this.cb.cancel?.();
       else if (k === 'enter') this.cb.place?.();
@@ -115,7 +125,12 @@ export class Input {
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.key.toLowerCase());
     });
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.pointers.clear();
+      this.pinchDist = 0;
+      this.dragId = null;
+    });
   }
 
   bindWorld() {
@@ -136,26 +151,65 @@ export class Input {
 
     this.canvas.addEventListener('pointerdown', (e) => {
       if (!this.enabled) return;
-      this.dragId = e.pointerId;
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
         this.canvas.setPointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
+      if (this.pointers.size >= 2) {
+        const pts = [...this.pointers.values()];
+        this.pinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        this.dragId = null;
+        return;
+      }
+      this.dragId = e.pointerId;
+      this.dragX = e.clientX;
+      this.dragY = e.clientY;
       aim(e.clientX, e.clientY);
     });
     this.canvas.addEventListener('pointermove', (e) => {
       if (!this.enabled) return;
+      if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      // Two-finger pinch zoom. It takes priority over pan/aim.
+      if (this.pointers.size >= 2) {
+        const pts = [...this.pointers.values()];
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (this.pinchDist > 1 && dist > 1) this.cb.zoom?.(dist / this.pinchDist);
+        this.pinchDist = dist;
+        return;
+      }
+
+      // Drag the empty world to pan. While a building is being placed the same gesture aims it.
+      if (this.dragId === e.pointerId && !this.cb.isPlacing?.()) {
+        const dx = e.clientX - this.dragX;
+        const dy = e.clientY - this.dragY;
+        if (dx !== 0 || dy !== 0) {
+          this.dragX = e.clientX;
+          this.dragY = e.clientY;
+          this.cb.pan?.(dx, dy);
+        }
+      }
       if (e.pointerType === 'mouse' || e.pointerId === this.dragId) {
         aim(e.clientX, e.clientY);
       }
     });
-    this.canvas.addEventListener('pointerup', () => {
-      this.dragId = null;
-    });
-    this.canvas.addEventListener('pointercancel', () => {
-      this.dragId = null;
-    });
+    const endDrag = (e) => {
+      this.pointers.delete(e.pointerId);
+      if (this.pointers.size < 2) this.pinchDist = 0;
+      if (this.pointers.size === 0) {
+        this.dragId = null;
+      } else if (this.dragId === e.pointerId) {
+        const [id, p] = this.pointers.entries().next().value;
+        this.dragId = id;
+        this.dragX = p.x;
+        this.dragY = p.y;
+      }
+    };
+    this.canvas.addEventListener('pointerup', endDrag);
+    this.canvas.addEventListener('pointercancel', endDrag);
+    this.canvas.addEventListener('lostpointercapture', endDrag);
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 

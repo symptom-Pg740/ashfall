@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { makeRng } from './rng.js';
 
-/** Paint every vertex of a geometry a single colour (sRGB input). */
-export function paint(geo, color, jitter = 0) {
+/** Paint every vertex of a geometry a single colour (sRGB input). Deterministic when jittered. */
+export function paint(geo, color, jitter = 0, seed = 0xa5f411) {
   const c = new THREE.Color(color);
   const count = geo.attributes.position.count;
   const data = new Float32Array(count * 3);
+  const rng = jitter ? makeRng(seed) : null;
   for (let i = 0; i < count; i++) {
-    const j = jitter ? 1 + (Math.random() * 2 - 1) * jitter : 1;
+    const j = rng ? 1 + (rng() * 2 - 1) * jitter : 1;
     data[i * 3] = c.r * j;
     data[i * 3 + 1] = c.g * j;
     data[i * 3 + 2] = c.b * j;
@@ -34,6 +36,20 @@ export function cyl(rTop, rBottom, h, seg, color, x = 0, y = 0, z = 0, rx = 0, r
 
 export function dodeca(r, color, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
   return paint(place(new THREE.DodecahedronGeometry(r, 0), x, y, z, rx, ry, rz), color);
+}
+
+/** Darken vertex colours near the object's base: a cheap baked contact AO. */
+export function bakeBaseAO(geo, height = 0.55, strength = 0.3) {
+  const pos = geo.attributes.position;
+  const col = geo.attributes.color;
+  if (!col) return geo;
+  for (let i = 0; i < pos.count; i++) {
+    const t = Math.min(1, Math.max(0, pos.getY(i) / height));
+    const k = 1 - strength + strength * t;
+    col.setXYZ(i, col.getX(i) * k, col.getY(i) * k, col.getZ(i) * k);
+  }
+  col.needsUpdate = true;
+  return geo;
 }
 
 export function merge(parts) {

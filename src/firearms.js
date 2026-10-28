@@ -1,0 +1,218 @@
+import * as THREE from 'three';
+import { heightAt } from './terrain.js';
+import { clamp, deriveSeed, makeRng } from './rng.js';
+
+/**
+ * Hit resolution, static blockers and the per-shot FX dispatch.
+ *
+ * Gameplay is hitscan: one ray per pellet is tested against analytic ghoul capsules at fire time.
+ * The tracer is a separate presentation layer that reaches the already-known impact point.
+ */
+
+const BUILDING_HEIGHT = {
+  barricade: 1.0,
+  campfire: 0.2,
+  catcher: 1.8,
+  house: 3.2,
+  tower: 5.5,
+  chapel: 5.0,
+};
+
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3();
+const _pellet = new THREE.Vector3();
+const _end = new THREE.Vector3();
+const _normal = new THREE.Vector3();
+const _dir = new THREE.Vector3();
+const _origin = new THREE.Vector3();
+
+export class Firearms {
+  constructor({ enemies, settlement, wasteland, fx }) {
+    this.enemies = enemies;
+    this.settlement = settlement;
+    this.wasteland = wasteland;
+    this.fx = fx;
+    this.rng = makeRng(deriveSeed('firearms'));
+    this._impact = new THREE.Vector3();
+    this._normal = new THREE.Vector3();
+  }
+
+  muzzleWorld(actor, out = _origin) {
+    const muzzle = actor?.rig?.muzzle;
+    if (!muzzle) return null;
+    return muzzle.getWorldPosition(out);
+  }
+
+  /**
+   * Resolve and present one trigger pull.
+   * @returns {{hit:boolean, killed:number, x:number, z:number}}
+   */
+  fire(actor, shot) {
+    const weapon = shot.weapon;
+    const muzzle = this.muzzleWorld(actor);
+    if (!muzzle || !weapon) return { hit: false, killed: 0, x: 0, z: 0 };
+
+    let aimX = shot.aimPoint?.x;
+    let aimY = shot.aimPoint?.y;
+    let aimZ = shot.aimPoint?.z;
+    if (!Number.isFinite(aimX)) {
+      // No target: fire along the character's facing.
+      const yaw = actor.heading || 0;
+      aimX = muzzle.x + Math.sin(yaw) * weapon.range;
+      aimY = muzzle.y;
+      aimZ = muzzle.z + Math.cos(yaw) * weapon.range;
+    }
+
+    _dir.set(aimX - muzzle.x, aimY - muzzle.y, aimZ - muzzle.z).normalize();
+    _end.set(muzzle.x + _dir.x * weapon.range, muzzle.y + _dir.y * weapon.range, muzzle.z + _dir.z * weapon.range);
+
+    let hitAny = false;
+    let kills = 0;
+    let lastX = 0;
+    let lastZ = 0;
+
+    for (let p = 0; p < weapon.pellets; p++) {
+      _pellet.copy(_dir);
+      this.applySpread(_pellet, weapon.spread);
+
+      const enemyHit = this.enemies.raycast(
+        muzzle.x, muzzle.y, muzzle.z,
+        _pellet.x, _pellet.y, _pellet.z,
+        weapon.range,
+      );
+      const staticHit = this.raycastStatic(muzzle, _pellet, weapon.range);
+      const enemyT = enemyHit ? enemyHit.t : Infinity;
+      const staticT = staticHit ? staticHit.t : Infinity;
+
+      if (enemyHit && enemyT <= staticT) {
+        const killed = this.enemies.damage(enemyHit.index, weapon.damage, actor.x, actor.z, 0.35);
+        hitAny = true;
+        if (killed) kills++;
+        this._impact.copy(enemyHit.point);
+        // Lift the hit off the far side of the capsule so the spray reads from the top-down camera.
+        this._impact.y += 0.15;
+        _normal.set(0, 1, 0);
+        lastX = this._impact.x;
+        lastZ = this._impact.z;
+        this.fx.fire({
+          muzzle,
+          impact: this._impact,
+          surface: 'flesh',
+          normal: _normal,
+          visualSpeed: weapon.visualSpeed,
+        });
+      } else if (staticHit) {
+        this._impact.copy(muzzle).addScaledVector(_pellet, staticHit.t);
+        this.fx.fire({
+          muzzle,
+          impact: this._impact,
+          surface: staticHit.surface,
+          normal: staticHit.normal,
+          visualSpeed: weapon.visualSpeed,
+        });
+      } else {
+        _end.copy(muzzle).addScaledVector(_pellet, weapon.range);
+        this.fx.fire({ muzzle, impact: _end, surface: null, normal: null, visualSpeed: weapon.visualSpeed });
+      }
+    }
+
+    return { hit: hitAny, killed: kills, x: lastX, z: lastZ };
+  }
+
+  /** A ray against buildings, obstacles and the height field. */
+  raycastStatic(origin, dir, maxDist) {
+    let bestT = maxDist;
+    let bestSurface = null;
+    let hasHit = false;
+    const ox = origin.x;
+    const oy = origin.y;
+    const oz = origin.z;
+    const dx = dir.x;
+    const dy = dir.y;
+    const dz = dir.z;
+
+    const testCircle = (cx, cz, radius, topY, surface) => {
+      const a = dx * dx + dz * dz;
+      if (a < 1e-6) return;
+      const fx = ox - cx;
+      const fz = oz - cz;
+      const b = 2 * (fx * dx + fz * dz);
+      const c = fx * fx + fz * fz - radius * radius;
+      const disc = b * b - 4 * a * c;
+      if (disc < 0) return;
+      const root = Math.sqrt(disc);
+      const t0 = (-b - root) / (2 * a);
+      const t1 = (-b + root) / (2 * a);
+      const t = t0 >= 0 ? t0 : t1 >= 0 ? t1 : -1;
+      if (t < 0 || t > bestT) return;
+      const y = oy + dy * t;
+      if (y > topY) return;
+      bestT = t;
+      bestSurface = surface;
+      hasHit = true;
+      const hx = ox + dx * t;
+      const hz = oz + dz * t;
+      const nx = hx - cx;
+      const nz = hz - cz;
+      const nl = Math.hypot(nx, nz) || 1;
+      this._normal.set(nx / nl, 0, nz / nl);
+    };
+
+    for (const b of this.settlement.buildings) {
+      if (!b) continue;
+      const top = (b.y || 0) + (BUILDING_HEIGHT[b.type] ?? 2.5);
+      const surface = b.type === 'tower' || b.type === 'barricade' ? 'wood' : 'stone';
+      testCircle(b.x, b.z, b.radius, top, surface);
+    }
+
+    for (const o of this.wasteland.obstacles) {
+      const top = heightAt(o.x, o.z) + clamp(0.6 + o.r, 0.8, 3.2);
+      testCircle(o.x, o.z, o.r, top, 'stone');
+    }
+
+    // Terrain: 1 m samples, only while the ray is close to the ground.
+    const steps = Math.min(40, Math.ceil(maxDist));
+    for (let i = 1; i <= steps; i++) {
+      const t = Math.min(maxDist, i);
+      if (t > bestT) break;
+      const x = ox + dx * t;
+      const y = oy + dy * t;
+      const z = oz + dz * t;
+      if (y <= heightAt(x, z) + 0.03) {
+        bestT = t;
+        bestSurface = 'sand';
+        hasHit = true;
+        this._normal.set(0, 1, 0);
+        break;
+      }
+    }
+
+    if (!hasHit) return null;
+    return { t: bestT, surface: bestSurface, normal: this._normal };
+  }
+
+  /** True when no static blocker or terrain sits between the two points. */
+  hasLineOfSight(x1, y1, z1, x2, y2, z2) {
+    _origin.set(x1, y1, z1);
+    _dir.set(x2 - x1, y2 - y1, z2 - z1);
+    const len = _dir.length();
+    if (len < 0.001) return true;
+    _dir.multiplyScalar(1 / len);
+    return !this.raycastStatic(_origin, _dir, len);
+  }
+
+  applySpread(dir, degrees) {
+    if (!(degrees > 0)) return;
+    const rad = THREE.MathUtils.degToRad(degrees) * Math.sqrt(this.rng());
+    const angle = this.rng() * Math.PI * 2;
+    // Build a tangent basis around the shot direction.
+    _right.set(dir.z, 0, -dir.x);
+    if (_right.lengthSq() < 1e-6) _right.set(1, 0, 0);
+    _right.normalize();
+    _up.crossVectors(_right, dir).normalize();
+    const r = Math.tan(rad);
+    dir.addScaledVector(_right, Math.cos(angle) * r);
+    dir.addScaledVector(_up, Math.sin(angle) * r);
+    dir.normalize();
+  }
+}

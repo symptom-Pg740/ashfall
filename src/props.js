@@ -1,13 +1,61 @@
 import * as THREE from 'three';
-import { heightAt, slopeAt, WORLD_RADIUS } from './terrain.js';
-import { makeRng, smoothstep } from './rng.js';
+import { heightAt, slopeAt, moistureAt, roadAt, WORLD_RADIUS } from './terrain.js';
+import { makeRng, deriveSeed, smoothstep } from './rng.js';
 import { box, cyl, dodeca, merge, paint, PALETTE, shadowTexture } from './geo.js';
+import { scatterDisc } from './scatter.js';
+import { makeDetailSet } from './textures.js';
 
 const tmpObj = new THREE.Object3D();
 const tmpColor = new THREE.Color();
+const UP = new THREE.Vector3(0, 1, 0);
+const nrm = new THREE.Vector3();
+
+/**
+ * Sit a large prop on the field: tilt to the local slope and drop it to the lowest point under its
+ * footprint, so a slope buries the uphill edge instead of leaving the downhill edge floating.
+ */
+function alignToGround(obj, x, z, radius, sink = 0) {
+  const hx1 = heightAt(x + radius, z);
+  const hx0 = heightAt(x - radius, z);
+  const hz1 = heightAt(x, z + radius);
+  const hz0 = heightAt(x, z - radius);
+  const h = Math.min(heightAt(x, z), hx1, hx0, hz1, hz0);
+  nrm.set(-(hx1 - hx0) / (2 * radius), 1, -(hz1 - hz0) / (2 * radius)).normalize();
+  obj.position.set(x, h - sink, z);
+  obj.quaternion.setFromUnitVectors(UP, nrm);
+}
 
 function mat() {
   return new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+}
+
+/** Lambert + a vertex-shader sway. Phase offsets come from the instance position. */
+function windMaterial({ strength, doubleSided = false }) {
+  const material = new THREE.MeshLambertMaterial({
+    vertexColors: true,
+    flatShading: true,
+    side: doubleSided ? THREE.DoubleSide : THREE.FrontSide,
+  });
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.uniforms.uWind = { value: strength };
+    shader.vertexShader = `uniform float uTime;\nuniform float uWind;\n${shader.vertexShader}`;
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+        float windPhase = instanceMatrix[3].x * 0.35 + instanceMatrix[3].z * 0.27;
+      #else
+        float windPhase = 0.0;
+      #endif
+      float windBend = sin(uTime * 1.7 + windPhase) * uWind * smoothstep(0.0, 0.8, position.y);
+      transformed.x += windBend;
+      transformed.z += windBend * 0.45;`,
+    );
+    material.userData.shader = shader;
+  };
+  material.customProgramCacheKey = () => `ashfall-wind-${strength}-${doubleSided ? 'ds' : 'ss'}`;
+  return material;
 }
 
 function instanced(geo, material, count, castColor = true) {
@@ -33,15 +81,15 @@ function tint(mesh, i, hex) {
   mesh.setColorAt(i, tmpColor);
 }
 
-function buildTree() {
+function buildTree(rng) {
   const parts = [];
   parts.push(cyl(0.07, 0.2, 2.7, 5, PALETTE.wood, 0, 1.35, 0));
   for (let i = 0; i < 6; i++) {
-    const len = 0.8 + Math.random() * 1.5;
+    const len = 0.8 + rng() * 1.5;
     const g = new THREE.CylinderGeometry(0.018, 0.06, len, 4);
     g.translate(0, len / 2, 0);
-    g.rotateZ(0.55 + Math.random() * 0.75);
-    g.rotateY(i * 1.7 + Math.random());
+    g.rotateZ(0.55 + rng() * 0.75);
+    g.rotateY(i * 1.7 + rng());
     g.translate(0, 1.15 + i * 0.22, 0);
     paint(g, i % 2 ? PALETTE.woodDark : PALETTE.wood);
     parts.push(g);
@@ -216,28 +264,28 @@ function buildCactus() {
   return merge(p);
 }
 
-function buildShrub() {
+function buildShrub(rng) {
   const p = [];
   const cols = ['#7f815a', '#6d704c', '#92906a', '#5f6647'];
   for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 + Math.random() * 0.4;
-    const r = i === 0 ? 0 : 0.22 + Math.random() * 0.26;
+    const a = (i / 5) * Math.PI * 2 + rng() * 0.4;
+    const r = i === 0 ? 0 : 0.22 + rng() * 0.26;
     p.push(
       dodeca(
-        0.18 + Math.random() * 0.16,
+        0.18 + rng() * 0.16,
         cols[i % cols.length],
         Math.cos(a) * r,
-        0.18 + Math.random() * 0.22,
+        0.18 + rng() * 0.22,
         Math.sin(a) * r,
-        Math.random() * 3,
-        Math.random() * 3,
-        Math.random() * 3
+        rng() * 3,
+        rng() * 3,
+        rng() * 3
       )
     );
   }
   for (let i = 0; i < 4; i++) {
-    const a = Math.random() * Math.PI * 2;
-    p.push(cyl(0.015, 0.03, 0.55 + Math.random() * 0.2, 3, '#5f5336', Math.cos(a) * 0.14, 0.38, Math.sin(a) * 0.14, 0.2, a, 0.15));
+    const a = rng() * Math.PI * 2;
+    p.push(cyl(0.015, 0.03, 0.55 + rng() * 0.2, 3, '#5f5336', Math.cos(a) * 0.14, 0.38, Math.sin(a) * 0.14, 0.2, a, 0.15));
   }
   return merge(p);
 }
@@ -267,25 +315,39 @@ function buildGrass() {
 export function createWasteland(scene, seed = 0x51a7) {
   const rng = makeRng(seed);
   const material = mat();
-  const grassMaterial = new THREE.MeshLambertMaterial({
+  const rockDetail = makeDetailSet('rock', deriveSeed('rock-detail'));
+  rockDetail.map.repeat.set(2, 2);
+  rockDetail.normalMap.repeat.set(2, 2);
+  const rockMaterial = new THREE.MeshLambertMaterial({
     vertexColors: true,
-    side: THREE.DoubleSide,
     flatShading: true,
+    map: rockDetail.map,
+    normalMap: rockDetail.normalMap,
+    normalScale: new THREE.Vector2(0.8, 0.8),
   });
+  const grassMaterial = windMaterial({ strength: 0.075, doubleSided: true });
+  const shrubMaterial = windMaterial({ strength: 0.035 });
+  const windMaterials = [grassMaterial, shrubMaterial];
 
   const result = { grass: null, meshes: [], obstacles: [] };
   const shadowSpots = [];
 
   // ---- rocks -------------------------------------------------------------
   {
-    const count = 130;
+    const places = scatterDisc(rng, {
+      minDist: 3.2,
+      radius: WORLD_RADIUS - 1,
+      inner: 3,
+      count: 130,
+      weight: (x, z) => {
+        if (roadAt(x, z) > 0.55) return 0;
+        return 0.12 + slopeAt(x, z, 1.4) * 2.2;
+      },
+    });
     const geo = paint(new THREE.DodecahedronGeometry(1, 0), '#8b8170');
-    const mesh = instanced(geo, material, count);
-    for (let i = 0; i < count; i++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = 4 + Math.sqrt(rng()) * (WORLD_RADIUS - 4);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const mesh = instanced(geo, rockMaterial, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       const s = rng.range(0.22, 1.35);
       tmpObj.position.set(x, heightAt(x, z) + s * 0.18, z);
       tmpObj.rotation.set(rng() * 3, rng() * 6, rng() * 3);
@@ -301,14 +363,21 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- dead trees --------------------------------------------------------
   {
-    const count = 38;
-    const geo = buildTree();
-    const mesh = instanced(geo, material, count);
-    for (let i = 0; i < count; i++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = rng.range(9, WORLD_RADIUS - 2);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const places = scatterDisc(rng, {
+      minDist: 6,
+      radius: WORLD_RADIUS - 2,
+      inner: 9,
+      count: 38,
+      weight: (x, z) => {
+        if (slopeAt(x, z, 1.2) > 0.28) return 0;
+        if (roadAt(x, z) > 0.4) return 0;
+        return 0.25 + moistureAt(x, z) * 0.35;
+      },
+    });
+    const geo = buildTree(rng);
+    const mesh = instanced(geo, material, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       const s = rng.range(0.65, 1.55);
       tmpObj.position.set(x, heightAt(x, z) - 0.05, z);
       tmpObj.rotation.set(rng.range(-0.06, 0.06), rng() * 6.28, rng.range(-0.06, 0.06));
@@ -326,14 +395,21 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- cacti -------------------------------------------------------------
   {
-    const count = 30;
+    const places = scatterDisc(rng, {
+      minDist: 7,
+      radius: WORLD_RADIUS - 3,
+      inner: 9,
+      count: 30,
+      weight: (x, z) => {
+        if (slopeAt(x, z, 1.1) > 0.22) return 0;
+        if (roadAt(x, z) > 0.38) return 0;
+        return 0.3 + (1 - moistureAt(x, z)) * 0.5;
+      },
+    });
     const geo = buildCactus();
-    const mesh = instanced(geo, material, count);
-    for (let i = 0; i < count; i++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = rng.range(9, WORLD_RADIUS - 3);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const mesh = instanced(geo, material, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       const s = rng.range(0.8, 1.35);
       tmpObj.position.set(x, heightAt(x, z) - 0.05, z);
       tmpObj.rotation.set(0, rng() * 6.28, rng.range(-0.04, 0.04));
@@ -350,14 +426,21 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- desert shrubs -----------------------------------------------------
   {
-    const count = 95;
-    const geo = buildShrub();
-    const mesh = instanced(geo, material, count);
-    for (let i = 0; i < count; i++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = 3 + Math.sqrt(rng()) * (WORLD_RADIUS - 2);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const places = scatterDisc(rng, {
+      minDist: 2.6,
+      radius: WORLD_RADIUS - 2,
+      inner: 3,
+      count: 95,
+      weight: (x, z) => {
+        if (slopeAt(x, z, 1.0) > 0.32) return 0;
+        if (roadAt(x, z) > 0.45) return 0;
+        return 0.15 + moistureAt(x, z) * 0.8;
+      },
+    });
+    const geo = buildShrub(rng);
+    const mesh = instanced(geo, shrubMaterial, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       const s = rng.range(0.65, 1.5);
       tmpObj.position.set(x, heightAt(x, z) - 0.04, z);
       tmpObj.rotation.set(0, rng() * 6.28, 0);
@@ -373,28 +456,30 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- ruined structures -------------------------------------------------
   {
-    const count = 24;
+    const places = scatterDisc(rng, {
+      minDist: 8,
+      radius: 42,
+      inner: 16,
+      count: 24,
+      weight: (x, z) => {
+        if (slopeAt(x, z, 2.5) > 0.2) return 0;
+        if (roadAt(x, z) > 0.3) return 0;
+        return 0.65;
+      },
+    });
     const geo = buildRuin();
-    const mesh = instanced(geo, material, count);
-    let placed = 0;
-    let guard = 0;
-    while (placed < count && guard++ < 400) {
-      const angle = rng() * Math.PI * 2;
-      const radius = rng.range(16, WORLD_RADIUS + 2);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      if (slopeAt(x, z, 1.6) > 0.3) continue;
+    const mesh = instanced(geo, material, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       const s = rng.range(0.65, 1.3);
-      tmpObj.position.set(x, heightAt(x, z) - 0.12, z);
-      tmpObj.rotation.set(0, rng() * 6.28, 0);
+      alignToGround(tmpObj, x, z, 2.5, 0.42);
+      tmpObj.rotateY(rng() * 6.28);
       tmpObj.scale.set(s, s * rng.range(0.85, 1.1), s);
       tmpObj.updateMatrix();
-      mesh.setMatrixAt(placed, tmpObj.matrix);
-      tint(mesh, placed, rng.pick(['#efd9b9', '#e6c1a3', '#d5a98a', '#c98e72']));
+      mesh.setMatrixAt(i, tmpObj.matrix);
+      tint(mesh, i, rng.pick(['#efd9b9', '#e6c1a3', '#d5a98a', '#c98e72']));
       result.obstacles.push({ x, z, r: 2.5 * s });
-      placed++;
     }
-    mesh.count = placed;
     finalize(mesh);
     scene.add(mesh);
     result.meshes.push(mesh);
@@ -402,17 +487,24 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- wrecked vehicles --------------------------------------------------
   {
-    const count = 6;
+    const places = scatterDisc(rng, {
+      minDist: 12,
+      radius: 46,
+      inner: 15,
+      count: 6,
+      weight: (x, z) => {
+        if (slopeAt(x, z, 2) > 0.25) return 0;
+        if (roadAt(x, z) > 0.5) return 0;
+        return 0.5;
+      },
+    });
     const geo = buildWreck();
-    const mesh = instanced(geo, material, count);
-    for (let i = 0; i < count; i++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = rng.range(15, 46);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const mesh = instanced(geo, material, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       const s = rng.range(0.85, 1.2);
-      tmpObj.position.set(x, heightAt(x, z) - 0.1, z);
-      tmpObj.rotation.set(rng.range(-0.05, 0.05), rng() * 6.28, rng.range(-0.05, 0.05));
+      alignToGround(tmpObj, x, z, 1.9, 0.26);
+      tmpObj.rotateY(rng() * 6.28);
       tmpObj.scale.setScalar(s);
       tmpObj.updateMatrix();
       mesh.setMatrixAt(i, tmpObj.matrix);
@@ -429,8 +521,8 @@ export function createWasteland(scene, seed = 0x51a7) {
     const bus = new THREE.Mesh(buildBus(), material);
     const bx = 10.5;
     const bz = -12.5;
-    bus.position.set(bx, heightAt(bx, bz) - 0.15, bz);
-    bus.rotation.set(0.02, -0.55, 0.045);
+    alignToGround(bus, bx, bz, 3.1, 0.3);
+    bus.rotateY(-0.55);
     scene.add(bus);
     result.meshes.push(bus);
     result.obstacles.push({ x: bx, z: bz, r: 3.15 });
@@ -451,8 +543,8 @@ export function createWasteland(scene, seed = 0x51a7) {
     const ruin = new THREE.Mesh(buildAdobeRuin(), material);
     const rx = 10.5;
     const rz = 6.5;
-    ruin.position.set(rx, heightAt(rx, rz) - 0.1, rz);
-    ruin.rotation.y = -0.35;
+    alignToGround(ruin, rx, rz, 2.6, 0.18);
+    ruin.rotateY(-0.35);
     scene.add(ruin);
     result.meshes.push(ruin);
     result.obstacles.push({ x: rx, z: rz, r: 3.3 });
@@ -460,14 +552,17 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- debris ------------------------------------------------------------
   {
-    const count = 70;
+    const places = scatterDisc(rng, {
+      minDist: 2.2,
+      radius: WORLD_RADIUS,
+      inner: 6,
+      count: 70,
+      weight: (x, z) => (roadAt(x, z) > 0.6 ? 0 : 0.6),
+    });
     const geo = paint(new THREE.BoxGeometry(0.16, 0.13, 1.9), PALETTE.woodDark, 0.08);
-    const mesh = instanced(geo, material, count);
-    for (let i = 0; i < count; i++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = rng.range(6, WORLD_RADIUS);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const mesh = instanced(geo, material, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       tmpObj.position.set(x, heightAt(x, z) + 0.06, z);
       tmpObj.rotation.set(rng.range(-0.1, 0.1), rng() * 6.28, rng.range(-0.06, 0.06));
       tmpObj.scale.set(rng.range(0.7, 1.5), 1, rng.range(0.6, 1.2));
@@ -481,14 +576,17 @@ export function createWasteland(scene, seed = 0x51a7) {
   }
 
   {
-    const count = 34;
+    const places = scatterDisc(rng, {
+      minDist: 3.4,
+      radius: WORLD_RADIUS,
+      inner: 8,
+      count: 34,
+      weight: (x, z) => (roadAt(x, z) > 0.5 ? 0 : 0.5),
+    });
     const geo = paint(new THREE.CylinderGeometry(0.34, 0.34, 0.92, 8), PALETTE.rustDark);
-    const mesh = instanced(geo, material, count);
-    for (let i = 0; i < count; i++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = rng.range(8, WORLD_RADIUS);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const mesh = instanced(geo, material, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       tmpObj.position.set(x, heightAt(x, z) + 0.44, z);
       tmpObj.rotation.set(rng.range(-0.08, 0.08), rng() * 6.28, rng.range(-0.08, 0.08));
       tmpObj.scale.setScalar(rng.range(0.8, 1.25));
@@ -502,14 +600,17 @@ export function createWasteland(scene, seed = 0x51a7) {
   }
 
   {
-    const count = 46;
+    const places = scatterDisc(rng, {
+      minDist: 2.8,
+      radius: WORLD_RADIUS,
+      inner: 5,
+      count: 46,
+      weight: (x, z) => (roadAt(x, z) > 0.55 ? 0 : 0.5),
+    });
     const geo = paint(new THREE.DodecahedronGeometry(0.45, 0), PALETTE.concreteDark);
-    const mesh = instanced(geo, material, count);
-    for (let i = 0; i < count; i++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = rng.range(5, WORLD_RADIUS);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const mesh = instanced(geo, rockMaterial, places.length);
+    for (let i = 0; i < places.length; i++) {
+      const { x, z } = places[i];
       const s = rng.range(0.5, 1.6);
       tmpObj.position.set(x, heightAt(x, z) + s * 0.12, z);
       tmpObj.rotation.set(rng() * 3, rng() * 6, rng() * 3);
@@ -527,17 +628,24 @@ export function createWasteland(scene, seed = 0x51a7) {
   {
     const geo = buildGrass();
     const spots = [];
-    for (let c = 0; c < 120; c++) {
-      const angle = rng() * Math.PI * 2;
-      const radius = 3 + Math.sqrt(rng()) * (WORLD_RADIUS - 1);
-      const cx = Math.cos(angle) * radius;
-      const cz = Math.sin(angle) * radius;
+    const clusters = scatterDisc(rng, {
+      minDist: 3.8,
+      radius: WORLD_RADIUS - 1,
+      inner: 3,
+      count: 130,
+      weight: (x, z) => {
+        if (slopeAt(x, z, 1.0) > 0.34) return 0;
+        if (roadAt(x, z) > 0.5) return 0;
+        return 0.2 + moistureAt(x, z) * 0.85;
+      },
+    });
+    for (const cluster of clusters) {
       const blades = rng.int(5, 9);
       for (let j = 0; j < blades; j++) {
         const a = rng() * Math.PI * 2;
         const r = Math.sqrt(rng()) * 1.7;
-        const x = cx + Math.cos(a) * r;
-        const z = cz + Math.sin(a) * r;
+        const x = cluster.x + Math.cos(a) * r;
+        const z = cluster.z + Math.sin(a) * r;
         const s = rng.range(0.5, 1.25);
         spots.push({ x, z, s, rot: rng() * 6.28 });
       }
@@ -634,6 +742,13 @@ export function createWasteland(scene, seed = 0x51a7) {
     result.grass.castShadow = false;
     result.grass.receiveShadow = true;
   }
+
+  result.updateWind = (time) => {
+    for (const m of windMaterials) {
+      const shader = m.userData.shader;
+      if (shader) shader.uniforms.uTime.value = time;
+    }
+  };
 
   return result;
 }

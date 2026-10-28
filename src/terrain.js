@@ -1,24 +1,18 @@
 import * as THREE from 'three';
-import { smoothstep, makeRng } from './rng.js';
+import { smoothstep, deriveSeed } from './rng.js';
+import { makeDetailSet } from './textures.js';
+import { WorldField } from './field.js';
 
 export const WORLD_RADIUS = 54;
 export const TERRAIN_SIZE = 190;
-const SEGMENTS = 88;
+const SEGMENTS = 128;
+const WORLD_EXTENT = 190;
 
-/**
- * Shared height field. Flat-ish camp basin in the middle, dunes further out.
- * Everything (terrain mesh, props, player, buildings) samples this.
- */
+/** Baked once at module load; every system samples the same field. */
+export const worldField = new WorldField(deriveSeed('terrain'), { size: 384, extent: WORLD_EXTENT });
+
 export function heightAt(x, z) {
-  const d = Math.hypot(x, z);
-  const relief = smoothstep(8, 34, d);
-  let h = 0;
-  h += Math.sin(x * 0.068 + 2.1) * Math.cos(z * 0.057 - 0.6) * 2.15;
-  h += Math.cos((x - z) * 0.041) * 1.45;
-  h += Math.sin(x * 0.29 + z * 0.22) * 0.32;
-  h *= 0.1 + 0.9 * relief;
-  h -= (1 - smoothstep(5, 15, d)) * 0.3;
-  return h;
+  return worldField.heightAt(x, z);
 }
 
 export function slopeAt(x, z, step = 0.9) {
@@ -27,50 +21,22 @@ export function slopeAt(x, z, step = 0.9) {
   return Math.hypot(dx, dz) / (step * 2);
 }
 
-/** Cheap deterministic value noise for colour speckling. */
-function noise2(x, z) {
-  return Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+export function moistureAt(x, z) {
+  return worldField.moistureAt(x, z);
 }
 
-/** Cheap tileable-looking cracked-earth map. White base, dark hairlines. */
-function crackedEarthTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  const rng = makeRng(0xc4ac1e);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, 256, 256);
+export function roadAt(x, z) {
+  return worldField.roadAt(x, z);
+}
 
-  for (let i = 0; i < 46; i++) {
-    let x = rng() * 256;
-    let y = rng() * 256;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    const segments = 2 + Math.floor(rng() * 4);
-    for (let s = 0; s < segments; s++) {
-      x += (rng() - 0.5) * 78;
-      y += (rng() - 0.5) * 78;
-      ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = `rgba(96, 66, 39, ${0.05 + rng() * 0.07})`;
-    ctx.lineWidth = 0.6 + rng() * 0.6;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-  }
-  for (let i = 0; i < 700; i++) {
-    ctx.fillStyle = `rgba(88, 59, 34, ${0.02 + rng() * 0.05})`;
-    ctx.fillRect(rng() * 256, rng() * 256, 1, 1);
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.MirroredRepeatWrapping;
-  tex.repeat.set(16, 16);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
+/** Cheap deterministic value noise for colour speckling. */
+function speck(x, z) {
+  const n = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return n - Math.floor(n);
 }
 
 export function createTerrain(scene) {
+  const field = worldField;
   const geo = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, SEGMENTS, SEGMENTS);
   geo.rotateX(-Math.PI / 2);
 
@@ -83,6 +49,7 @@ export function createTerrain(scene) {
   const char = new THREE.Color('#805c3f');
   const road = new THREE.Color('#cdb68c');
   const cool = new THREE.Color('#a09078');
+  const rock = new THREE.Color('#8f8069');
   const c = new THREE.Color();
 
   for (let i = 0; i < pos.count; i++) {
@@ -92,34 +59,28 @@ export function createTerrain(scene) {
     pos.setY(i, y);
 
     const d = Math.hypot(x, z);
-    const slope = slopeAt(x, z, 0.8);
-    const speck = noise2(x, z) - Math.floor(noise2(x, z));
+    const slope = field.slopeAt(x, z);
+    const moist = field.moistureAt(x, z);
+    const roadMix = field.roadAt(x, z);
+    const broad = field.noise(x * 0.035 + 4.3, z * 0.035 - 2.1, 5) * 0.5 + 0.5;
     const patch = Math.sin(x * 0.21 + 1.3) * Math.cos(z * 0.17 - 0.8) * 0.5 + 0.5;
     const patch2 = Math.sin(x * 0.06 - 2.1) * Math.cos(z * 0.08 + 0.5) * 0.5 + 0.5;
     const lowness = smoothstep(-1.6, 1.8, y);
 
     c.copy(dust);
-    c.lerp(ash, 0.12 + patch * 0.52);
-    c.lerp(pale, Math.max(0, patch2 - 0.62) * 0.9);
-    c.lerp(rust, Math.max(0, patch - 0.7) * 0.7);
-    c.lerp(char, Math.max(0, 0.24 - patch) * 0.9);
+    c.lerp(ash, 0.12 + broad * 0.4);
+    c.lerp(cool, Math.max(0, moist - 0.58) * 0.5);
+    c.lerp(pale, Math.max(0, patch2 - 0.56) * 0.8);
+    c.lerp(rust, Math.max(0, broad - 0.62) * 0.8);
+    c.lerp(char, Math.max(0, 0.28 - broad) * 0.72);
     c.lerp(char, (1 - lowness) * 0.22);
-    c.lerp(cool, (1 - lowness) * 0.1);
+    c.lerp(rock, smoothstep(0.2, 0.62, slope) * 0.62);
     if (d < 18) c.lerp(char, (1 - d / 18) * 0.1);
 
-    // cracked dirt roads: a winding north-south track and a cross street
-    const roadX = Math.sin(z * 0.052) * 8 + Math.cos(z * 0.021) * 4;
-    const roadZ = 3 + Math.sin(x * 0.055 + 0.5) * 2.5;
-    const roadWobble = Math.sin(z * 0.7 + x * 0.3) * 0.5;
-    const crossWobble = Math.sin(x * 0.9 + z * 0.2) * 0.35;
-    const roadMix = Math.max(
-      smoothstep(4.1, 1.3, Math.abs(x - roadX) + roadWobble),
-      smoothstep(2.7, 0.9, Math.abs(z - roadZ) + crossWobble) * 0.9
-    ) * (0.5 + patch * 0.3);
-    if (Math.abs(z) < 82) c.lerp(road, roadMix);
+    c.lerp(road, roadMix * (0.66 + patch * 0.2));
 
-    c.multiplyScalar(0.84 + speck * 0.24);
-    if (slope > 0.16) c.multiplyScalar(0.82);
+    c.multiplyScalar(0.84 + speck(x, z) * 0.24);
+    if (slope > 0.16) c.multiplyScalar(0.86);
 
     colors[i * 3] = c.r;
     colors[i * 3 + 1] = c.g;
@@ -129,10 +90,14 @@ export function createTerrain(scene) {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
 
+  const sand = makeDetailSet('sand', deriveSeed('sand-detail'));
+  sand.map.repeat.set(24, 24);
+  sand.normalMap.repeat.set(24, 24);
   const mat = new THREE.MeshLambertMaterial({
     vertexColors: true,
-    flatShading: true,
-    map: crackedEarthTexture(),
+    map: sand.map,
+    normalMap: sand.normalMap,
+    normalScale: new THREE.Vector2(0.35, 0.35),
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;

@@ -1,4 +1,6 @@
 import { BUILDINGS } from './settlement.js';
+import { clearSave } from './save.js';
+import { SLOTS, itemLabel } from './wardrobe.js';
 
 export class UI {
   constructor() {
@@ -9,8 +11,17 @@ export class UI {
     this.hintTimer = 0;
     this.perfOpen = false;
     this.buildOpen = false;
+    this.wardrobeOpen = false;
     this.perfLastHistory = 0;
-    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: false };
+    this.lastAmmo = '';
+    this.lastArmed = null;
+    this.lastMag = 0;
+    this.lastReloading = false;
+    this.hitTimer = 0;
+    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: true };
+    this.orientationLock = null;
+    this.compassDrag = null;
+    this.compassAngle = 0;
 
     this.el = {
       scrap: document.getElementById('hud-scrap'),
@@ -35,12 +46,27 @@ export class UI {
       placeConfirm: document.getElementById('place-confirm'),
       placeCancel: document.getElementById('place-cancel'),
       perfBtn: document.getElementById('perf-btn'),
+      outfitBtn: document.getElementById('outfit-btn'),
+      wardrobePanel: document.getElementById('wardrobe-panel'),
+      wardrobeList: document.getElementById('wardrobe-list'),
+      wardrobeClose: document.getElementById('wardrobe-close'),
+      ammo: document.getElementById('hud-ammo'),
+      ammoChip: document.getElementById('ammo-chip'),
+      hitMarker: document.getElementById('hit-marker'),
+      pSeed: document.getElementById('p-seed'),
+      seedReroll: document.getElementById('seed-reroll'),
+      saveReset: document.getElementById('save-reset'),
       fsBtn: document.getElementById('fs-btn'),
+      orientBtn: document.getElementById('orient-btn'),
+      compass: document.getElementById('compass'),
+      compassNeedle: document.getElementById('compass-needle'),
+      compassHome: document.getElementById('compass-home'),
       perfPanel: document.getElementById('perf-panel'),
       perfClose: document.getElementById('perf-close'),
       graph: document.getElementById('fps-graph'),
       start: document.getElementById('start-screen'),
       startBtn: document.getElementById('start-btn'),
+      newRun: document.getElementById('new-run-btn'),
       pFps: document.getElementById('p-fps'),
       pMs: document.getElementById('p-ms'),
       pMin: document.getElementById('p-min'),
@@ -92,6 +118,11 @@ export class UI {
     };
     this.el.startBtn.addEventListener('pointerdown', start);
     this.el.startBtn.addEventListener('click', start);
+    this.el.newRun.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearSave();
+      window.location.reload();
+    });
 
     this.el.build.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -123,10 +154,36 @@ export class UI {
       e.preventDefault();
       this.togglePerf();
     });
+    this.el.outfitBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.toggleWardrobe();
+    });
+    this.el.wardrobeClose.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.toggleWardrobe(false);
+    });
     this.el.fsBtn.addEventListener('click', (e) => {
       e.preventDefault();
       this.handleFullscreenGesture();
     });
+    this.el.seedReroll.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearSave();
+      const next = (Math.random() * 0xffffffff) >>> 0;
+      const url = new URL(window.location.href);
+      url.searchParams.set('seed', next.toString(16).padStart(8, '0'));
+      window.location.href = url.toString();
+    });
+    this.el.saveReset.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearSave();
+      window.location.reload();
+    });
+    this.el.orientBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.toggleOrientation();
+    });
+    this.bindCompass();
     const syncFs = () => this.syncFullscreen();
     document.addEventListener('fullscreenchange', syncFs);
     document.addEventListener('webkitfullscreenchange', syncFs);
@@ -161,7 +218,7 @@ export class UI {
     });
 
     // Stop taps on UI chrome from ever reaching the world.
-    for (const root of [this.el.buildBar, this.el.perfPanel, document.querySelector('.hud-top'), document.querySelector('.actions'), document.querySelector('.joystick-wrap')]) {
+    for (const root of [this.el.buildBar, this.el.perfPanel, this.el.wardrobePanel, document.querySelector('.hud-top'), document.querySelector('.actions'), document.querySelector('.joystick-wrap')]) {
       if (!root) continue;
       root.addEventListener('pointerdown', (e) => e.stopPropagation());
     }
@@ -177,6 +234,138 @@ export class UI {
   togglePerf(force) {
     this.perfOpen = typeof force === 'boolean' ? force : !this.perfOpen;
     this.el.perfPanel.classList.toggle('hidden', !this.perfOpen);
+    if (this.perfOpen) this.toggleWardrobe(false);
+  }
+
+  toggleWardrobe(force) {
+    this.wardrobeOpen = typeof force === 'boolean' ? force : !this.wardrobeOpen;
+    this.el.wardrobePanel.classList.toggle('hidden', !this.wardrobeOpen);
+    if (this.wardrobeOpen) this.togglePerf(false);
+  }
+
+  setWeapon(armed, name) {
+    if (armed === this.lastArmed) return;
+    this.lastArmed = armed;
+    this.el.strike.classList.toggle('is-firearm', !!armed);
+    if (name) this.el.strike.title = name;
+    this.renderStrikeLabel();
+  }
+
+  setAmmo(state) {
+    if (!this.el.ammo || !this.el.ammoChip) return;
+    this.lastArmed = state.armed;
+    this.lastMag = state.mag;
+    this.lastReloading = !!state.reloading;
+    this.el.strike.classList.toggle('is-firearm', !!state.armed);
+    const key = `${state.armed}|${state.mag}|${state.reloading}`;
+    if (key !== this.lastAmmo) {
+      this.lastAmmo = key;
+      this.el.ammoChip.classList.toggle('hidden', !state.armed);
+      this.el.ammoChip.classList.toggle('reloading', !!state.reloading);
+      this.el.ammo.textContent = state.reloading ? '··' : String(state.mag);
+      this.renderStrikeLabel();
+    }
+  }
+
+  renderStrikeLabel() {
+    const label = this.el.strike.querySelector('span:last-child');
+    if (!label) return;
+    if (!this.lastArmed) label.textContent = 'STRIKE';
+    else if (this.lastReloading) label.textContent = 'RELOAD';
+    else label.textContent = `FIRE ${this.lastMag}`;
+  }
+
+  hitMarker(kill = false) {
+    const el = this.el.hitMarker;
+    if (!el) return;
+    el.classList.remove('hit', 'kill');
+    void el.offsetWidth;
+    el.classList.add('hit');
+    if (kill) el.classList.add('kill');
+    clearTimeout(this.hitTimer);
+    this.hitTimer = setTimeout(() => el.classList.remove('hit', 'kill'), 140);
+  }
+
+  buildWardrobe(equipment) {
+    if (!this.el.wardrobeList) return;
+    this.el.wardrobeList.innerHTML = '';
+    for (const slot of SLOTS) {
+      const row = document.createElement('button');
+      row.className = 'wardrobe-row';
+      row.type = 'button';
+      const label = document.createElement('small');
+      label.textContent = slot.label;
+      const value = document.createElement('b');
+      value.textContent = itemLabel(slot.id, equipment?.[slot.id] || 'none');
+      row.append(label, value);
+      row.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.cb.wardrobeCycle?.(slot.id, e.shiftKey ? -1 : 1);
+      });
+      this.el.wardrobeList.appendChild(row);
+    }
+  }
+
+  bindCompass() {
+    const el = this.el.compass;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('#compass-home')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.compassDrag = { id: e.pointerId, x: e.clientX, moved: false };
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    });
+    el.addEventListener('pointermove', (e) => {
+      const drag = this.compassDrag;
+      if (!drag || drag.id !== e.pointerId) return;
+      e.preventDefault();
+      const dx = e.clientX - drag.x;
+      if (dx !== 0) {
+        drag.x = e.clientX;
+        if (Math.abs(dx) > 1) drag.moved = true;
+        this.cb.compassRotate?.(dx * 0.012);
+      }
+    });
+    const end = (e) => {
+      const drag = this.compassDrag;
+      if (!drag || drag.id !== e.pointerId) return;
+      this.compassDrag = null;
+      if (!drag.moved) this.cb.compassNorth?.();
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', (e) => {
+      if (this.compassDrag && this.compassDrag.id === e.pointerId) this.compassDrag = null;
+    });
+    this.el.compassHome.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.cb.recenter?.();
+    });
+  }
+
+  setResume(resumed) {
+    this.el.startBtn.textContent = resumed ? 'CONTINUE' : 'ENTER THE WASTELAND';
+    this.el.newRun.classList.toggle('hidden', !resumed);
+  }
+
+  setSeed(seed) {
+    this.el.pSeed.textContent = (seed >>> 0).toString(16).padStart(8, '0');
+    this.el.pSeed.title = `World seed ${seed >>> 0}`;
+  }
+
+  setCompass(yaw, free) {
+    const deg = (yaw * 180) / Math.PI;
+    if (Math.abs(deg - this.compassAngle) > 0.2) {
+      this.compassAngle = deg;
+      this.el.compassNeedle.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+      this.el.compass.setAttribute('aria-valuenow', String(((Math.round(deg) % 360) + 360) % 360));
+    }
+    this.el.compass.classList.toggle('free', !!free);
   }
 
   syncFullscreen() {
@@ -184,8 +373,49 @@ export class UI {
     this.el.fsBtn.classList.toggle('is-fs', active);
     this.el.fsBtn.setAttribute('aria-pressed', String(active));
     this.el.fsBtn.title = active ? 'Exit fullscreen' : 'Fullscreen';
+    // Leaving fullscreen also releases the orientation lock on every browser that supports it.
+    if (!active && this.orientationLock) this.clearOrientationLock();
     // The viewport changes when browser chrome disappears; reframe on the next tick.
     setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
+  }
+
+  clearOrientationLock() {
+    this.orientationLock = null;
+    this.el.orientBtn.classList.remove('is-locked');
+    this.el.orientBtn.setAttribute('aria-pressed', 'false');
+    this.el.orientBtn.title = 'Lock landscape / portrait';
+  }
+
+  requestFullscreen() {
+    const root = document.documentElement;
+    const request = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (!request) return Promise.reject(new Error('fullscreen unsupported'));
+    return Promise.resolve(request.call(root));
+  }
+
+  async toggleOrientation() {
+    const so = window.screen && window.screen.orientation;
+    if (!so || typeof so.lock !== 'function') {
+      this.toast('ROTATE DEVICE · LOCK UNSUPPORTED', true);
+      return;
+    }
+    try {
+      if (!(document.fullscreenElement || document.webkitFullscreenElement)) {
+        await this.requestFullscreen();
+      }
+      const portraitNow =
+        String(so.type || '').indexOf('portrait') === 0 || window.innerHeight > window.innerWidth;
+      const next = portraitNow ? 'landscape' : 'portrait';
+      await so.lock(next);
+      this.orientationLock = next;
+      this.el.orientBtn.classList.add('is-locked');
+      this.el.orientBtn.setAttribute('aria-pressed', 'true');
+      this.el.orientBtn.title = `${next === 'landscape' ? 'Landscape' : 'Portrait'} locked · tap to switch`;
+      this.toast(`${next.toUpperCase()} LOCKED`);
+    } catch {
+      this.clearOrientationLock();
+      this.toast('ORIENTATION LOCK BLOCKED · ROTATE DEVICE', true);
+    }
   }
 
   handleFullscreenGesture() {

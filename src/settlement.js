@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { heightAt, slopeAt } from './terrain.js';
-import { box, cyl, dodeca, merge, paint, glowTexture, PALETTE } from './geo.js';
+import { box, cyl, dodeca, merge, paint, bakeBaseAO, glowTexture, PALETTE } from './geo.js';
+import { buildAdobeHouse } from './kit.js';
+import { makeRng, deriveSeed, hash32, WORLD_SEED } from './rng.js';
+import { makeDetailSet } from './textures.js';
 
 const BUILD_RANGE = 11.5;
 const CAMP_RADIUS = 46;
@@ -69,6 +72,7 @@ function adobeHouse() {
   const blue = '#4f7d8d';
   const p = [];
 
+  p.push(box(5.0, 1.3, 4.0, stone, 0, -0.5, 0));
   p.push(box(5.0, 0.22, 4.0, stone, 0, 0.11, 0));
   p.push(box(4.5, 2.5, 3.5, red, 0, 1.45, 0));
   p.push(box(4.3, 0.12, 3.3, mudRoof, 0, 2.68, 0));
@@ -141,7 +145,7 @@ function adobeHouse() {
   p.push(box(0.78, 0.46, 0.06, cream, 2.98, 1.5, 2.35, 0, 0.12, 0));
   p.push(box(0.5, 0.05, 0.03, '#5d4631', 2.98, 1.56, 2.39, 0, 0.12, 0));
   p.push(box(0.38, 0.05, 0.03, '#5d4631', 2.98, 1.44, 2.39, 0, 0.12, 0));
-  return merge(p);
+  return bakeBaseAO(merge(p), 0.55, 0.3);
 }
 
 function chapel() {
@@ -155,6 +159,7 @@ function chapel() {
   const gold = '#c8a44f';
   const p = [];
 
+  p.push(box(5.6, 1.4, 6.8, stone, 0, -0.5, 0));
   p.push(box(5.6, 0.28, 6.8, stone, 0, 0.14, 0));
   p.push(box(3.8, 3.1, 4.9, cream, 0, 1.83, -0.35));
 
@@ -231,7 +236,7 @@ function chapel() {
   p.push(box(0.09, 0.42, 0.3, wood, 0.55, 0.21, 3.25));
   p.push(box(0.09, 0.42, 0.3, wood, 1.75, 0.21, 3.25));
 
-  return merge(p);
+  return bakeBaseAO(merge(p), 0.6, 0.3);
 }
 
 function tower() {
@@ -297,7 +302,7 @@ export const BUILDINGS = [
     id: 'house',
     name: 'ADOBE HOUSE',
     cost: 18,
-    radius: 3.0,
+    radius: 3.45,
     desc: '+1 scrap / 9s.',
     geometry: null,
   },
@@ -338,6 +343,14 @@ export class Settlement {
     this.onScrap = onScrap;
     this.obstacles = obstacles;
     this.buildings = [];
+    this.buildSeq = 0;
+    this.occlusionTimer = 0;
+    this.occlusionRay = new THREE.Raycaster();
+    this.occlusionFrom = new THREE.Vector3();
+    this.occlusionTo = new THREE.Vector3();
+    this.occlusionDir = new THREE.Vector3();
+    this.occlusionNDC = new THREE.Vector3();
+    this.occlusionHits = [];
     this.selected = null;
     this.placing = false;
     this.canPlace = false;
@@ -347,6 +360,13 @@ export class Settlement {
     this.time = 0;
 
     this.buildMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+    const plaster = makeDetailSet('plaster', deriveSeed('plaster-detail'));
+    plaster.map.repeat.set(2, 2);
+    plaster.normalMap.repeat.set(2, 2);
+    this.houseMat = this.buildMat.clone();
+    this.houseMat.map = plaster.map;
+    this.houseMat.normalMap = plaster.normalMap;
+    this.houseMat.normalScale = new THREE.Vector2(0.45, 0.45);
     this.geos = {};
     for (const def of BUILDINGS) {
       const geo = GEO_BUILDERS[def.id]();
@@ -460,7 +480,8 @@ export class Settlement {
     this.ring.geometry.dispose();
     this.ring.geometry = new THREE.RingGeometry(def.radius - 0.12, def.radius, 30);
     const fwd = player.heading;
-    this.moveGhost(player.x + Math.sin(fwd) * 3.4, player.z + Math.cos(fwd) * 3.4, player);
+    const spawnDist = Math.max(3.4, def.radius + 1.1);
+    this.moveGhost(player.x + Math.sin(fwd) * spawnDist, player.z + Math.cos(fwd) * spawnDist, player);
   }
 
   cancel() {
@@ -534,22 +555,30 @@ export class Settlement {
     return this.canPlace;
   }
 
-  place(player) {
-    if (!this.placing || !this.selected) return { ok: false, reason: 'NO STRUCTURE' };
-    this.validate(player);
-    if (!this.canPlace) return { ok: false, reason: this.reason || 'INVALID SPOT' };
-
-    const def = this.selected;
-    const x = this.ghost.position.x;
-    const z = this.ghost.position.z;
+  /** Create one building at a world position. Shared by placement and save restore. */
+  createBuilding(def, x, z) {
     const y = heightAt(x, z);
     const group = new THREE.Group();
     group.position.set(x, y, z);
 
-    const mesh = new THREE.Mesh(def.geometry, this.buildMat);
+    let geo = def.geometry;
+    if (def.id === 'house') {
+      const seed = hash32(WORLD_SEED, 'house', this.buildSeq++, Math.round(x * 8), Math.round(z * 8));
+      const rng = makeRng(seed);
+      // One in four uses the shared hand-authored hero geometry; the rest are modular variants.
+      geo = rng() < 0.25 ? this.geos.house : buildAdobeHouse(rng);
+    }
+    const baseMat = def.id === 'house' ? this.houseMat : this.buildMat;
+    const mesh = new THREE.Mesh(geo, baseMat.clone());
+    mesh.material.transparent = true;
+    mesh.material.opacity = 1;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
+
+    mesh.geometry.computeBoundingSphere();
+    group.updateMatrixWorld(true);
+    const sphere = mesh.geometry.boundingSphere.clone().applyMatrix4(group.matrixWorld);
 
     const building = {
       def,
@@ -559,6 +588,9 @@ export class Settlement {
       y,
       radius: def.radius,
       group,
+      mesh,
+      sphere,
+      occluded: false,
       cooldown: Math.random() * 0.5,
       phase: Math.random() * 6.28,
       flame: null,
@@ -598,6 +630,36 @@ export class Settlement {
 
     this.scene.add(group);
     this.buildings.push(building);
+    return building;
+  }
+
+  /** Recreate saved buildings without charging scrap or playing placement effects. */
+  restore(items) {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      const def = BUILDINGS.find((b) => b.id === item.type);
+      if (def) this.createBuilding(def, item.x, item.z);
+    }
+  }
+
+  serialize() {
+    return {
+      buildings: this.buildings.map((b) => ({ type: b.type, x: b.x, z: b.z })),
+      prodTimer: this.prodTimer,
+      houseTimer: this.houseTimer,
+    };
+  }
+
+  place(player) {
+    if (!this.placing || !this.selected) return { ok: false, reason: 'NO STRUCTURE' };
+    this.validate(player);
+    if (!this.canPlace) return { ok: false, reason: this.reason || 'INVALID SPOT' };
+
+    const def = this.selected;
+    const x = this.ghost.position.x;
+    const z = this.ghost.position.z;
+    const building = this.createBuilding(def, x, z);
+    const y = building.y;
     this.particles.burst(x, y + 0.4, z, '#b09572', 18, 3.2);
 
     // nudge the ghost further out so repeated walls flow naturally
@@ -652,6 +714,53 @@ export class Settlement {
     mesh.material.opacity = 0.95;
     mesh.visible = true;
     slot.life = 0.11;
+  }
+
+  // Orthographic cameras have no perspective cue telling you a building is in front of the player,
+  // so fade any structure that covers them. Because ortho rays are parallel, cast back from a few
+  // points up the player's body toward the camera; any hit means the building is in the way.
+  updateOcclusion(camera, player, dt) {
+    this.occlusionTimer -= dt;
+    if (this.occlusionTimer <= 0 && this.buildings.length) {
+      this.occlusionTimer = 0.1;
+      camera.getWorldPosition(this.occlusionFrom);
+      camera.getWorldDirection(this.occlusionDir);
+      this.occlusionDir.negate(); // from the player back toward the camera
+      const samples = [0.25, 0.9, 1.65];
+      const px = player.x;
+      const py = player.pos.y + 0.9;
+      const pz = player.z;
+      this.occlusionNDC.set(px, py, pz).project(camera);
+      const onScreen = Math.abs(this.occlusionNDC.x) < 1.05 && Math.abs(this.occlusionNDC.y) < 1.05;
+      for (const b of this.buildings) {
+        b.occluded = false;
+        if (!onScreen) continue;
+        // Cheap parallel-projection test first: is the building even on the player's screen ray?
+        const s = b.sphere;
+        const rx = s.center.x - px;
+        const ry = s.center.y - py;
+        const rz = s.center.z - pz;
+        const depth = rx * this.occlusionDir.x + ry * this.occlusionDir.y + rz * this.occlusionDir.z;
+        if (depth < 0) continue; // farther from the camera than the player
+        const perp2 = rx * rx + ry * ry + rz * rz - depth * depth;
+        if (perp2 > s.radius * s.radius) continue;
+        // Then confirm against the actual geometry along the player's body.
+        for (const h of samples) {
+          this.occlusionTo.set(px, player.pos.y + h, pz);
+          this.occlusionRay.set(this.occlusionTo, this.occlusionDir);
+          this.occlusionRay.far = this.occlusionFrom.distanceTo(this.occlusionTo) + 2;
+          this.occlusionHits.length = 0;
+          this.occlusionRay.intersectObject(b.mesh, false, this.occlusionHits);
+          if (this.occlusionHits.length) {
+            b.occluded = true;
+            break;
+          }
+        }
+      }
+    }
+    for (const b of this.buildings) {
+      b.mesh.material.opacity = THREE.MathUtils.damp(b.mesh.material.opacity, b.occluded ? 0.3 : 1, 9, dt);
+    }
   }
 
   update(dt, time, player, enemies) {

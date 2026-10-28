@@ -103,6 +103,24 @@ export class ScrapField {
     this.markers.instanceMatrix.needsUpdate = true;
   }
 
+  serialize() {
+    return this.nodes.map((n) => ({ a: n.active ? 1 : 0, r: Math.round(n.respawnAt * 10) / 10 }));
+  }
+
+  restore(data) {
+    if (!Array.isArray(data)) return;
+    for (let i = 0; i < this.nodes.length; i++) {
+      const saved = data[i];
+      if (!saved) continue;
+      const n = this.nodes[i];
+      n.active = !!saved.a;
+      n.respawnAt = Number.isFinite(saved.r) ? saved.r : 0;
+      this.writePile(i, n);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.updateMarkers(0, true);
+  }
+
   nearest(x, z, maxDist = 2.8) {
     let best = -1;
     let bestD = maxDist * maxDist;
