@@ -116,6 +116,24 @@
         <span>RAID</span><b id="raid-count">2</b><small>HOSTILES</small>
       </div>
 
+      <!-- command layer -->
+      <div id="roster-bar" class="roster-bar">
+        <div id="roster" class="roster" aria-label="Survivor roster"></div>
+      </div>
+      <div id="unit-card" class="unit-card hidden" aria-label="Selected survivor">
+        <header>
+          <span id="unit-name">—</span>
+          <button id="unit-close" class="mini-x" aria-label="Close survivor card">✕</button>
+        </header>
+        <div class="unit-meta">
+          <span id="unit-role">SCAVENGER</span>
+          <b id="unit-hp">100</b>
+        </div>
+        <div class="unit-hp"><i id="unit-hp-fill"></i></div>
+        <p id="unit-status">IDLE</p>
+        <button id="unit-control" class="unit-control" type="button">TAKE CONTROL</button>
+      </div>
+
       <!-- touch controls -->
       <div class="joystick-wrap">
         <div id="joystick" class="joystick" aria-label="Movement stick">
@@ -267,7 +285,7 @@
         <div class="start-tags">
           <span>TOP-DOWN 3D</span><span>SETTLEMENT</span><span>PERF LAB</span><span>0 ART ASSETS</span>
         </div>
-        <div class="start-hint">Left stick to move · drag the ground to pan · drag the compass to rotate · Strike to fight</div>
+        <div class="start-hint">Tap a survivor, then a target · drag to pan · pinch to zoom · TAKE CONTROL to move</div>
         <div class="start-best">BEST EXPERIENCED IN LANDSCAPE</div>
       </div>
     </div>

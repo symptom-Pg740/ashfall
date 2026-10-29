@@ -8,6 +8,9 @@ a single avatar.
 This document is the working plan. `docs/REALISM.md` is the separate backlog of realism items so
 they are not lost while the systems work happens.
 
+**Status:** Phase 1 first slice shipped (command mode, roster, contextual move/attack/gather,
+possession, leader auto-defence). Warehouse/power/defences are next. See §6 for the gate notes.
+
 ---
 
 ## 1. Where we are, and what changes
@@ -291,15 +294,21 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 - `docs/GAME_PLAN.md`, `docs/REALISM.md`, README direction.
 - Gate: the plan is agreed; the Unit/possession seam is decided.
 
-### Phase 1 — Command core
+### Phase 1 — Command core — **implemented (first slice)**
 
-- `Unit` + `UnitBrain`, leader as a unit, roster, selection ring, tap vs drag.
-- Contextual orders: **move, attack, gather, return**.
-- `TAKE CONTROL` / `RELEASE` for any unit (possession controller attached to the unit).
-- Camera follows in direct mode; stick hidden in command mode.
-- Coarse nav grid + A* and local avoidance.
+- Command mode, roster, selection ring, tap vs drag, contextual **move / attack / gather**.
+- Possession for any survivor: the `Player` controller swaps onto the unit's rig, the stick appears,
+  the camera follows, and the unit's weapon/HP come with it.
+- The leader auto-fires while you command, so the camp is not helpless.
+- Gather orders walk → harvest → haul to the player → deposit; jobs survive combat, and attacking
+  units that lose line of sight search for a firing position.
 - Gate: select Mara → tap a scrap pile → she walks, gathers, returns; tap a raider → she engages;
   take control of her → joystick appears and the camera follows; release → command camera returns.
+  **Passed** (gather +9 scrap, ghoul killed in 3 pistol shots, possession moved 3.5 m and restored
+  the leader cleanly).
+- Deliberately not yet: a `Unit` class and a nav grid. The first slice extends `CampFolk` and gives
+  `Player` a possess/release swap. Direct steering plus collision push and the flank search are
+  enough for the camp; A* lands with the warehouse/hauling phase, when units cross the map.
 
 ### Phase 2 — Warehouse and hauling
 
@@ -373,14 +382,13 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 
 ## 9. Immediate next slice
 
-Phase 1, in this order:
+Phase 1 is in. The next slice is **Phase 2 — warehouse and hauling**:
 
-1. Introduce `Unit` and move the leader onto it without changing behaviour.
-2. Add the roster and selection (tap + portrait), tap-vs-drag detection, selection ring.
-3. Contextual **move** and **attack** orders, then **gather** (existing nodes, no warehouse yet).
-4. Add `TAKE CONTROL` / `RELEASE` for any unit; hide/show the joystick; camera follow.
-5. Add the nav grid only when a unit visibly gets stuck; keep the first cut to a 1 m grid around the
-   camp.
+1. Add the warehouse building (capacity, crate stacks, HUD stockpile).
+2. Change the gather drop-off from the player to the nearest warehouse; add carry capacity.
+3. Add the full-storage reason and a spend/build loop around it.
+4. Add the 1 m nav grid only where units still catch on the adobe houses.
+5. Keep the command-mode UX: no new buttons unless they earn their place.
 
-The first visible milestone should be: **select a survivor, send them to a scrap pile, watch them
-walk, gather and come back — then take control of them and walk back yourself.**
+The next visible milestone: **a survivor loops a scrap pile → warehouse without input, the warehouse
+visibly fills, and a full store stops the loop with a clear reason.**

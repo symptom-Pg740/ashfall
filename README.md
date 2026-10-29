@@ -48,7 +48,10 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 
 | Action | Touch | Desktop |
 | --- | --- | --- |
-| Move | Left stick | `WASD` / arrows |
+| Select a survivor | tap the unit or its roster button | click the unit |
+| Order | with a unit selected, tap enemy / scrap / ground | click the target |
+| Take / release control | `TAKE CONTROL` / `RELEASE` | same buttons |
+| Move (direct mode) | Left stick | `WASD` / arrows |
 | Strike / fire | `STRIKE` / `FIRE` button | `Space` |
 | Gather scrap | `GATHER` button (appears near a pile) | `E` |
 | Open build tray | `BUILD` | `B` |
@@ -69,13 +72,19 @@ The camera is a **fixed-pitch orthographic rig** — no free pitch or zoom. One 
 to **pan**; the compass ring is the only touch control that **rotates** the camera (drag it, or tap
 to face north). Tapping the compass centre re-centres the camera on the player. Movement stays
 screen-relative, so `W` is always "up", and during placement the same ground drag aims the ghost
-instead of panning. This leaves the world drag free for the upcoming RTS click-and-send controls.
+instead of panning.
+
+**Command mode is the default.** The stick is hidden until you select a survivor and press **TAKE
+CONTROL**. A unit ordered to a scrap pile walks there, harvests, carries the load back to you and
+deposits it; ordered at a ghoul it closes to weapon range and fights. The roster strip is the
+reliable way to select a unit when the camp is crowded.
 
 ---
 
 ## The 60-second loop
 
 1. Start with **26 scrap**. Scrap piles are marked by floating amber shards; each gives **6–12 scrap**.
+   In command mode, select a survivor and tap a pile: they gather it and haul it back to you.
 2. Build a **Campfire** (8) to heal inside its light, or a **Barricade** (4) for solid cover.
 3. A **Rain Catcher** (12) adds **+1 water / 6 s**. An **Adobe House** (18) sends out scavengers for
    **+1 scrap / 9 s**.
@@ -133,6 +142,11 @@ The graph keeps the last ~45 seconds.
   upgrades + production timers are auto-saved to localStorage (schema `v: 2`; `v: 1` runs migrate in
   place and start with the default ammo pouch). Reload shows **CONTINUE**; **NEW RUN** clears the
   save, and PERF has **RESET SAVE**.
+- **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
+  ring and contextual orders: tap an enemy to engage, a scrap pile to gather/haul, or the ground to
+  move. `TAKE CONTROL` possesses any survivor (joystick, camera follow, that unit's weapon and HP);
+  `RELEASE` returns to command mode. This is the first slice: the warehouse, power chain and tower
+  assignment are the next phases.
 - **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
   jitter. The player is a skinned R4 character: the MakeHuman `hm08` head (CC0) with a procedural
   hair shell, eyes and brows, on a slim 20-bone skinned body with automatic weights, two-bone foot
@@ -312,8 +326,9 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgott
 ## Known limitations
 
 - Not yet profiled on a physical phone.
-- Command mode, the warehouse and the power chain are planned but not built yet; see
-  [docs/GAME_PLAN.md](docs/GAME_PLAN.md).
+- Command mode is a first slice: the warehouse, power chain and tower assignment are not built yet.
+  Movement is direct steering with collision push, not a navmesh.
+- The watchtower still auto-fires until Phase 4 gives it an assigned gunner.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question.
 - Circle collisions; no navmesh/pathfinding. Ghouls and raiders can catch on large wreckage.
@@ -329,6 +344,7 @@ Append to the URL:
 
 | Hook | Effect |
 | --- | --- |
+| `?fresh=1` | ignore and clear the saved run (deterministic testing) |
 | `?autostart=1` | skip the title screen |
 | `?zoom=2.4` | camera zoom |
 | `?weapon=rifle` | equip a weapon (`pistol`, `rifle`, `shotgun`, or melee) |

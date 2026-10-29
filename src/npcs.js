@@ -17,6 +17,10 @@ export class CampFolk {
     this.registry = null;
     this.firearms = null;
     this.onKill = null;
+    this.onScrap = null;
+    this.scrapField = options.scrapField || null;
+    this.dropPoint = options.dropPoint || null;
+    this.obstacles = options.obstacles || [];
     const style = options.style || 'skinned';
     for (let i = 0; i < count; i++) {
       const seed = deriveSeed(`npc:${i}`);
@@ -73,11 +77,16 @@ export class CampFolk {
         home: { x, z },
         target: { x, z },
         timer: rng.range(0.5, 3),
-        speed: rng.range(0.9, 1.45),
+        speed: rng.range(1.9, 2.5),
         heading: rig.group.rotation.y,
         phase: rng() * 6.28,
+        role: armed ? 'guard' : 'scavenger',
         armed,
         weapon,
+        job: null,
+        possessed: false,
+        carry: 0,
+        holdTimer: 0,
         hp: 100,
         maxHp: 100,
         dead: false,
@@ -91,7 +100,7 @@ export class CampFolk {
           ? new AimController({
               faction: 'camp',
               firePolicy: 'auto',
-              cone: 70,
+              cone: 180,
               turnRate: 360,
               fireGate: 3,
               reaction: 0.25,
@@ -101,6 +110,39 @@ export class CampFolk {
         aimActor: { x: 0, y: 0, z: 0, heading: 0 },
       });
     }
+  }
+
+  issueJob(person, job) {
+    if (!person || person.dead) return false;
+    person.job = job;
+    person.holdTimer = 0;
+    if (person.aim) person.aim.setLock(job?.type === 'attack' ? job.target?.id ?? null : null);
+    return true;
+  }
+
+  cancelJob(person) {
+    if (!person) return;
+    person.job = null;
+    person.carry = 0;
+    person.aim?.setLock(null);
+  }
+
+  down(person) {
+    if (!person || person.dead) return;
+    person.hp = 0;
+    person.dead = true;
+    person.respawnTimer = 20;
+    person.carry = 0;
+    person.job = null;
+    person.possessed = false;
+    person.rig.group.visible = false;
+    if (person.farTier) person.farTier.visible = false;
+    if (person.aim) {
+      person.aim.target = null;
+      person.aim.canFire = false;
+      person.aim.setLock(null);
+    }
+    this.onDown?.(person.name);
   }
 
   attachCombat({ registry, firearms, onKill, onDown }) {
@@ -119,23 +161,164 @@ export class CampFolk {
     if (!p || p.dead) return false;
     p.hp -= amount;
     if (p.hp <= 0) {
-      p.hp = 0;
-      p.dead = true;
-      p.respawnTimer = 20;
-      p.rig.group.visible = false;
-      if (p.farTier) p.farTier.visible = false;
-      if (p.aim) {
-        p.aim.target = null;
-        p.aim.canFire = false;
-      }
-      this.onDown?.(p.name);
+      this.down(p);
       return true;
     }
     return false;
   }
 
+  /** Keep units out of buildings and props. Direct steering slides along the boundary. */
+  resolveCollisions(p, buildings = []) {
+    const pos = p.rig.group.position;
+    const push = (ox, oz, r) => {
+      const dx = pos.x - ox;
+      const dz = pos.z - oz;
+      const d = Math.hypot(dx, dz);
+      if (d > 0.0001 && d < r) {
+        pos.x = ox + (dx / d) * r;
+        pos.z = oz + (dz / d) * r;
+      }
+    };
+    for (const b of buildings) push(b.x, b.z, b.radius + 0.4);
+    for (const o of this.obstacles) push(o.x, o.z, (o.r || 0.5) + 0.4);
+  }
+
+  /**
+   * Run one job step. Returns a world point to walk toward, or null when the unit should hold
+   * position (harvesting, aiming, arriving). Combat keeps priority: the caller only runs this when
+   * the unit has no auto-acquired target.
+   */
+  /** A point near the target with line of sight, used when a wall or rock blocks the direct line. */
+  findFiringPosition(p, t, buildings = []) {
+    const pos = p.rig.group.position;
+    const los = p.aim?.los;
+    let best = null;
+    let bestScore = Infinity;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + p.rng() * 0.35;
+      const r = 6 + p.rng() * 4;
+      const x = t.x + Math.cos(a) * r;
+      const z = t.z + Math.sin(a) * r;
+      const y = heightAt(x, z);
+      let blocked = false;
+      for (const b of buildings) {
+        if (Math.hypot(b.x - x, b.z - z) < b.radius + 0.6) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) continue;
+      if (los && !los(x, y + 1.25, z, t.x, t.y + 1.0, t.z)) continue;
+      const score = Math.hypot(x - pos.x, z - pos.z);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { x, z };
+      }
+    }
+    return best || { x: t.x, z: t.z };
+  }
+
+  updateJob(p, dt, time, buildings = []) {
+    const j = p.job;
+    if (!j) return null;
+    const pos = p.rig.group.position;
+    const distTo = (x, z) => Math.hypot(x - pos.x, z - pos.z);
+
+    if (j.type === 'move') {
+      if (distTo(j.x, j.z) < 0.6) {
+        p.job = null;
+        p.holdTimer = 4 + Math.random() * 3;
+        return null;
+      }
+      return { x: j.x, z: j.z };
+    }
+
+    if (j.type === 'gather') {
+      const field = this.scrapField;
+      const node = field?.nodes[j.node];
+      if (!node) {
+        p.job = null;
+        return null;
+      }
+      if (j.phase === 'toNode') {
+        if (!node.active) {
+          p.job = null;
+          return null;
+        }
+        if (distTo(node.x, node.z) < 2.2) {
+          j.phase = 'harvest';
+          j.timer = 1.2;
+          return null;
+        }
+        return { x: node.x, z: node.z };
+      }
+      if (j.phase === 'harvest') {
+        j.timer -= dt;
+        if (j.timer <= 0) {
+          const value = field.gather(j.node, time);
+          if (!value) {
+            p.job = null;
+            return null;
+          }
+          p.carry = value;
+          j.phase = 'return';
+        }
+        return null;
+      }
+      if (j.phase === 'return') {
+        const drop = this.dropPoint ? this.dropPoint() : { x: 0, z: 0 };
+        if (distTo(drop.x, drop.z) < 2.4) {
+          this.onScrap?.(p.carry || 0, p);
+          p.carry = 0;
+          if (node.active) {
+            j.phase = 'toNode';
+            j.timer = 0;
+          } else {
+            p.job = null;
+          }
+          return null;
+        }
+        return { x: drop.x, z: drop.z };
+      }
+      return null;
+    }
+
+    if (j.type === 'attack') {
+      const t = j.target;
+      if (!t || t.dead) {
+        p.job = null;
+        p.holdTimer = 4 + Math.random() * 3;
+        p.aim?.setLock(null);
+        return null;
+      }
+      p.aim?.setLock(t.id);
+      const range = Math.max(2, (p.weapon?.range ?? 2) * 0.72);
+      let los = true;
+      if (p.aim?.los) {
+        los = p.aim.los(pos.x, pos.y + 1.25, pos.z, t.x, t.y + 1.0, t.z);
+      }
+      if (distTo(t.x, t.z) > range) {
+        j.flank = null;
+        return { x: t.x, z: t.z };
+      }
+      if (!los) {
+        j.flankTimer = (j.flankTimer || 0) - dt;
+        if (!j.flank || j.flankTimer <= 0) {
+          j.flank = this.findFiringPosition(p, t, buildings);
+          j.flankTimer = 2.5;
+        }
+        return j.flank;
+      }
+      j.flank = null;
+      return null;
+    }
+
+    return null;
+  }
+
   update(dt, time, player, buildings = []) {
     for (const p of this.people) {
+      if (p.possessed) continue;
       const pos = p.rig.group.position;
       const toPlayer = Math.hypot(player.x - pos.x, player.z - pos.z);
 
@@ -155,6 +338,10 @@ export class CampFolk {
           p.dead = false;
           p.hp = p.maxHp;
           p.isFar = false;
+          p.possessed = false;
+          p.job = null;
+          p.carry = 0;
+          p.aim?.setLock(null);
           pos.set(p.home.x, heightAt(p.home.x, p.home.z), p.home.z);
           p.rig.group.visible = true;
           p.rig.mesh.visible = true;
@@ -186,7 +373,10 @@ export class CampFolk {
       let lookZ = pos.z + Math.cos(p.heading);
       let combatTarget = null;
 
-      if (!p.isFar && p.armed && p.aim && this.registry && this.firearms) {
+      // An explicit move/gather order wins over auto-defend: a survivor carrying scrap should not
+      // stop every two metres to trade shots. Attack jobs still use the aim controller.
+      const ordered = !!p.job && p.job.type !== 'attack';
+      if (!p.isFar && p.armed && p.aim && this.registry && this.firearms && !ordered) {
         p.aimActor.x = pos.x;
         p.aimActor.y = pos.y;
         p.aimActor.z = pos.z;
@@ -195,11 +385,40 @@ export class CampFolk {
         combatTarget = p.aim.target;
       }
 
+      const jobTarget = combatTarget ? null : this.updateJob(p, dt, time, buildings);
+      const jobActive = !!p.job;
+
       if (combatTarget) {
         // Stop, face the target and shoot; the body catches up with the aim yaw.
         p.heading = p.aim.aimYaw;
         lookX = p.aim.targetPoint.x;
         lookZ = p.aim.targetPoint.z;
+        p.phase += dt * 1.2;
+      } else if (jobTarget) {
+        const dx = jobTarget.x - pos.x;
+        const dz = jobTarget.z - pos.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        const step = Math.min(p.speed * dt, dist);
+        pos.x += (dx / dist) * step;
+        pos.z += (dz / dist) * step;
+        p.heading = Math.atan2(dx, dz);
+        moving = true;
+        p.phase += dt * (5.2 + p.speed);
+      } else if (jobActive) {
+        // Holding: harvesting, waiting for a reload, or standing at firing range. Face the work.
+        const j = p.job;
+        if (j?.type === 'attack' && j.target) {
+          p.heading = Math.atan2(j.target.x - pos.x, j.target.z - pos.z);
+          lookX = j.target.x;
+          lookZ = j.target.z;
+        } else if (j?.type === 'gather') {
+          const node = this.scrapField?.nodes[j.node];
+          if (node) {
+            p.heading = Math.atan2(node.x - pos.x, node.z - pos.z);
+            lookX = node.x;
+            lookZ = node.z;
+          }
+        }
         p.phase += dt * 1.2;
       } else if (toPlayer < 4.5) {
         p.heading = Math.atan2(player.x - pos.x, player.z - pos.z);
@@ -207,6 +426,9 @@ export class CampFolk {
         lookZ = player.z;
         p.timer = Math.min(p.timer, 1.2);
         p.phase += dt * 0.8;
+      } else if (p.holdTimer > 0) {
+        p.holdTimer = Math.max(0, p.holdTimer - dt);
+        p.phase += dt * 1.2;
       } else {
         const dx = p.target.x - pos.x;
         const dz = p.target.z - pos.z;
@@ -247,6 +469,7 @@ export class CampFolk {
         }
       }
 
+      this.resolveCollisions(p, buildings);
       pos.y = heightAt(pos.x, pos.z);
 
       let diff = p.heading - p.rig.group.rotation.y;

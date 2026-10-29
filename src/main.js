@@ -13,10 +13,11 @@ import { UI } from './ui.js';
 import { Input } from './input.js';
 import { CampFolk } from './npcs.js';
 import { Raiders } from './raiders.js';
+import { Commander } from './commander.js';
 import { Armory } from './armory.js';
 import { AudioFx } from './audio.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { readSave, writeSave } from './save.js';
+import { readSave, writeSave, clearSave } from './save.js';
 import { itemLabel } from './wardrobe.js';
 import { WEAPONS } from './weapons.js';
 import { paint } from './geo.js';
@@ -125,7 +126,12 @@ const player = new Player(scene);
 const enemies = new Enemies(scene, deriveSeed('enemies'));
 const charStyle = new URLSearchParams(window.location.search).get('chars');
 const npcStyle = charStyle === 'blocky' ? 'blocky' : charStyle === 'smooth' ? 'smooth' : 'skinned';
-const campFolk = new CampFolk(scene, 3, { style: npcStyle });
+const campFolk = new CampFolk(scene, 3, {
+  style: npcStyle,
+  scrapField,
+  obstacles: wasteland.obstacles,
+  dropPoint: () => ({ x: player.x, z: player.z }),
+});
 const raiders = new Raiders(scene, deriveSeed('raiders'));
 
 const state = {
@@ -190,7 +196,7 @@ registry.add({
   forEachTarget(cb) {
     for (let i = 0; i < campFolk.people.length; i++) {
       const person = campFolk.people[i];
-      if (person.dead) continue;
+      if (person.dead || person.possessed) continue;
       const t = campTargets[i];
       const pos = person.rig.group.position;
       t.x = pos.x;
@@ -206,6 +212,25 @@ registry.add({
 registry.add(raiders);
 
 const ui = new UI();
+const commander = new Commander({
+  canvas,
+  getCamera: () => activeCamera,
+  player,
+  campFolk,
+  scrapField,
+  registry,
+  state,
+  ui,
+  particles,
+  scene,
+  onFollow: () => recenterCamera(),
+  onFocus: (unit) => {
+    const p = unit.rig.group.position;
+    cameraFollow = false;
+    focus.set(p.x, 0, p.z);
+  },
+  onSave: () => saveGame(),
+});
 const settlement = new Settlement({
   scene,
   particles,
@@ -264,6 +289,15 @@ campFolk.attachCombat({
   onDown: (name) => ui.toast(`${name} DOWN — RESPAWNING`, true),
 });
 raiders.attachCombat({ registry, firearms });
+campFolk.onScrap = (value, person) => {
+  if (!value) return;
+  state.scrap += value;
+  const pos = person.rig.group.position;
+  particles.burst(pos.x, pos.y + 0.9, pos.z, '#ffc37a', 10, 2.2);
+  ui.toast(`+${value} SCRAP · ${person.name}`);
+  ui.updateHUD(state);
+  saveGame();
+};
 
 // ---------------------------------------------------------------------------
 // input wiring
@@ -289,6 +323,7 @@ const input = new Input(canvas, activeCamera, {
     else if (ui.buildOpen) closeBuild();
     else if (ui.perfOpen) ui.togglePerf(false);
     else if (ui.wardrobeOpen) ui.toggleWardrobe(false);
+    else if (commander.selected) commander.clear();
   },
   isPlacing: () => settlement.placing,
   playerY: () => player.pos.y,
@@ -297,6 +332,7 @@ const input = new Input(canvas, activeCamera, {
     settlement.moveGhost(x, z, player);
     ui.setPlaceStatus(settlement.canPlace, settlement.reason);
   },
+  tap: (x, y) => commander.tapAt(x, y),
 });
 
 function refreshWardrobe() {
@@ -314,6 +350,7 @@ window.__ashfall = {
   worldField,
   campFolk,
   raiders,
+  commander,
   settlement,
   player,
   enemies,
@@ -331,7 +368,7 @@ window.__ashfall = {
   scrapField,
   wasteland,
   input,
-  actions: { doPlace, doGather, doStrike, doStress, applyQuality, setOrtho, rotateBy, saveGame, loadGame, validateWorld },
+  actions: { doPlace, doGather, doStrike, doStress, applyQuality, setOrtho, rotateBy, saveGame, loadGame, validateWorld, damage: (n) => damagePlayer(n) },
 };
 let spawnAt = 0;
 let nextRaid = 70;
@@ -356,11 +393,14 @@ ui.on('started', () => {
   input.setEnabled(true);
   spawnAt = resumedGame ? Math.max(spawnAt, state.time + 8) : state.time + 45;
   spawnWarned = false;
-  ui.hint('SCAVENGE · BUILD · KEEP THE FIRE BURNING', 3800);
+  ui.hint('TAP A SURVIVOR · THEN TAP A TARGET', 4200);
   ui.toast('THE WASTES ARE LISTENING');
   last = performance.now();
 });
 
+ui.on('unitControl', () => commander.toggleControl());
+ui.on('unitClose', () => commander.clear());
+ui.on('rosterSelect', (key) => commander.selectKey(key));
 ui.on('buildToggle', toggleBuild);
 ui.on('buildClose', closeBuild);
 ui.on('buildSelect', selectBuilding);
@@ -469,6 +509,7 @@ function toggleBuild() {
     closeBuild();
     return;
   }
+  if (commander.mode === 'command') commander.clear();
   settlement.cancel();
   ui.showBuildMenu(true);
   ui.setSelectedBuilding(null);
@@ -489,6 +530,7 @@ function selectBuilding(idOrIndex) {
   if (!ui.buildOpen) ui.showBuildMenu(true);
   settlement.cancel();
   settlement.begin(def.id, player);
+  recenterCamera();
   ui.setSelectedBuilding(def.id);
   ui.showPlacement(true, def);
   ui.setPlaceStatus(settlement.canPlace, settlement.reason);
@@ -529,6 +571,10 @@ function doPlace() {
 
 function doGather() {
   if (!state.started || state.dead || settlement.placing) return;
+  if (commander.mode !== 'direct') {
+    ui.hint('TAKE CONTROL TO GATHER', 1600);
+    return;
+  }
   if (nearScrap < 0) {
     ui.toast('NOTHING TO SCAVENGE HERE', true);
     return;
@@ -556,19 +602,28 @@ function awardKills(kills) {
   saveGame();
 }
 
+function playerShoot() {
+  const shot = player.tryFire();
+  if (!shot) {
+    ui.setAmmo(player.ammoState());
+    return false;
+  }
+  const result = firearms.fire(player, shot);
+  ui.setAmmo(player.ammoState());
+  if (result.hit) ui.hitMarker(result.killed > 0);
+  if (result.killed) awardKills(result.killed);
+  cameraShake = Math.max(cameraShake, shot.weapon.shake);
+  return true;
+}
+
 function doStrike() {
   if (!state.started || state.dead) return;
+  if (commander.mode !== 'direct') {
+    ui.hint('TAKE CONTROL TO FIGHT', 1600);
+    return;
+  }
   if (player.armed) {
-    const shot = player.tryFire();
-    if (!shot) {
-      ui.setAmmo(player.ammoState());
-      return;
-    }
-    const result = firearms.fire(player, shot);
-    ui.setAmmo(player.ammoState());
-    if (result.hit) ui.hitMarker(result.killed > 0);
-    if (result.killed) awardKills(result.killed);
-    cameraShake = Math.max(cameraShake, shot.weapon.shake);
+    playerShoot();
     return;
   }
   if (!player.strike()) return;
@@ -631,6 +686,20 @@ function doStress(kind) {
 
 function damagePlayer(amount, fromX, fromZ) {
   if (state.dead || !state.started) return false;
+  if (player.possessedUnit) {
+    state.health -= amount;
+    state.lastDamage = state.time;
+    player.hit();
+    ui.flashDamage();
+    ui.updateHUD(state);
+    cameraShake = Math.max(cameraShake, 0.35);
+    if (state.health <= 0) {
+      state.health = 0;
+      commander.downPossessed();
+      return true;
+    }
+    return false;
+  }
   state.health -= amount;
   state.lastDamage = state.time;
   player.hit();
@@ -676,6 +745,9 @@ function respawn() {
 
 function saveGame() {
   if (!state.started || state.dead) return;
+  // While a survivor is possessed, `player.pos` and `state.health` belong to that survivor. Skip
+  // the write instead of saving the leader on the wrong tile; release/down saves immediately.
+  if (player.possessedUnit) return;
   writeSave({
     v: 2,
     seed: WORLD_SEED,
@@ -990,7 +1062,8 @@ function simulate(dt) {
     return;
   }
 
-  const move = input.update();
+  const direct = commander.mode === 'direct';
+  const move = direct ? input.update() : { x: 0, z: 0 };
   const wm = cameraRelativeMove(move.x, move.z);
   playerAimActor.x = player.x;
   playerAimActor.y = player.pos.y;
@@ -998,6 +1071,10 @@ function simulate(dt) {
   playerAimActor.heading = player.heading;
   player.aim.update(dt, playerAimActor, registry, player.weapon);
   player.update(dt, wm.x, wm.z);
+  if (!direct && player.armed && player.aim.target && player.aim.canFire) {
+    // The avatar fights for itself while you command; you can still take over at any time.
+    playerShoot();
+  }
   ui.setWeapon(player.armed, player.weapon?.name);
   ui.setAmmo(player.ammoState());
   collidePlayer();
@@ -1060,7 +1137,7 @@ function simulate(dt) {
 
   // scavenge proximity
   nearScrap = scrapField.nearest(player.x, player.z, 2.7);
-  ui.setGather(nearScrap >= 0 && !settlement.placing);
+  ui.setGather(direct && nearScrap >= 0 && !settlement.placing);
 
   if (settlement.placing) ui.setPlaceStatus(settlement.canPlace, settlement.reason);
   ui.setStrikeCooling(player.attackCooldown > 0.05 || player.reloadTimer > 0);
@@ -1112,6 +1189,7 @@ function loop(now) {
 
   campFolk.update(dt, state.time, player, settlement.buildings);
   raiders.update(dt, state.time, player);
+  commander.update(dt);
   // Damage and passive regen change health outside the event-driven HUD paths.
   if (now - lastUIUpdate > 120) {
     lastUIUpdate = now;
@@ -1161,6 +1239,7 @@ input.camera = activeCamera;
 ui.updateHUD(state);
 ui.setQuality(coarse ? 'balanced' : 'high');
 
+if (new URLSearchParams(window.location.search).has('fresh')) clearSave();
 resumedGame = loadGame();
 ui.setResume(resumedGame);
 refreshWardrobe();

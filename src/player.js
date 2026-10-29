@@ -53,6 +53,8 @@ export class Player {
 
     this.weaponId = this.rig.equipment.weapon;
     this.armory = null;
+    this.possessedUnit = null;
+    this._saved = null;
     this.onDry = null;
     this.onReload = null;
     this.onStep = null;
@@ -65,7 +67,7 @@ export class Player {
     this.aim = new AimController({
       faction: 'player',
       firePolicy: 'manual',
-      cone: 55,
+      cone: 180,
       turnRate: 540,
       fireGate: 4,
       reaction: 0,
@@ -79,6 +81,110 @@ export class Player {
 
   get armed() {
     return !!this.weapon;
+  }
+
+  /**
+   * Swap this controller onto another survivor's rig. The leader is parked exactly as it was and
+   * restored by `release()`, so possession is reversible.
+   */
+  possess(unit) {
+    if (!unit || !unit.rig || this.possessedUnit) return false;
+    this._saved = {
+      rig: this.rig,
+      group: this.group,
+      bones: this.bones,
+      mesh: this.mesh,
+      shadow: this.shadow,
+      weaponId: this.weaponId,
+      weapon: this.weapon,
+      mag: this.mag,
+      reloadTimer: this.reloadTimer,
+      attackCooldown: this.attackCooldown,
+      attackTime: this.attackTime,
+      recoil: this.recoil,
+      heading: this.heading,
+      targetHeading: this.targetHeading,
+      phase: this.phase,
+      moving: this.moving,
+      hitTimer: this.hitTimer,
+    };
+    this.rig = unit.rig;
+    this.group = unit.rig.group;
+    this.pos = this.group.position;
+    this.bones = unit.rig.bones;
+    this.mesh = unit.rig.mesh;
+    this.shadow = unit.rig.shadow;
+    this.weaponId = this.rig.equipment.weapon;
+    this.weapon = this.armory ? this.armory.weapon(this.weaponId) : WEAPONS[this.weaponId] || null;
+    this.mag = this.armory
+      ? this.armory.setMag(this.weaponId, this.armory.magOf(this.weaponId))
+      : this.weapon
+        ? this.weapon.magazine
+        : 0;
+    this.reloadTimer = 0;
+    this.attackCooldown = 0;
+    this.attackTime = 0;
+    this.recoil = 0;
+    this.hitTimer = 0;
+    this.heading = this.group.rotation.y;
+    this.targetHeading = this.heading;
+    this.phase = 0;
+    this.moving = 0;
+    this.aim.setRange(this.weapon?.range || 22);
+    this.aim.target = null;
+    this.aim._initialised = false;
+    this.possessedUnit = unit;
+    return true;
+  }
+
+  /** Return control to the leader and park the possessed survivor where it stands. */
+  release() {
+    const s = this._saved;
+    if (!s) return null;
+    const unit = this.possessedUnit;
+    if (unit) {
+      // Preserve the ammo the unit spent while possessed.
+      this.armory?.setMag(this.weaponId, this.mag);
+      if (unit.weapon) {
+        unit.mag = unit.weapon.magazine;
+        unit.reloadTimer = 0;
+        unit.cooldown = 0;
+        unit.recoil = 0;
+        if (unit.aim) unit.aim.target = null;
+      }
+      unit.heading = unit.rig.group.rotation.y;
+      unit.target = {
+        x: unit.rig.group.position.x,
+        z: unit.rig.group.position.z,
+      };
+      unit.timer = 1.5 + Math.random() * 2;
+      unit.phase = 0;
+      unit.possessed = false;
+    }
+    this.rig = s.rig;
+    this.group = s.group;
+    this.pos = this.group.position;
+    this.bones = s.bones;
+    this.mesh = s.mesh;
+    this.shadow = s.shadow;
+    this.weaponId = s.weaponId;
+    this.weapon = s.weapon;
+    this.mag = s.mag;
+    this.reloadTimer = s.reloadTimer;
+    this.attackCooldown = s.attackCooldown;
+    this.attackTime = s.attackTime;
+    this.recoil = s.recoil;
+    this.heading = s.heading;
+    this.targetHeading = s.targetHeading;
+    this.phase = s.phase;
+    this.moving = s.moving;
+    this.hitTimer = s.hitTimer;
+    this.aim.setRange(this.weapon?.range || 22);
+    this.aim.target = null;
+    this.aim._initialised = false;
+    this.possessedUnit = null;
+    this._saved = null;
+    return unit;
   }
 
   /** Wire the ammo economy and upgrade resolver. Called once from main. */

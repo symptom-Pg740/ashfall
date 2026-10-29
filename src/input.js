@@ -22,6 +22,7 @@ export class Input {
     this.dragY = 0;
     this.pointers = new Map();
     this.pinchDist = 0;
+    this.tapStart = null;
 
     this.base = document.getElementById('joystick');
     this.knob = document.getElementById('joy-knob');
@@ -166,6 +167,13 @@ export class Input {
       this.dragId = e.pointerId;
       this.dragX = e.clientX;
       this.dragY = e.clientY;
+      this.tapStart = {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        t: performance.now(),
+        moved: false,
+      };
       aim(e.clientX, e.clientY);
     });
     this.canvas.addEventListener('pointermove', (e) => {
@@ -191,11 +199,18 @@ export class Input {
           this.cb.pan?.(dx, dy);
         }
       }
+      if (this.tapStart && this.tapStart.id === e.pointerId) {
+        const tx = e.clientX - this.tapStart.x;
+        const ty = e.clientY - this.tapStart.y;
+        if (tx * tx + ty * ty > 81) this.tapStart.moved = true;
+      }
       if (e.pointerType === 'mouse' || e.pointerId === this.dragId) {
         aim(e.clientX, e.clientY);
       }
     });
     const endDrag = (e) => {
+      const wasSingle = this.pointers.size <= 1;
+      const tap = this.tapStart;
       this.pointers.delete(e.pointerId);
       if (this.pointers.size < 2) this.pinchDist = 0;
       if (this.pointers.size === 0) {
@@ -205,6 +220,18 @@ export class Input {
         this.dragId = id;
         this.dragX = p.x;
         this.dragY = p.y;
+      }
+      if (
+        tap &&
+        tap.id === e.pointerId &&
+        wasSingle &&
+        !tap.moved &&
+        performance.now() - tap.t < 400
+      ) {
+        this.tapStart = null;
+        this.cb.tap?.(e.clientX, e.clientY);
+      } else if (tap && tap.id === e.pointerId) {
+        this.tapStart = null;
       }
     };
     this.canvas.addEventListener('pointerup', endDrag);

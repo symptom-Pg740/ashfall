@@ -26,6 +26,7 @@ const _end = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _origin = new THREE.Vector3();
+const _muzzle = new THREE.Vector3();
 const _tRay = new THREE.Ray();
 const _tRayOrigin = new THREE.Vector3();
 const _tRayDir = new THREE.Vector3();
@@ -62,8 +63,14 @@ export class Firearms {
    */
   fire(actor, shot) {
     const weapon = shot.weapon;
-    const muzzle = this.muzzleWorld(actor);
+    const muzzle = this.muzzleWorld(actor, _muzzle);
     if (!muzzle || !weapon) return { hit: false, killed: 0, x: 0, z: 0 };
+
+    // The hit ray starts at the chest, not the barrel: a muzzle next to a rock or wall would
+    // otherwise clip the cover the body is legitimately standing beside. The tracer still starts
+    // at the muzzle, so the visual matches the gun.
+    const actorY = actor.rig?.group?.position?.y ?? actor.y ?? 0;
+    _origin.set(actor.x, actorY + 1.25, actor.z);
 
     let aimX = shot.aimPoint?.x;
     let aimY = shot.aimPoint?.y;
@@ -71,13 +78,13 @@ export class Firearms {
     if (!Number.isFinite(aimX)) {
       // No target: fire along the character's facing.
       const yaw = actor.heading || 0;
-      aimX = muzzle.x + Math.sin(yaw) * weapon.range;
-      aimY = muzzle.y;
-      aimZ = muzzle.z + Math.cos(yaw) * weapon.range;
+      aimX = _origin.x + Math.sin(yaw) * weapon.range;
+      aimY = _origin.y;
+      aimZ = _origin.z + Math.cos(yaw) * weapon.range;
     }
 
-    _dir.set(aimX - muzzle.x, aimY - muzzle.y, aimZ - muzzle.z).normalize();
-    _end.set(muzzle.x + _dir.x * weapon.range, muzzle.y + _dir.y * weapon.range, muzzle.z + _dir.z * weapon.range);
+    _dir.set(aimX - _origin.x, aimY - _origin.y, aimZ - _origin.z).normalize();
+    _end.set(_origin.x + _dir.x * weapon.range, _origin.y + _dir.y * weapon.range, _origin.z + _dir.z * weapon.range);
 
     let hitAny = false;
     let kills = 0;
@@ -93,15 +100,15 @@ export class Firearms {
       _pellet.copy(_dir);
       this.applySpread(_pellet, weapon.spread);
 
-      const targetHit = this.raycastTargets(muzzle, _pellet, weapon.range, actor.faction || 'player');
+      const targetHit = this.raycastTargets(_origin, _pellet, weapon.range, actor.faction || 'player');
       const enemyHit = this.registry
         ? null
         : this.enemies.raycast(
-            muzzle.x, muzzle.y, muzzle.z,
+            _origin.x, _origin.y, _origin.z,
             _pellet.x, _pellet.y, _pellet.z,
             weapon.range,
           );
-      const staticHit = this.raycastStatic(muzzle, _pellet, weapon.range);
+      const staticHit = this.raycastStatic(_origin, _pellet, weapon.range);
       const targetT = targetHit ? targetHit.t : Infinity;
       const enemyT = enemyHit ? enemyHit.t : Infinity;
       const staticT = staticHit ? staticHit.t : Infinity;
@@ -149,7 +156,7 @@ export class Firearms {
           impactEvent = { surface: 'flesh', x: this._impact.x, y: this._impact.y, z: this._impact.z };
         }
       } else if (staticHit) {
-        this._impact.copy(muzzle).addScaledVector(_pellet, staticHit.t);
+        this._impact.copy(_origin).addScaledVector(_pellet, staticHit.t);
         this.fx.fire({
           muzzle,
           impact: this._impact,
@@ -166,7 +173,7 @@ export class Firearms {
           };
         }
       } else {
-        _end.copy(muzzle).addScaledVector(_pellet, weapon.range);
+        _end.copy(_origin).addScaledVector(_pellet, weapon.range);
         this.fx.fire({ muzzle, impact: _end, surface: null, normal: null, visualSpeed: weapon.visualSpeed });
       }
     }

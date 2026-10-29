@@ -20,6 +20,8 @@ export class UI {
     this.lastReloading = false;
     this.lastRaid = -1;
     this.hitTimer = 0;
+    this.commanderMode = 'command';
+    this._rosterKey = '';
     this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: true, sound: true };
     this.orientationLock = null;
     this.compassDrag = null;
@@ -59,6 +61,16 @@ export class UI {
       armoryAmmo: document.getElementById('armory-ammo'),
       armoryUpgrades: document.getElementById('armory-upgrades'),
       armoryScrap: document.getElementById('armory-scrap'),
+      rosterBar: document.getElementById('roster-bar'),
+      roster: document.getElementById('roster'),
+      unitCard: document.getElementById('unit-card'),
+      unitName: document.getElementById('unit-name'),
+      unitRole: document.getElementById('unit-role'),
+      unitHp: document.getElementById('unit-hp'),
+      unitHpFill: document.getElementById('unit-hp-fill'),
+      unitStatus: document.getElementById('unit-status'),
+      unitControl: document.getElementById('unit-control'),
+      unitClose: document.getElementById('unit-close'),
       wardrobeClose: document.getElementById('wardrobe-close'),
       ammo: document.getElementById('hud-ammo'),
       raidBanner: document.getElementById('raid-banner'),
@@ -169,6 +181,16 @@ export class UI {
     this.el.outfitBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.toggleWardrobe();
+    });
+    this.el.unitControl?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.cb.unitControl?.();
+    });
+    this.el.unitClose?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.cb.unitClose?.();
     });
     this.el.wardrobeClose.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -304,6 +326,68 @@ export class UI {
     el.classList.remove('hidden');
     clearTimeout(this.raidResultTimer);
     this.raidResultTimer = setTimeout(() => el.classList.add('hidden'), win ? 2800 : 2400);
+  }
+
+  setCommanderMode(mode) {
+    this.commanderMode = mode;
+    document.body.classList.toggle('command-mode', mode === 'command');
+    if (this.el.unitControl) {
+      this.el.unitControl.textContent = mode === 'direct' ? 'RELEASE' : 'TAKE CONTROL';
+      this.el.unitControl.classList.toggle('release', mode === 'direct');
+    }
+  }
+
+  showUnitCard(view, mode = this.commanderMode) {
+    if (!view || !this.el.unitCard) return;
+    this.el.unitCard.classList.remove('hidden');
+    this.el.unitName.textContent = view.name;
+    this.el.unitRole.textContent = view.role + (view.armed ? ' · ARMED' : '');
+    this.el.unitHp.textContent = `${Math.max(0, Math.round(view.hp))}/${Math.round(view.maxHp)}`;
+    this.el.unitHpFill.style.width = `${Math.max(0, Math.min(100, (view.hp / view.maxHp) * 100))}%`;
+    this.el.unitStatus.textContent = view.status;
+    this.el.unitControl.disabled = !view.canControl;
+    this.el.unitControl.textContent = mode === 'direct' ? 'RELEASE' : 'TAKE CONTROL';
+    this.el.unitControl.classList.toggle('release', mode === 'direct');
+  }
+
+  updateUnitCard(view, mode) {
+    this.showUnitCard(view, mode);
+  }
+
+  hideUnitCard() {
+    this.el.unitCard?.classList.add('hidden');
+  }
+
+  setRoster(units = []) {
+    if (!this.el.roster) return;
+    const key = units
+      .map((u) => `${u.key}:${Math.round(u.hp)}:${u.selected ? 1 : 0}:${u.dead ? 1 : 0}`)
+      .join('|');
+    if (key === this._rosterKey) return;
+    this._rosterKey = key;
+    this.el.roster.innerHTML = '';
+    for (const unit of units) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `roster-btn${unit.selected ? ' selected' : ''}${unit.dead ? ' dead' : ''}${unit.leader ? ' leader' : ''}`;
+      btn.title = unit.name;
+      const initial = document.createElement('b');
+      initial.textContent = unit.initial;
+      const name = document.createElement('small');
+      name.textContent = unit.name;
+      const bar = document.createElement('span');
+      bar.className = 'r-hp';
+      const fill = document.createElement('i');
+      fill.style.width = `${Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100))}%`;
+      bar.appendChild(fill);
+      btn.append(initial, name, bar);
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.cb.rosterSelect?.(unit.key);
+      });
+      this.el.roster.appendChild(btn);
+    }
   }
 
   setRaid(count) {
