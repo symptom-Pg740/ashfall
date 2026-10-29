@@ -44,6 +44,7 @@ export class Firearms {
     this.fx = fx;
     this.registry = registry;
     this.rng = makeRng(deriveSeed('firearms'));
+    this.onShot = null;
     this._impact = new THREE.Vector3();
     this._normal = new THREE.Vector3();
   }
@@ -81,6 +82,10 @@ export class Firearms {
     let kills = 0;
     let lastX = 0;
     let lastZ = 0;
+    const damageByTarget = new Map();
+
+    this.fx.casing(muzzle, actor.heading || 0, weapon.id);
+    this.onShot?.(weapon, actor);
 
     for (let p = 0; p < weapon.pellets; p++) {
       _pellet.copy(_dir);
@@ -117,6 +122,7 @@ export class Firearms {
           normal: _normal,
           visualSpeed: weapon.visualSpeed,
         });
+        this._addDamage(damageByTarget, target.id, weapon.damage, killed, this._impact);
       } else if (enemyHit && enemyT <= staticT) {
         const killed = this.enemies.damage(enemyHit.index, weapon.damage, actor.x, actor.z, 0.35);
         hitAny = true;
@@ -133,6 +139,7 @@ export class Firearms {
           normal: _normal,
           visualSpeed: weapon.visualSpeed,
         });
+        this._addDamage(damageByTarget, `ghoul:${enemyHit.index}`, weapon.damage, killed, this._impact);
       } else if (staticHit) {
         this._impact.copy(muzzle).addScaledVector(_pellet, staticHit.t);
         this.fx.fire({
@@ -148,7 +155,22 @@ export class Firearms {
       }
     }
 
+    for (const rec of damageByTarget.values()) {
+      this.fx.damageNumber(rec.point, rec.amount, rec.killed);
+    }
+
     return { hit: hitAny, killed: kills, x: lastX, z: lastZ };
+  }
+
+  /** Fold per-pellet hits into one number per target per trigger pull. */
+  _addDamage(map, id, amount, killed, point) {
+    let rec = map.get(id);
+    if (!rec) {
+      rec = { point: { x: point.x, y: point.y + 0.12, z: point.z }, amount: 0, killed: false };
+      map.set(id, rec);
+    }
+    rec.amount += amount;
+    rec.killed = rec.killed || killed;
   }
 
   /** A ray against every registered combatant capsule. */

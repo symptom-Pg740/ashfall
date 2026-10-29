@@ -147,7 +147,9 @@ The graph keeps the last ~45 seconds.
   weapon: 60 damage (one-shots a ghoul), 0.3° spread, 35 m, one round with a 1.1 s reload after each
   shot. Shots are hitscan rays tested against analytic ghoul capsules; a shared target registry
   auto-aims the character, while firing stays on the player's input. The shot is presented with a
-  travelling tracer, muzzle flash and smoke, surface-specific impacts and ground decals. The rifle
+  travelling tracer, muzzle flash and smoke, surface-specific impacts and ground decals, a brass
+  casing with a bounce, a synthesised gunshot (no audio files), a floating damage number and a
+  brief hit-stop on kills. The rifle
   is **two-handed**: its left hand is solved onto the foregrip with a two-bone arm IK, while the
   right hand holds the grip. One camp folk is armed with a pistol and **auto-engages ghouls** using
   the same aim controller. After about a minute a small **raider squad** attacks the camp: hostile

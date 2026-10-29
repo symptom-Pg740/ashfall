@@ -1,8 +1,9 @@
 # Firearms: bullets, weapons, auto-aim and impact effects
 
 - **Status:** phase 1 + battle slice implemented (single-shot rifle, shotgun, two-handed IK, camp
-  guard, raiders, two-way damage, raid banner, suppression). The armory added finite per-caliber ammo,
-  per-weapon magazines, four data-driven upgrade tracks and save `v: 2`. FX/audio polish remains.
+  guard, raiders, two-way damage, raid banner, suppression). The armory added finite per-caliber
+  ammo, per-weapon magazines, four data-driven upgrade tracks and save `v: 2`. The feedback pass
+  added casings, procedural gunshots, damage numbers and kill hit-stop.
 - **Date:** 2026-10-28
 - **Question:** If Ashfall adds firearms, what is the best way to implement hit resolution, bullets,
   weapons, auto-aim and the firing→flight→impact effects on a mobile-first, procedural,
@@ -1174,6 +1175,28 @@ smallest amount of code. Everything after it is additive.
   The Node run of `src/armory.js` covers fill/magazine persistence/pack caps and the `save.js` run
   covers `v: 1 → 2` migration. Headless captures show the armory panel (`1/8` rounds, four tracks)
   and the raid-clear card with scrap 26 → 36.
+
+## 16. Phase 5 — feedback pass: casings, audio, damage numbers, hit-stop (2026-10-29)
+
+- **Casings.** `FX` owns an instanced pool of 40 brass boxes. `Firearms.fire()` ejects one per
+  trigger pull (not per pellet) from just behind the muzzle to the shooter's right, with a random
+  spin and a ballistic arc. The update integrates gravity, bounces once on `heightAt()` with energy
+  loss, then slides to rest and fades over the last 0.25 s. Disabled on the `low` quality preset.
+- **Procedural gunshots.** `src/audio.js` synthesises each shot from a pre-baked noise buffer:
+  band-passed noise crack (pistol 2.4 kHz, rifle 1.5 kHz, shotgun 900 Hz) plus a pitched sine thump,
+  both with exponential envelopes. Distance from the listener lowers the gain and the low-pass
+  cutoff, so raider fire across the camp reads as distant. `AudioContext` is created on the start
+  button gesture; dry fire plays a mechanical click. No audio assets.
+- **Damage numbers.** Per-pellet hits are folded into one number per target per trigger pull
+  (`Firearms._addDamage`) and pushed into a pooled DOM layer. `FX.update()` projects each number
+  with the active camera, drifts it up and fades it over 0.85 s; kills render larger and orange.
+  The layer is `pointer-events: none` and sits under the reticle.
+- **Hit-stop.** A player kill sets a 55 ms timer; the loop scales `dt` to 20 % for that window, so
+  the tracer and impact hang for a beat. It is deliberately short and does not stack.
+- **Verification.** Headless captures show the rifle one-shot with `1` kill, `+2` scrap, a `60`
+  damage number and the reload state; the pistol shows an `18` over a ghoul. Audio cannot be heard
+  headless, but the context is created behind a `try/catch` and no console errors appear. The
+  casters are pooled and `git diff --check` is clean.
 
 ---
 

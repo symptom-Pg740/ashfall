@@ -11,7 +11,7 @@ and what we still don't know** — not to collect links.
 | Orthographic camera: methods, trade-offs, and a config for Ashfall | Implemented (first pass) | 2026-10-28 | [orthographic-camera.md](orthographic-camera.md) |
 | Procedural generation: terrain, scatter, buildings, characters, textures, shaders | Phase 0–6 first pass | 2026-10-28 | [procedural-generation.md](procedural-generation.md) |
 | Character realism: silhouette, skinning, PBR, lighting, authored-base trade-off | R1–R4 + IK + far LOD + wardrobe implemented | 2026-10-28 | [character-realism.md](character-realism.md) |
-| Firearms: hit resolution, tracers, auto-aim, weapon data and impact FX | Phase 4: ammo economy, upgrades, suppression | 2026-10-29 | [firearms.md](firearms.md) |
+| Firearms: hit resolution, tracers, auto-aim, weapon data and impact FX | Phase 5: ammo/upgrades + casings, audio, damage numbers | 2026-10-29 | [firearms.md](firearms.md) |
 
 ## Conventions
 

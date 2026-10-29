@@ -12,6 +12,7 @@ import { deriveSeed, makeRng } from './rng.js';
  */
 
 const MAX_TRACERS = 64;
+const MAX_CASINGS = 40;
 const MAX_POINTS = 512;
 const MAX_DECALS = 32;
 
@@ -151,6 +152,39 @@ export class FX {
     }
     this.tracers.instanceColor.needsUpdate = true;
 
+    // Ejected brass: one instanced box with its own tiny ballistic step.
+    // Slightly overscaled for readability from the orthographic camera.
+    this.casingGeo = new THREE.BoxGeometry(0.03, 0.03, 0.075);
+    this.casingMat = new THREE.MeshStandardMaterial({
+      color: 0xc7a052,
+      metalness: 0.65,
+      roughness: 0.28,
+      emissive: 0x2a1c08,
+      emissiveIntensity: 0.6,
+    });
+    this.casings = new THREE.InstancedMesh(this.casingGeo, this.casingMat, MAX_CASINGS);
+    this.casings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.casings.frustumCulled = false;
+    this.casings.count = 0;
+    scene.add(this.casings);
+    this.casingSlots = [];
+    for (let i = 0; i < MAX_CASINGS; i++) {
+      this.casingSlots.push({
+        active: false,
+        x: 0, y: -100, z: 0,
+        vx: 0, vy: 0, vz: 0,
+        rx: 0, ry: 0, rz: 0,
+        wx: 0, wy: 0, wz: 0,
+        life: 0, maxLife: 1.2,
+      });
+      _o.position.set(0, -100, 0);
+      _o.scale.setScalar(0.0001);
+      _o.updateMatrix();
+      this.casings.setMatrixAt(i, _o.matrix);
+    }
+    this.casings.instanceMatrix.needsUpdate = true;
+    this.casingCursor = 0;
+
     this.additive = makePointBatch(true, 32);
     this.alpha = makePointBatch(false, 20);
     scene.add(this.additive.points);
@@ -209,6 +243,26 @@ export class FX {
 
     this.pending = [];
     this.pixelsPerMeter = 20;
+    this.casingsEnabled = true;
+
+    // Floating damage numbers live in the HUD layer; FX projects them with the active camera.
+    this.dmgLayer = typeof document !== 'undefined' ? document.getElementById('dmg-layer') : null;
+    this.dmgSlots = [];
+    if (this.dmgLayer) {
+      for (let i = 0; i < 24; i++) {
+        const el = document.createElement('span');
+        el.className = 'dmg-num';
+        el.style.opacity = '0';
+        this.dmgLayer.appendChild(el);
+        this.dmgSlots.push({
+          el, active: false,
+          x: 0, y: 0, z: 0,
+          life: 0, maxLife: 0.85,
+          dx: 0,
+        });
+      }
+    }
+    this.dmgCursor = 0;
   }
 
   setCamera(camera) {
@@ -222,6 +276,7 @@ export class FX {
     this.smokeEnabled = !low;
     this.lightEnabled = !low;
     this.particleScale = low ? 0.5 : 1;
+    this.casingsEnabled = !low;
     if (!this.lightEnabled) this.light.intensity = 0;
   }
 
@@ -289,6 +344,49 @@ export class FX {
     slot.width = 0.12;
     slot.color.set('#ffd9a0');
     return slot.dur;
+  }
+
+  /**
+   * Eject one casing from just behind the muzzle, to the shooter's right. A rifle throws a long
+   * brass case; the shotgun drops a fat red hull.
+   */
+  casing(muzzle, heading = 0, kind = 'rifle') {
+    if (!this.casingsEnabled) return;
+    const slot = this.casingSlots[this.casingCursor++ % MAX_CASINGS];
+    const rightX = Math.cos(heading);
+    const rightZ = -Math.sin(heading);
+    const back = kind === 'pistol' ? 0.1 : 0.16;
+    slot.active = true;
+    slot.x = muzzle.x - Math.sin(heading) * back + rightX * 0.03;
+    slot.y = muzzle.y + 0.03;
+    slot.z = muzzle.z - Math.cos(heading) * back + rightZ * 0.03;
+    const kick = kind === 'shotgun' ? 1.9 : 1.5;
+    slot.vx = rightX * kick + (this.rng() - 0.5) * 0.25;
+    slot.vy = (kind === 'shotgun' ? 2.1 : 1.7) + this.rng() * 0.25;
+    slot.vz = rightZ * kick + (this.rng() - 0.5) * 0.25;
+    slot.rx = this.rng() * 6.28;
+    slot.ry = this.rng() * 6.28;
+    slot.rz = this.rng() * 6.28;
+    slot.wx = (this.rng() - 0.5) * 26;
+    slot.wy = (this.rng() - 0.5) * 26;
+    slot.wz = (this.rng() - 0.5) * 26;
+    slot.life = kind === 'shotgun' ? 1.1 : 1.3;
+    slot.maxLife = slot.life;
+  }
+
+  /** Floating damage readout; one pooled span per hit, projected every frame. */
+  damageNumber(point, amount, killed = false) {
+    if (!this.dmgSlots.length) return;
+    const slot = this.dmgSlots[this.dmgCursor++ % this.dmgSlots.length];
+    slot.active = true;
+    slot.x = point.x;
+    slot.y = point.y;
+    slot.z = point.z;
+    slot.life = slot.maxLife;
+    slot.dx = (this.rng() - 0.5) * 34;
+    slot.el.textContent = String(Math.round(amount));
+    slot.el.classList.toggle('kill', !!killed);
+    slot.el.style.opacity = '1';
   }
 
   fire({ muzzle, impact, surface = 'sand', normal = null, visualSpeed = 140 }) {
@@ -432,6 +530,76 @@ export class FX {
     this.tracers.count = tracerCount;
     this.tracers.instanceMatrix.needsUpdate = true;
     this.tracers.instanceColor.needsUpdate = true;
+
+    // Casings: ballistic arc with a single floor bounce.
+    let casingCount = 0;
+    for (const c of this.casingSlots) {
+      if (!c.active) continue;
+      c.life -= dt;
+      if (c.life <= 0) {
+        c.active = false;
+        continue;
+      }
+      c.vy -= 9.8 * dt;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.z += c.vz * dt;
+      c.rx += c.wx * dt;
+      c.ry += c.wy * dt;
+      c.rz += c.wz * dt;
+      const floor = heightAt(c.x, c.z) + 0.015;
+      if (c.y < floor) {
+        c.y = floor;
+        if (Math.abs(c.vy) > 0.5) {
+          c.vy = Math.abs(c.vy) * 0.32;
+          c.vx *= 0.55;
+          c.vz *= 0.55;
+          c.wx *= 0.45;
+          c.wy *= 0.45;
+          c.wz *= 0.45;
+        } else {
+          c.vy = 0;
+          c.vx *= 0.82;
+          c.vz *= 0.82;
+          c.wx *= 0.8;
+          c.wy *= 0.8;
+          c.wz *= 0.8;
+        }
+      }
+      const fade = Math.min(1, c.life / 0.25);
+      _o.position.set(c.x, c.y, c.z);
+      _o.rotation.set(c.rx, c.ry, c.rz);
+      _o.scale.setScalar(fade);
+      _o.updateMatrix();
+      this.casings.setMatrixAt(casingCount++, _o.matrix);
+    }
+    this.casings.count = casingCount;
+    this.casings.instanceMatrix.needsUpdate = true;
+
+    // Floating damage numbers.
+    if (this.dmgSlots.length) {
+      const width = this.renderer.domElement.clientWidth;
+      const height = this.renderer.domElement.clientHeight;
+      for (const s of this.dmgSlots) {
+        if (!s.active) continue;
+        s.life -= dt;
+        if (s.life <= 0) {
+          s.active = false;
+          s.el.style.opacity = '0';
+          continue;
+        }
+        const t = 1 - s.life / s.maxLife;
+        _v.set(s.x, s.y + t * 0.55, s.z).project(this.camera);
+        if (_v.z > 1 || _v.z < -1) {
+          s.el.style.opacity = '0';
+          continue;
+        }
+        const px = (_v.x * 0.5 + 0.5) * width + s.dx * t;
+        const py = (-_v.y * 0.5 + 0.5) * height;
+        s.el.style.transform = `translate(-50%, -50%) translate(${px}px, ${py}px) scale(${1 + t * 0.28})`;
+        s.el.style.opacity = String(Math.min(1, s.life / 0.28));
+      }
+    }
 
     // Impact queue.
     for (let i = this.pending.length - 1; i >= 0; i--) {

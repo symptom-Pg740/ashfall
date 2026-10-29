@@ -1643,3 +1643,28 @@ body.build-open .actions {
     transform: translate(-50%, -50%) scale(1);
   }
 }
+
+/* floating damage numbers */
+.dmg-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dmg-num {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #ffd9a6;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  will-change: transform, opacity;
+}
+
+.dmg-num.kill {
+  color: #ff8f66;
+  font-size: 16px;
+}

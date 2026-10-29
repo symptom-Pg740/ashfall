@@ -14,6 +14,7 @@ import { Input } from './input.js';
 import { CampFolk } from './npcs.js';
 import { Raiders } from './raiders.js';
 import { Armory } from './armory.js';
+import { AudioFx } from './audio.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readSave, writeSave } from './save.js';
 import { itemLabel } from './wardrobe.js';
@@ -142,8 +143,12 @@ const state = {
 
 // Ammo reserve, per-weapon magazines and upgrade tiers live in the save state.
 const armory = new Armory(state);
+const audio = new AudioFx();
 player.setArmory(armory);
-player.onDry = (name) => ui.toast(`OUT OF AMMO · ${name}`, true);
+player.onDry = (name) => {
+  ui.toast(`OUT OF AMMO · ${name}`, true);
+  audio.click();
+};
 
 // Shared target registry: the player, camp folk and ghouls all describe themselves the same way.
 const registry = new TargetRegistry();
@@ -220,6 +225,11 @@ const settlement = new Settlement({
 });
 const perf = new Perf(renderer);
 const firearms = new Firearms({ enemies, settlement, wasteland, fx, registry });
+firearms.onShot = (weapon, actor) => {
+  const distance = Math.hypot(actor.x - player.x, actor.z - player.z);
+  audio.shot(weapon.id, distance);
+  if (distance < 0.5) setTimeout(() => audio.casing(), 240);
+};
 player.aim.los = (x1, y1, z1, x2, y2, z2) => firearms.hasLineOfSight(x1, y1, z1, x2, y2, z2);
 campFolk.attachCombat({
   registry,
@@ -308,6 +318,7 @@ let nextSpawnGap = 16;
 let resumedGame = false;
 let lastSave = 0;
 let cameraShake = 0;
+let hitStopTimer = 0;
 let lastUIUpdate = 0;
 let stressMesh = null;
 let boundaryWarned = false;
@@ -315,6 +326,7 @@ let boundaryWarned = false;
 ui.on('started', () => {
   if (state.started) return;
   state.started = true;
+  audio.start();
   input.setEnabled(true);
   spawnAt = resumedGame ? Math.max(spawnAt, state.time + 8) : state.time + 45;
   spawnWarned = false;
@@ -507,6 +519,7 @@ function doGather() {
 
 function awardKills(kills) {
   if (!kills) return;
+  hitStopTimer = 0.055;
   state.kills += kills;
   state.scrap += kills * 2;
   ui.updateHUD(state);
@@ -1051,8 +1064,13 @@ function loop(now) {
   requestAnimationFrame(loop);
   const rawMs = now - last;
   last = now;
-  const dt = Math.min(0.05, Math.max(0.0001, rawMs / 1000));
   const elapsed = rawMs / 1000;
+  let dt = Math.min(0.05, Math.max(0.0001, rawMs / 1000));
+  // A kill lands with a brief, subtle time dip so the hit reads.
+  if (hitStopTimer > 0) {
+    hitStopTimer -= elapsed;
+    dt *= 0.2;
+  }
 
   if (state.started) {
     simulate(dt);
@@ -1257,6 +1275,7 @@ if (debugParams.has('fastforward')) {
       simulate(1 / 60);
       campFolk.update(1 / 60, state.time, player, settlement.buildings);
       raiders.update(1 / 60, state.time, player);
+      fx.update(1 / 60);
     }
     ui.updateHUD(state);
     ui.setAmmo(player.ammoState());
