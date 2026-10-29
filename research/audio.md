@@ -1,8 +1,7 @@
 # Audio: realistic gunfire and world sound without assets
 
-- **Status:** procedural engine implemented (layered shots, generated reverb, impacts, reload,
-  footsteps, wind, mute). The honest ceiling of pure synthesis and the sample-pack upgrade path are
-  documented below.
+- **Status:** implemented. Layered synthesis for the body/space/foley, plus six CC BY/CC0 recorded
+  close layers for the guns (with a synth fallback per weapon).
 - **Date:** 2026-10-29
 - **Question:** What is the best way to make convincing gunfire and combat foley for Ashfall, a
   mobile-first WebGL game whose identity is "every asset generated at runtime"?
@@ -59,7 +58,7 @@ public architecture to what Ashfall needs.
 | Recorded multi-samples + randomisation | Highest | Large (dozens of MB) | Low | Best final quality, breaks "0 assets" |
 | Layered Web Audio synthesis | Good for stylised/mid-fi | None | Low–medium | **Chosen for now** |
 | Physical/model-based synthesis (research) | High in papers | None | High, hard to tune | Not practical on mid mobile |
-| Hybrid: synth body/tail + recorded transient | Very high | Small (a few short WAVs) | Low | **Recommended next step** |
+| Hybrid: synth body/tail + recorded transient | Very high | Small (six MP3s, 168 KB) | Low | **Chosen and implemented** |
 | Convolution reverb | Essential for space | IR file or generated | Medium | Generated IR, done |
 
 Web Audio gives the primitives needed:
@@ -79,8 +78,24 @@ Web Audio gives the primitives needed:
 
 ## 4. What Ashfall now does
 
-`src/audio.js` synthesises each shot from six layers, picked from four pre-jittered variants per
-weapon:
+### 4.1 Recorded close layer (hybrid)
+
+Six short recordings from the CC0/CC BY OpenGameArt "Gunshot Sounds" pack (CZ-52 pistol, Mosin
+Nagant, SKS, shotgun) are trimmed around a single shot, mono, peak-normalised and encoded to MP3
+(168 KB total, [`public/audio`](../public/audio)). At start `AudioFx._loadSamples()` fetches and
+decodes them; each weapon gets a round-robin of two or three takes with ±3 % playback-rate jitter.
+The sample carries the transient, body and its own room; only the synthesised **sub** is added
+underneath, plus a rolling boom at distance. A missing or undecodable file leaves that weapon on
+the synthesis path, so the game still runs offline from `dist` even if the audio folder is dropped.
+
+Credits and the licence (the page says CC0, the archive also carries a CC BY 3.0 notice, so we
+credit the author and comply with CC BY) are in
+[`public/audio/CREDITS.md`](../public/audio/CREDITS.md).
+
+### 4.2 Synthesised layers and fallback
+
+`src/audio.js` synthesises the rest of each shot from six layers, picked from four pre-jittered
+variants per weapon when no sample is loaded:
 
 | Layer | Source | Role |
 | --- | --- | --- |
@@ -126,29 +141,33 @@ reading peak/RMS after each trigger (48 kHz):
 | Footstep | 0.10 | 0.009 |
 | Dry fire | 0.25 | 0.068 |
 
+These figures are the synthesis-only path. With the recorded close layer in place the measured
+levels are: pistol 0.58 peak / 0.153 RMS, rifle 0.70 / 0.175, shotgun 0.94 / 0.22, far rifle
+0.40 / 0.10. The decoded MP3s show only 0–3 ms of codec pre-roll, which is removed by starting at
+the measured offset.
+
 The relative levels are deliberate: the shotgun is the heaviest, distance costs the rifle roughly
 6 dB of RMS, foley sits well under gunfire, and footsteps are almost subliminal. The final master
-gain of 0.5 keeps the compressor overshoot (shotgun peak 1.04 pre-master) below full scale.
+gain of 0.5 keeps the compressor overshoot below full scale.
 
 `?audiotest=1` plays the whole set in sequence for a quick listening pass.
 
 ## 6. Honest assessment
 
-Layered synthesis now has the right *structure* — transient, crack, body, sub, action and a real
-convolution tail — and it is clearly better than the previous two-layer burst. But the ceiling of
-pure synthesis is "convincing stylised gunshot", not "indistinguishable from a recording". The
-elements that sell realism most are:
+The recorded close layers remove the weakest link: a synthesised transient/body never quite sounds
+like a real barrel. What is left is mostly *implementation* work, not a quality ceiling:
 
-1. a recorded **transient + body** from the actual calibre,
-2. a recorded **tail** from a real outdoor space,
-3. many variations of both.
+1. **Distance tails** are still one shared IR. Real far shots should swap in a darker, delayed tail
+   one-shot, as Kilborn/Splice describe.
+2. **No occlusion** — a shot behind a house is only quieter, not muffled.
+3. **Sample variety** is 2–3 takes per weapon. A commercial library has dozens; the round-robin
+   plus pitch jitter hides it well at this camera distance, but it is the next obvious upgrade.
+4. **Reloads and foley** are entirely synthesised. They read fine under gunfire but are the next
+   place a recording would help (the OpenGameArt shotgun-reload pack is CC0).
 
-Those are exactly the parts synthesis approximates least well. If Ashfall wants true realism, the
-pragmatic upgrade is a **hybrid**: keep the generated sub/mechanical/space layers, but load a small
-set of CC0 gunshot transients (two or three per weapon, a few hundred KB total) and randomise them.
-That keeps the download small and the code procedural, but breaks the literal "0 asset files" line
-in the README. The alternative — a full commercial library (e.g. the King Collection) — is the
-film/game industry answer but adds tens of MB and licensing.
+What was implemented and is worth keeping: the generated IR and distance model (cheap, consistent
+with the world), the compressor, the round-robin/jitter discipline, and the per-weapon fallback so
+audio never becomes a hard dependency.
 
 Other next steps that would help more than more synthesis layers:
 
@@ -182,3 +201,6 @@ Other next steps that would help more than more synthesis layers:
    https://webaudio.prototyping.bbc.co.uk/docs/gunfire.html
 10. D. B. Lloyd, N. Raghuvanshi, N. K. Govindaraju, "Sound Synthesis for Impact Sounds in Video
     Games", ACM I3D 2011. https://dl.acm.org/doi/pdf/10.1145/1944745.1944755
+11. "Gunshot Sounds" by Tabasco (Vincent Sevedge), OpenGameArt.org, CC0 submission with a bundled
+    CC BY 3.0 notice. https://opengameart.org/content/gunshot-sounds — see
+    [`public/audio/CREDITS.md`](../public/audio/CREDITS.md).

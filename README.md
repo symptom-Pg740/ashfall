@@ -2,7 +2,8 @@
 
 A quick, mobile-first **top-down 3D RPG / settlement-building prototype** built with Three.js.
 Scavenge a procedural dust plain, raise an adobe camp, and keep the ghouls outside the firelight.
-Every mesh, texture and gust of ash is generated at runtime — there are no model, image or audio assets.
+Every mesh, texture and gust of ash is generated at runtime. The only assets are six short
+recorded gunshot close-layers (168 KB); everything else in the audio engine is synthesised.
 
 This pass also targets the supplied isometric desert-town reference: **sun-bleached sand, cracked
 earth, red adobe walls, cream stucco, a bell tower, flat roofs, blue shutters, cacti and crisp
@@ -148,10 +149,11 @@ The graph keeps the last ~45 seconds.
   shot. Shots are hitscan rays tested against analytic ghoul capsules; a shared target registry
   auto-aims the character, while firing stays on the player's input. The shot is presented with a
   travelling tracer, muzzle flash and smoke, surface-specific impacts and ground decals, a brass
-  casing with a bounce, a layered procedural gunshot (transient, crack, saturated body, sub, action
-  and a generated convolution tail — no audio files), a floating damage number and a brief hit-stop
-  on kills. Impacts, reloads, dry fire, casings, footsteps and a low wind bed are synthesised too;
-  **SOUND** in the PERF panel mutes everything and the choice persists. The rifle
+  casing with a bounce, a hybrid gunshot (six short recorded close layers over synthesised sub,
+  action and a generated convolution tail), a floating damage number and a brief hit-stop on kills.
+  Impacts, reloads, dry fire, casings, footsteps and a low wind bed are synthesised; **SOUND** in the
+  PERF panel mutes everything and the choice persists. The six gunshot recordings are the only
+  audio assets — see [public/audio/CREDITS.md](public/audio/CREDITS.md). The rifle
   is **two-handed**: its left hand is solved onto the foregrip with a two-bone arm IK, while the
   right hand holds the grip. One camp folk is armed with a pistol and **auto-engages ghouls** using
   the same aim controller. After about a minute a small **raider squad** attacks the camp: hostile
@@ -208,7 +210,7 @@ src/geo.js            primitive/merge/colour helpers, procedural canvas textures
 src/rng.js            seeded RNG, easing helpers
 ```
 
-Everything is in one frame. There is no post-processing, no physics engine and no external asset
+Everything is in one frame. There is no post-processing, no physics engine and no external art
 pipeline. The shadow pass is the only additional render pass.
 
 ---
@@ -306,13 +308,32 @@ suggests Add to Home Screen instead. iPad, Android Chrome and desktop browsers s
 - Not yet profiled on a physical phone.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question.
-- No audio.
-- Circle collisions; no navmesh/pathfinding. Ghouls can catch on large wreckage.
+- Circle collisions; no navmesh/pathfinding. Ghouls and raiders can catch on large wreckage.
 - Water is produced but has no sink/economy yet.
-- No save/load, building removal, upgrades or rotation.
-- One enemy type, one weapon, one map.
-- Procedural low-poly art, not production art.
+- No building removal or rotation; weapon upgrades exist but there is no settlement tech tree.
+- Ghouls, hostile rifle raiders and the camp guard only; pistol, pipe rifle and sawn-off.
+- Procedural low-poly art, not production art. Six recorded gunshot layers are the only assets.
 - `window.__ashfall` is deliberately exposed for tuning. It is not part of the game UI.
+
+### Test hooks
+
+Append to the URL:
+
+| Hook | Effect |
+| --- | --- |
+| `?autostart=1` | skip the title screen |
+| `?zoom=2.4` | camera zoom |
+| `?weapon=rifle` | equip a weapon (`pistol`, `rifle`, `shotgun`, or melee) |
+| `?ghoul=1` | one stationary ghoul in front of the player |
+| `?raider=1` | one hostile raider beside the player |
+| `?raid=1` | start a raid immediately |
+| `?raidclear=1` | spawn and immediately clear a raid |
+| `?armory=1` | open the outfit/armory panel |
+| `?upgrade=damage` | buy one upgrade tier and open the panel |
+| `?noammo=1` | empty the pouch and magazine |
+| `?hurt=60` | apply damage after a second |
+| `?fastforward=5&ffdelay=2000` | step the simulation deterministically |
+| `?audiotest=1` | play the whole sound set in sequence |
 
 ### Tuning from the console
 
@@ -322,6 +343,8 @@ __ashfall.enemies.spawn(20, __ashfall.player.x, __ashfall.player.z, 18);
 __ashfall.actions.doStress('debris');
 __ashfall.actions.doStress('ghouls');
 __ashfall.actions.applyQuality('low');
+__ashfall.audio.shot('rifle');
+__ashfall.audio.setMuted(true);
 ```
 
 ---

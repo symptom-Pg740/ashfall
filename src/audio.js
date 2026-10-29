@@ -84,6 +84,8 @@ export class AudioFx {
     this.convolver = null;
     this.noise = {};
     this.variants = {};
+    this.shotSamples = { pistol: [], rifle: [], shotgun: [] };
+    this._sampleIndex = {};
     this.muted = false;
     this.quality = 'high';
     this.started = false;
@@ -145,6 +147,7 @@ export class AudioFx {
     this._makeNoise('pink');
     this._makeNoise('brown');
     this._makeVariants();
+    this._loadSamples();
 
     this.started = true;
     if (this.ctx.state === 'suspended') this.ctx.resume();
@@ -179,6 +182,43 @@ export class AudioFx {
 
   get available() {
     return !!this.ctx && this.ctx.state === 'running';
+  }
+
+  /**
+   * Load the optional recorded close layer. Missing files are not an error: the synth fallback
+   * stays in place per weapon.
+   */
+  async _loadSamples() {
+    if (!this.ctx) return;
+    const base = import.meta.env?.BASE_URL || '/';
+    const manifest = {
+      pistol: ['pistol-cz-1', 'pistol-cz-2'],
+      rifle: ['rifle-mosin-1', 'rifle-mosin-2', 'rifle-sks-1'],
+      shotgun: ['shotgun-1'],
+    };
+    for (const [kind, names] of Object.entries(manifest)) {
+      for (const name of names) {
+        try {
+          const res = await fetch(`${base}audio/${name}.mp3`);
+          if (!res.ok) continue;
+          const data = await res.arrayBuffer();
+          const buffer = await this.ctx.decodeAudioData(data);
+          // Trim any codec pre-roll so the transient lands on the scheduled time.
+          const channel = buffer.getChannelData(0);
+          const limit = Math.min(channel.length, Math.floor(this.ctx.sampleRate * 0.06));
+          let offset = 0;
+          for (let i = 0; i < limit; i++) {
+            if (Math.abs(channel[i]) > 0.02) {
+              offset = Math.max(0, i - Math.floor(this.ctx.sampleRate * 0.001));
+              break;
+            }
+          }
+          this.shotSamples[kind].push({ buffer, offset: offset / this.ctx.sampleRate });
+        } catch {
+          // Keep the synthesised shot for this weapon.
+        }
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -372,6 +412,11 @@ export class AudioFx {
    */
   shot(kind = 'pistol', distance = 0, pan = 0) {
     if (!this.available || this.muted) return;
+    const samples = this.shotSamples[kind];
+    if (samples && samples.length) {
+      this._sampleShot(kind, samples, distance, pan);
+      return;
+    }
     const variants = this.variants[kind];
     if (!variants) return;
     const index = this._shotIndex[kind] || 0;
@@ -399,6 +444,37 @@ export class AudioFx {
 
     // Far shots get an extra rolling report instead of the mechanical detail.
     if (!close) this._distantBoom(bus, when, v, distance, near);
+  }
+
+  /**
+   * Recorded close layer + synthesised weight. The sample carries the transient, body and its own
+   * room; only the sub is added underneath, and a rolling boom once the shot is far away.
+   */
+  _sampleShot(kind, samples, distance, pan) {
+    const index = this._sampleIndex[kind] || 0;
+    this._sampleIndex[kind] = (index + 1) % samples.length;
+    const sample = samples[index];
+    const buffer = sample.buffer;
+    const near = 1 / (1 + distance / 14);
+    const when = this.ctx.currentTime + Math.min(0.4, distance / SPEED_OF_SOUND) + 0.002;
+    const bus = this._shotBus(when, distance, pan, 0.12);
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = 0.97 + Math.random() * 0.06;
+    const g = this.ctx.createGain();
+    const level = kind === 'shotgun' ? 1.0 : kind === 'rifle' ? 0.95 : 0.52;
+    g.gain.value = level * (0.94 + Math.random() * 0.12);
+    src.connect(g).connect(bus);
+    src.start(when, sample.offset || 0);
+
+    const base = SHOTS[kind];
+    if (base && distance < 32) {
+      this._sub(bus, when, { sub: { ...base.sub, gain: base.sub.gain * 0.26 } }, near);
+    }
+    if (distance >= 18) {
+      this._distantBoom(bus, when, { distant: base?.distant ?? 0.6 }, distance, near);
+    }
   }
 
   _transient(bus, when, v, gainScale) {
