@@ -1,7 +1,7 @@
 import { merge } from './geo.js';
 import { shade } from './character.js';
 import { WEAPONS, buildWeaponParts } from './weapons.js';
-import { LAYOUT, ball, capsule, pose, rbox, ring, setRegionUV, smoothMerge } from './charparts.js';
+import { LAYOUT, RIG_GROUP, ball, capsule, pose, rbox, ring, setRegionUV, smoothMerge, tagGroup, tagSides } from './charparts.js';
 
 /**
  * Wardrobe slots and items.
@@ -22,6 +22,9 @@ const metal = (g) => setRegionUV(g, 'metal');
 
 const armX = (w) => LAYOUT.armX * w;
 const legX = (w) => LAYOUT.legX * w;
+const BODY = RIG_GROUP.BODY;
+const ARM_L = RIG_GROUP.ARM_L;
+const ARM_R = RIG_GROUP.ARM_R;
 
 export const SLOTS = [
   { id: 'head', label: 'HEAD', kind: 'gear' },
@@ -294,6 +297,13 @@ export const ITEMS = {
       foregrip: WEAPONS.pistol.foregrip,
       twoHanded: WEAPONS.pistol.twoHanded,
     },
+    rifle: {
+      label: 'Pipe rifle',
+      build: (spec) => buildWeaponParts('rifle', spec),
+      muzzle: WEAPONS.rifle.muzzle,
+      foregrip: WEAPONS.rifle.foregrip,
+      twoHanded: WEAPONS.rifle.twoHanded,
+    },
     blade: {
       label: 'Scrap blade',
       build: (spec) => {
@@ -334,14 +344,14 @@ export const ITEMS = {
       outfit: (spec) => {
         const { s, w, coat } = spec;
         const p = [
-          cloth(rbox(0.44 * w, 0.34 * s, 0.3 * w, 0.08 * w, coat, 0, 1.19 * s, 0)),
-          cloth(rbox(0.36 * w, 0.14 * s, 0.27 * w, 0.07 * w, shade(coat, 0.92), 0, 1.38 * s, 0)),
-          cloth(ring(0.125 * w, 0.014 * w, shade(coat, 0.86), 0, 1.42 * s, 0)),
+          tagGroup(cloth(rbox(0.44 * w, 0.34 * s, 0.3 * w, 0.08 * w, coat, 0, 1.19 * s, 0)), BODY),
+          tagGroup(cloth(rbox(0.36 * w, 0.14 * s, 0.27 * w, 0.07 * w, shade(coat, 0.92), 0, 1.38 * s, 0)), BODY),
+          tagGroup(cloth(ring(0.125 * w, 0.014 * w, shade(coat, 0.86), 0, 1.42 * s, 0)), BODY),
         ];
         for (const sx of [-1, 1]) {
-          p.push(cloth(ball(0.08 * w, shade(coat, 0.92), sx * armX(w), 1.38 * s, 0)));
-          p.push(cloth(capsule(0.062 * w, 0.22 * s, shade(coat, 0.95), sx * armX(w), 1.18 * s, 0)));
-          p.push(cloth(capsule(0.052 * w, 0.2 * s, shade(coat, 0.9), sx * armX(w), 0.85 * s, 0.005 * w)));
+          p.push(tagSides(cloth(ball(0.08 * w, shade(coat, 0.92), sx * armX(w), 1.38 * s, 0)), ARM_L, ARM_R));
+          p.push(tagSides(cloth(capsule(0.062 * w, 0.22 * s, shade(coat, 0.95), sx * armX(w), 1.18 * s, 0)), ARM_L, ARM_R));
+          p.push(tagSides(cloth(capsule(0.052 * w, 0.2 * s, shade(coat, 0.9), sx * armX(w), 0.85 * s, 0.005 * w)), ARM_L, ARM_R));
         }
         return smoothMerge(p);
       },
@@ -351,12 +361,12 @@ export const ITEMS = {
       outfit: (spec) => {
         const { s, w } = spec;
         const p = [
-          leather(rbox(0.43 * w, 0.32 * s, 0.31 * w, 0.06 * w, '#6b4a33', 0, 1.2 * s, 0)),
-          leather(rbox(0.3 * w, 0.09 * s, 0.29 * w, 0.03, '#7d5a3f', 0, 1.38 * s, 0)),
-          leather(rbox(0.1 * w, 0.1 * s, 0.32 * w, 0.02, '#7d5a3f', 0, 1.34 * s, 0)),
+          tagGroup(leather(rbox(0.43 * w, 0.32 * s, 0.31 * w, 0.06 * w, '#6b4a33', 0, 1.2 * s, 0)), BODY),
+          tagGroup(leather(rbox(0.3 * w, 0.09 * s, 0.29 * w, 0.03, '#7d5a3f', 0, 1.38 * s, 0)), BODY),
+          tagGroup(leather(rbox(0.1 * w, 0.1 * s, 0.32 * w, 0.02, '#7d5a3f', 0, 1.34 * s, 0)), BODY),
         ];
         for (const sx of [-1, 1]) {
-          p.push(leather(ball(0.078 * w, '#6b4a33', sx * armX(w), 1.38 * s, 0)));
+          p.push(tagSides(leather(ball(0.078 * w, '#6b4a33', sx * armX(w), 1.38 * s, 0)), ARM_L, ARM_R));
         }
         return smoothMerge(p);
       },
@@ -366,15 +376,15 @@ export const ITEMS = {
       outfit: (spec) => {
         const { s, w, coat } = spec;
         const p = [
-          cloth(rbox(0.45 * w, 0.36 * s, 0.31 * w, 0.08 * w, coat, 0, 1.2 * s, 0)),
-          cloth(rbox(0.47 * w, 0.34 * s, 0.33 * w, 0.08 * w, shade(coat, 0.92), 0, 0.93 * s, 0)),
-          cloth(ring(0.14 * w, 0.02 * w, shade(coat, 0.82), 0, 1.42 * s, 0)),
+          tagGroup(cloth(rbox(0.45 * w, 0.36 * s, 0.31 * w, 0.08 * w, coat, 0, 1.2 * s, 0)), BODY),
+          tagGroup(cloth(rbox(0.47 * w, 0.34 * s, 0.33 * w, 0.08 * w, shade(coat, 0.92), 0, 0.93 * s, 0)), BODY),
+          tagGroup(cloth(ring(0.14 * w, 0.02 * w, shade(coat, 0.82), 0, 1.42 * s, 0)), BODY),
         ];
         for (const sx of [-1, 1]) {
-          p.push(cloth(ball(0.082 * w, shade(coat, 0.94), sx * armX(w), 1.38 * s, 0)));
-          p.push(cloth(capsule(0.066 * w, 0.22 * s, shade(coat, 0.96), sx * armX(w), 1.18 * s, 0)));
-          p.push(cloth(capsule(0.056 * w, 0.2 * s, shade(coat, 0.88), sx * armX(w), 0.85 * s, 0.005 * w)));
-          p.push(cloth(rbox(0.12 * w, 0.34 * s, 0.12 * w, 0.03, shade(coat, 0.84), sx * 0.23 * w, 0.98 * s, -0.02 * w, 0, 0, sx * 0.04)));
+          p.push(tagSides(cloth(ball(0.082 * w, shade(coat, 0.94), sx * armX(w), 1.38 * s, 0)), ARM_L, ARM_R));
+          p.push(tagSides(cloth(capsule(0.066 * w, 0.22 * s, shade(coat, 0.96), sx * armX(w), 1.18 * s, 0)), ARM_L, ARM_R));
+          p.push(tagSides(cloth(capsule(0.056 * w, 0.2 * s, shade(coat, 0.88), sx * armX(w), 0.85 * s, 0.005 * w)), ARM_L, ARM_R));
+          p.push(tagGroup(cloth(rbox(0.12 * w, 0.34 * s, 0.12 * w, 0.03, shade(coat, 0.84), sx * 0.23 * w, 0.98 * s, -0.02 * w, 0, 0, sx * 0.04)), BODY));
         }
         return smoothMerge(p);
       },
@@ -384,14 +394,14 @@ export const ITEMS = {
       outfit: (spec) => {
         const { s, w } = spec;
         const p = [
-          metal(rbox(0.43 * w, 0.34 * s, 0.3 * w, 0.05 * w, '#9a9c9d', 0, 1.2 * s, 0)),
-          metal(rbox(0.3 * w, 0.12 * s, 0.31 * w, 0.03, '#b2b4b4', 0, 1.34 * s, 0)),
-          metal(rbox(0.34 * w, 0.28 * s, 0.02, 0.01, '#5f6164', 0, 1.2 * s, 0.16 * w)),
-          leather(ring(0.2 * w, 0.018 * w, '#5a4433', 0, 1.06 * s, 0)),
+          tagGroup(metal(rbox(0.43 * w, 0.34 * s, 0.3 * w, 0.05 * w, '#9a9c9d', 0, 1.2 * s, 0)), BODY),
+          tagGroup(metal(rbox(0.3 * w, 0.12 * s, 0.31 * w, 0.03, '#b2b4b4', 0, 1.34 * s, 0)), BODY),
+          tagGroup(metal(rbox(0.34 * w, 0.28 * s, 0.02, 0.01, '#5f6164', 0, 1.2 * s, 0.16 * w)), BODY),
+          tagGroup(leather(ring(0.2 * w, 0.018 * w, '#5a4433', 0, 1.06 * s, 0)), BODY),
         ];
         for (const sx of [-1, 1]) {
-          p.push(metal(ball(0.08 * w, '#9a9c9d', sx * armX(w), 1.38 * s, 0)));
-          p.push(metal(capsule(0.064 * w, 0.2 * s, '#6b6d70', sx * armX(w), 1.18 * s, 0)));
+          p.push(tagSides(metal(ball(0.08 * w, '#9a9c9d', sx * armX(w), 1.38 * s, 0)), ARM_L, ARM_R));
+          p.push(tagSides(metal(capsule(0.064 * w, 0.2 * s, '#6b6d70', sx * armX(w), 1.18 * s, 0)), ARM_L, ARM_R));
         }
         return smoothMerge(p);
       },
@@ -411,8 +421,9 @@ export const ITEMS = {
         for (const sx of [-1, 1]) {
           p.push(cloth(capsule(0.083 * w, 0.26 * s, pants, sx * legX(w), 0.62 * s, 0)));
           p.push(cloth(capsule(0.068 * w, 0.24 * s, pantsDark, sx * legX(w), 0.26 * s, 0)));
+          p.push(cloth(ball(0.086 * w, pants, sx * legX(w), 0.43 * s, 0, 1, 0.85, 1)));
         }
-        return smoothMerge(p);
+        return tagSides(smoothMerge(p));
       },
     },
     greaves: {
@@ -426,7 +437,7 @@ export const ITEMS = {
           p.push(metal(rbox(0.13 * w, 0.28 * s, 0.14 * w, 0.035 * w, '#9a9c9d', sx * legX(w), 0.27 * s, 0.02 * w)));
           p.push(metal(ball(0.068 * w, '#b2b4b4', sx * legX(w), 0.42 * s, 0.03 * w, 1, 0.8, 0.9)));
         }
-        return smoothMerge(p);
+        return tagSides(smoothMerge(p));
       },
     },
     wraps: {
@@ -441,7 +452,7 @@ export const ITEMS = {
             p.push(leather(ring(0.068 * w, 0.012 * w, '#6b5233', sx * legX(w), 0.12 * s + i * 0.07 * s, 0)));
           }
         }
-        return smoothMerge(p);
+        return tagSides(smoothMerge(p));
       },
     },
   },
@@ -457,10 +468,10 @@ export const ITEMS = {
         const { s, w } = spec;
         const p = [];
         for (const sx of [-1, 1]) {
-          p.push(leather(rbox(0.14 * w, 0.12 * s, 0.26 * w, 0.035 * w, '#332f29', sx * legX(w), 0.03 * s, 0.045 * w)));
-          p.push(leather(ring(0.07 * w, 0.014 * w, '#4a3728', sx * legX(w), 0.09 * s, 0)));
+          p.push(leather(rbox(0.14 * w, 0.15 * s, 0.26 * w, 0.035 * w, '#332f29', sx * legX(w), 0.04 * s, 0.045 * w)));
+          p.push(leather(ring(0.072 * w, 0.014 * w, '#4a3728', sx * legX(w), 0.105 * s, 0)));
         }
-        return smoothMerge(p);
+        return tagSides(smoothMerge(p));
       },
     },
     wraps: {
@@ -473,7 +484,7 @@ export const ITEMS = {
           p.push(leather(ring(0.07 * w, 0.012 * w, '#7d5a3f', sx * legX(w), 0.07 * s, 0)));
           p.push(leather(ring(0.068 * w, 0.012 * w, '#5a4433', sx * legX(w), 0.11 * s, 0)));
         }
-        return smoothMerge(p);
+        return tagSides(smoothMerge(p));
       },
     },
   },

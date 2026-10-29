@@ -1,7 +1,7 @@
 # Firearms: bullets, weapons, auto-aim and impact effects
 
-- **Status:** phase 1 implemented — shared aim, pistol hitscan, tracers/impacts, ammo/reload. Phase 2
-  (two-handed arm IK, rifle/shotgun, armed AI combatants) pending.
+- **Status:** phase 1 implemented; phase 2 first slice implemented (pipe rifle, two-handed arm IK,
+  part-tagged skinning). Held auto-fire, armed AI combatants and the ammo economy remain.
 - **Date:** 2026-10-28
 - **Question:** If Ashfall adds firearms, what is the best way to implement hit resolution, bullets,
   weapons, auto-aim and the firing→flight→impact effects on a mobile-first, procedural,
@@ -1045,6 +1045,34 @@ smallest amount of code. Everything after it is additive.
 - The tower still uses its own tracer/impact path; phase 2 moves it onto the shared system.
 - The pistol pose is one-handed. The rifle/sawn-off and the arm IK are the next visual milestone.
 - The player's aim target is one frame behind movement, which is invisible at 60 fps.
+
+---
+
+## 12. Phase 2 — first slice (2026-10-29)
+
+- **Two-handed arm IK.** `rig.solveArmIK(side, target, pole, weight)` in `src/skinned.js` solves a
+  two-bone shoulder/elbow chain with the law of cosines, orients the bones in world space and slerps
+  the result over the walk pose. The player calls it for the left arm with the rifle's `foregrip`
+  socket as the target; the right arm keeps the grip pose. Reloading releases the support hand.
+- **Pipe rifle.** A 30-round, 600 rpm, 30 m rifle with a dedicated `foregrip` socket and a longer
+  procedural mesh (`src/weapons.js`). It is selectable in the wardrobe weapon slot. The fire mode is
+  semi for now; held auto-fire is the next input change.
+- **Part-tagged skinning.** The root cause of the persistent "fan" from the arm to the hip was the
+  shirt's top/chest vertices sharing arm weights. Base body and outfit parts now carry an `aGroup`
+  attribute (`BODY`, `ARM_L/R`, `LEG_L/R`); `skinGeometry()` restricts each vertex to its own limb
+  and removes the attribute after weighting. This eliminated the fan and the hand-to-leg bleed
+  instead of tuning distance masks.
+- **Proportion fixes.** The player is scaled to 1.08 of the lean archetype (he was visibly shorter
+  than the tall camp folk), the base hip joint is painted as the dark undersuit instead of skin,
+  the boots have a taller shaft over the ankle, and the trousers carry a knee ball so bent legs do
+  not show skin between thigh and shin.
+- **Verification.** Headless Chrome (SwiftShader) captures confirm: clean side/front poses with the
+  rifle held two-handed, no fan, no hip/ankle skin, and the player at or above the stocky camp
+  folk's height. The browser was not available through the old MCP catalog this session, so the
+  captures used `google-chrome --headless` with the `?autostart`, `?zoom`, `?heading`, `?hide` and
+  `?weapon` development URL flags.
+- **Still open.** Held auto-fire for the rifle, armed camp folk/raiders, per-caliber ammo and save
+  `v: 2`, casings/audio/damage numbers.
 
 ---
 

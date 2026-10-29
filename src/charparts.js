@@ -21,6 +21,35 @@ export const LAYOUT = {
   headY: 1.56,
 };
 
+// Skinning groups: a vertex may only bind to bones from its own group. This is what keeps a
+// shirt sleeve from being torn between the chest and the arm.
+export const RIG_GROUP = {
+  BODY: 0,
+  ARM_L: 1,
+  ARM_R: 2,
+  LEG_L: 3,
+  LEG_R: 4,
+};
+
+export function tagGroup(geo, group) {
+  if (!geo) return geo;
+  const count = geo.attributes.position.count;
+  const values = new Float32Array(count);
+  values.fill(group);
+  geo.setAttribute('aGroup', new THREE.Float32BufferAttribute(values, 1));
+  return geo;
+}
+
+/** Tag each vertex by its X side (left is negative). Used for sleeves, legs and boots. */
+export function tagSides(geo, left = RIG_GROUP.LEG_L, right = RIG_GROUP.LEG_R) {
+  if (!geo) return geo;
+  const pos = geo.attributes.position;
+  const values = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) values[i] = pos.getX(i) < 0 ? left : right;
+  geo.setAttribute('aGroup', new THREE.Float32BufferAttribute(values, 1));
+  return geo;
+}
+
 let LOW_DETAIL = false;
 
 export function setLowDetail(v) {

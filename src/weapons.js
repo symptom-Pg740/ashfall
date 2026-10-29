@@ -10,6 +10,25 @@ import { shade } from './character.js';
  */
 
 export const WEAPONS = {
+  rifle: {
+    id: 'rifle',
+    name: 'PIPE RIFLE',
+    damage: 12,
+    rpm: 600,
+    pellets: 1,
+    spread: 1.8,
+    range: 30,
+    visualSpeed: 150,
+    magazine: 30,
+    reload: 1.9,
+    recoil: 0.8,
+    shake: 0.03,
+    mode: 'semi',
+    twoHanded: true,
+    hold: { forward: 0.36, right: 0.04, up: 0.05 },
+    muzzle: { x: 0, y: -0.62, z: 0.012 },
+    foregrip: { x: 0, y: -0.34, z: 0.02 },
+  },
   pistol: {
     id: 'pistol',
     name: 'SCRAP PISTOL',
@@ -63,7 +82,28 @@ function buildPistol(spec) {
   return [{ bone: 'arms.R.hand', geometry: smoothMerge(p) }];
 }
 
+function buildRifle(spec) {
+  const metal = '#8f9193';
+  const metalDark = '#5c5e60';
+  const wood = '#5a3f2b';
+  const p = [];
+
+  // Grip in the palm, receiver and barrel forward along -Y, stock behind.
+  p.push(setRegionUV(rbox(0.036, 0.1, 0.05, 0.008, wood, 0, 0.005, 0.012, -0.15), 'leather'));
+  p.push(setRegionUV(rbox(0.05, 0.34, 0.06, 0.01, metal, 0, -0.12, 0), 'metal'));
+  p.push(setRegionUV(rbox(0.04, 0.26, 0.045, 0.008, metalDark, 0, -0.3, 0.018), 'metal'));
+  p.push(setRegionUV(capsule(0.014, 0.3, metal, 0, -0.46, 0.006), 'metal'));
+  p.push(setRegionUV(rbox(0.035, 0.14, 0.075, 0.008, wood, 0, 0.09, -0.045, 0.12), 'leather'));
+  p.push(setRegionUV(rbox(0.04, 0.05, 0.055, 0.008, wood, 0, -0.34, 0.02), 'leather'));
+  p.push(setRegionUV(rbox(0.012, 0.02, 0.04, 0.003, metalDark, 0, -0.21, 0.038), 'metal'));
+  p.push(setRegionUV(rbox(0.03, 0.09, 0.04, 0.005, metalDark, 0, -0.08, -0.035), 'metal'));
+  p.push(setRegionUV(ring(0.022, 0.005, metalDark, 0, -0.6, 0.006), 'metal'));
+
+  return [{ bone: 'arms.R.hand', geometry: smoothMerge(p) }];
+}
+
 export function buildWeaponParts(id, spec) {
   if (id === 'pistol') return buildPistol(spec);
+  if (id === 'rifle') return buildRifle(spec);
   return [];
 }

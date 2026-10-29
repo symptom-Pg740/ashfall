@@ -108,7 +108,7 @@ export function makeSpec(seed, options = {}) {
   const rng = makeRng(seed);
   const archetype = options.archetype || rng.pick(['lean', 'stocky', 'tall']);
   const shape = SHAPES[archetype] || SHAPES.lean;
-  const s = shape.s * rng.range(0.97, 1.03);
+  const s = (options.scale ?? 1) * shape.s * rng.range(0.97, 1.03);
   const w = shape.w * rng.range(0.95, 1.05);
   const head = shape.head * rng.range(0.96, 1.04);
 

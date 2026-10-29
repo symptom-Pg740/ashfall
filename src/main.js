@@ -1015,4 +1015,37 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', saveGame);
 
+// Development-only framing helpers. These are inert unless present in the URL.
+const debugParams = new URLSearchParams(window.location.search);
+if (debugParams.has('zoom')) {
+  const z = THREE.MathUtils.clamp(parseFloat(debugParams.get('zoom')) || 1, 0.8, 8);
+  viewZoom = viewZoomTarget = z;
+  orthoCamera.zoom = z;
+  orthoCamera.updateProjectionMatrix();
+}
+if (debugParams.has('heading')) {
+  const h = parseFloat(debugParams.get('heading')) || 0;
+  player.heading = h;
+  player.targetHeading = h;
+  player.group.rotation.y = h;
+}
+if (debugParams.get('hide') === 'body') player.rig.mesh.visible = false;
+if (debugParams.get('hide') === 'outfit' && player.rig.outfit) player.rig.outfit.visible = false;
+if (debugParams.has('compare')) {
+  const n = campFolk.people[0];
+  const nx = player.x + 1.15;
+  n.rig.group.position.set(nx, heightAt(nx, player.z), player.z);
+  n.rig.group.rotation.y = 0;
+  campFolk.update = () => {};
+}
+if (debugParams.has('weapon')) {
+  player.rig.equip('weapon', debugParams.get('weapon'));
+  ui.buildWardrobe(player.rig.equipment);
+  ui.setWeapon(player.armed, player.weapon?.name);
+  ui.setAmmo(player.ammoState());
+}
+if (debugParams.has('autostart')) {
+  requestAnimationFrame(() => document.getElementById('start-btn')?.click());
+}
+
 requestAnimationFrame(loop);

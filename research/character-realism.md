@@ -128,6 +128,13 @@ procedural boxes.
   leg influence out above the hip, while keeping the shoulder cap arm-weighted. Torso vertices in
   both the base body and the outfit now carry **0 arm weight**; the shoulder cap keeps ~0.48
   shoulder / 0.48 upper-arm. Verified in the rest, walk and near-full-arm-raise poses.
+- **2026-10-29 — Part-tagged skinning and proportion fixes.** The shirt's chest vertices still shared
+  arm weights with the sleeve, which stretched a fan from the pistol arm to the hip whenever the arm
+  extended. Base body and outfit parts now carry an `aGroup` attribute (`BODY`, `ARM_L/R`,
+  `LEG_L/R`), and `skinGeometry()` restricts every vertex to its own limb before weighting. This
+  removes the fan and the hand-to-leg bleed cleanly. Also: the player is scaled to 1.08 (he was
+  shorter than the tall camp folk), the base hip joint is the dark undersuit instead of skin, the
+  boots have a taller shaft over the ankle, and the trousers have a knee ball for bent legs.
 - **Not yet:** blink/talk blendshapes, a decimating far LOD (the current far tier is draw-call-only),
   and world-wide PBR.
 

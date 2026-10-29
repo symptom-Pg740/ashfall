@@ -7,6 +7,7 @@ import { heightAt } from './terrain.js';
 import { clamp } from './rng.js';
 import {
   LAYOUT,
+  RIG_GROUP,
   ball,
   boxUV,
   capsule,
@@ -16,6 +17,7 @@ import {
   setLowDetail,
   setRegionUV,
   smoothMerge,
+  tagGroup,
 } from './charparts.js';
 import {
   OUTFIT_SLOTS,
@@ -73,27 +75,30 @@ function baseBodyGeometry(spec) {
   const armX = LAYOUT.armX * w;
   const legX = LAYOUT.legX * w;
   const under = shade(coat, 0.48);
+  const BODY = RIG_GROUP.BODY;
 
   // Torso and pelvis: a slim body that clothing sits on top of, not a suit of armour.
-  p.push(rbox(0.34 * w, 0.22 * s, 0.24 * w, 0.07 * w, under, 0, 0.9 * s, 0));
-  p.push(rbox(0.4 * w, 0.34 * s, 0.26 * w, 0.09 * w, under, 0, 1.12 * s, 0));
-  p.push(rbox(0.33 * w, 0.17 * s, 0.23 * w, 0.07 * w, under, 0, 1.36 * s, 0));
-  p.push(capsule(0.045 * w, 0.08 * s, skin, 0, 1.48 * s, 0));
+  p.push(tagGroup(rbox(0.34 * w, 0.22 * s, 0.24 * w, 0.07 * w, under, 0, 0.9 * s, 0), BODY));
+  p.push(tagGroup(rbox(0.4 * w, 0.34 * s, 0.26 * w, 0.09 * w, under, 0, 1.12 * s, 0), BODY));
+  p.push(tagGroup(rbox(0.33 * w, 0.17 * s, 0.23 * w, 0.07 * w, under, 0, 1.36 * s, 0), BODY));
+  p.push(tagGroup(capsule(0.045 * w, 0.08 * s, skin, 0, 1.48 * s, 0), BODY));
 
   // arms
   for (const sx of [-1, 1]) {
-    p.push(ball(0.072 * w, skin, sx * armX, 1.38 * s, 0));
-    p.push(capsule(0.056 * w, 0.26 * s, skin, sx * armX, 1.17 * s, 0));
-    p.push(capsule(0.045 * w, 0.24 * s, skin, sx * armX, 0.83 * s, 0.006 * w));
-    p.push(ball(0.056 * w, skin, sx * armX, 0.64 * s, 0.02 * w, 1, 0.92, 0.82));
+    const group = sx < 0 ? RIG_GROUP.ARM_L : RIG_GROUP.ARM_R;
+    p.push(tagGroup(ball(0.072 * w, skin, sx * armX, 1.38 * s, 0), group));
+    p.push(tagGroup(capsule(0.056 * w, 0.26 * s, skin, sx * armX, 1.17 * s, 0), group));
+    p.push(tagGroup(capsule(0.045 * w, 0.24 * s, skin, sx * armX, 0.83 * s, 0.006 * w), group));
+    p.push(tagGroup(ball(0.056 * w, skin, sx * armX, 0.64 * s, 0.02 * w, 1, 0.92, 0.82), group));
   }
 
   // legs
   for (const sx of [-1, 1]) {
-    p.push(ball(0.082 * w, skin, sx * legX, 0.84 * s, 0));
-    p.push(capsule(0.076 * w, 0.26 * s, skin, sx * legX, 0.62 * s, 0));
-    p.push(capsule(0.06 * w, 0.24 * s, skin, sx * legX, 0.24 * s, 0));
-    p.push(rbox(0.13 * w, 0.1 * s, 0.24 * w, 0.03 * w, skin, sx * legX, 0.02 * s, 0.04 * w));
+    const group = sx < 0 ? RIG_GROUP.LEG_L : RIG_GROUP.LEG_R;
+    p.push(tagGroup(ball(0.082 * w, under, sx * legX, 0.84 * s, 0), group));
+    p.push(tagGroup(capsule(0.076 * w, 0.26 * s, skin, sx * legX, 0.62 * s, 0), group));
+    p.push(tagGroup(capsule(0.06 * w, 0.24 * s, skin, sx * legX, 0.24 * s, 0), group));
+    p.push(tagGroup(rbox(0.13 * w, 0.1 * s, 0.24 * w, 0.03 * w, skin, sx * legX, 0.02 * s, 0.04 * w), group));
   }
   return setBodyUV(smoothMerge(p), spec);
 }
@@ -195,7 +200,7 @@ function distanceToSegment(px, py, pz, ax, ay, az, bx, by, bz) {
 function skinGeometry(geo, spec, skeleton) {
   const { s, w } = spec;
   const segs = [];
-  const add = (name, ax, ay, az, bx, by, bz, group = 'body') => {
+  const add = (name, ax, ay, az, bx, by, bz, group = 'body', side = '') => {
     segs.push({
       index: skeleton.bones.findIndex((b) => b.name === name),
       ax,
@@ -206,6 +211,7 @@ function skinGeometry(geo, spec, skeleton) {
       bz,
       arm: group === 'arm',
       leg: group === 'leg',
+      side,
     });
   };
 
@@ -218,16 +224,17 @@ function skinGeometry(geo, spec, skeleton) {
   for (const side of ['L', 'R']) {
     const sx = side === 'L' ? -1 : 1;
     const ax = sx * LAYOUT.armX * w;
-    add(`shoulder${side}`, sx * LAYOUT.shoulderX * w, 1.4 * s, 0, ax, 1.4 * s, 0, 'arm');
-    add(`upperArm${side}`, ax, 1.4 * s, 0, ax, 0.98 * s, 0, 'arm');
-    add(`forearm${side}`, ax, 0.98 * s, 0, ax, 0.6 * s, 0, 'arm');
-    add(`hand${side}`, ax, 0.6 * s, 0, ax, 0.48 * s, 0, 'arm');
-    add(`thigh${side}`, sx * LAYOUT.legX * w, 0.86 * s, 0, sx * LAYOUT.legX * w, 0.42 * s, 0, 'leg');
-    add(`shin${side}`, sx * LAYOUT.legX * w, 0.42 * s, 0, sx * LAYOUT.legX * w, 0.02 * s, 0, 'leg');
-    add(`foot${side}`, sx * LAYOUT.legX * w, 0.02 * s, 0, sx * LAYOUT.legX * w, 0.02 * s, 0.3 * w, 'leg');
+    add(`shoulder${side}`, sx * LAYOUT.shoulderX * w, 1.4 * s, 0, ax, 1.4 * s, 0, 'arm', side);
+    add(`upperArm${side}`, ax, 1.4 * s, 0, ax, 0.98 * s, 0, 'arm', side);
+    add(`forearm${side}`, ax, 0.98 * s, 0, ax, 0.6 * s, 0, 'arm', side);
+    add(`hand${side}`, ax, 0.6 * s, 0, ax, 0.48 * s, 0, 'arm', side);
+    add(`thigh${side}`, sx * LAYOUT.legX * w, 0.86 * s, 0, sx * LAYOUT.legX * w, 0.42 * s, 0, 'leg', side);
+    add(`shin${side}`, sx * LAYOUT.legX * w, 0.42 * s, 0, sx * LAYOUT.legX * w, 0.02 * s, 0, 'leg', side);
+    add(`foot${side}`, sx * LAYOUT.legX * w, 0.02 * s, 0, sx * LAYOUT.legX * w, 0.02 * s, 0.3 * w, 'leg', side);
   }
 
   const pos = geo.attributes.position;
+  const groupAttr = geo.attributes.aGroup;
   const indices = new Uint16Array(pos.count * 4);
   const weights = new Float32Array(pos.count * 4);
   const ranked = [];
@@ -249,18 +256,46 @@ function skinGeometry(geo, spec, skeleton) {
     const px = pos.getX(i);
     const py = pos.getY(i);
     const pz = pos.getZ(i);
+    const group = groupAttr ? Math.round(groupAttr.getX(i)) : -1;
     const xMask = smooth(armStart, armEnd, Math.abs(px));
-    // The shoulder cap should still follow the arm even where it overlaps the chest.
-    const yMask = smooth(1.3 * s, 1.44 * s, py) * 0.9;
-    const armMask = Math.max(xMask, yMask);
+    // Only the arm column follows the arm. Letting high chest vertices follow it stretched the
+    // shirt's top box into a fan whenever the pistol arm extended.
+    const armMask = xMask;
     const legMask = 1 - smooth(legTop, legTop + legFade, py);
     ranked.length = 0;
+    let nearestD = Infinity;
+    let nearestArm = false;
+    let nearestLeg = false;
     for (const seg of segs) {
+      if (group >= 0) {
+        if (group === 0 && (seg.arm || seg.leg)) continue;
+        if (group === 1 || group === 2) {
+          if (!seg.arm || seg.side !== (group === 1 ? 'L' : 'R')) continue;
+        } else if (group === 3 || group === 4) {
+          if (!seg.leg || seg.side !== (group === 3 ? 'L' : 'R')) continue;
+        }
+      }
       const d = distanceToSegment(px, py, pz, seg.ax, seg.ay, seg.az, seg.bx, seg.by, seg.bz);
+      if (d < nearestD) {
+        nearestD = d;
+        nearestArm = seg.arm;
+        nearestLeg = seg.leg;
+      }
       let weight = 1 / (d * d + 0.0025);
-      if (seg.arm) weight *= armMask;
-      else if (seg.leg) weight *= legMask;
-      ranked.push({ index: seg.index, w: weight });
+      if (group < 0) {
+        if (seg.arm) weight *= armMask;
+        else if (seg.leg) weight *= legMask;
+      }
+      ranked.push({ index: seg.index, w: weight, arm: seg.arm, leg: seg.leg });
+    }
+    // Untagged geometry keeps the old cross-limb guard. Tagged geometry is already restricted to
+    // its own limb, so no opposite-limb weights can appear.
+    if (group < 0) {
+      if (nearestArm) {
+        for (const r of ranked) if (r.leg) r.w = 0;
+      } else if (nearestLeg) {
+        for (const r of ranked) if (r.arm) r.w = 0;
+      }
     }
     ranked.sort((a, b) => b.w - a.w);
     let total = 0;
@@ -275,6 +310,7 @@ function skinGeometry(geo, spec, skeleton) {
 
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(indices, 4));
   geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights, 4));
+  if (groupAttr) geo.deleteAttribute('aGroup');
 }
 
 export function buildSkinnedHumanoid(seed, options = {}) {
@@ -484,6 +520,14 @@ export function buildSkinnedHumanoid(seed, options = {}) {
   };
   const _v = new THREE.Vector3();
   const _hip = new THREE.Vector3();
+  const _ikUpper = new THREE.Vector3();
+  const _ikElbow = new THREE.Vector3();
+  const _ikTarget = new THREE.Vector3();
+  const _ikDir = new THREE.Vector3();
+  const _ikPerp = new THREE.Vector3();
+  const _ikDown = new THREE.Vector3(0, -1, 0);
+  const _ikDesired = new THREE.Quaternion();
+  const _ikParent = new THREE.Quaternion();
 
   const rig = {
     group,
@@ -581,6 +625,48 @@ export function buildSkinnedHumanoid(seed, options = {}) {
         foot.rotation.x = (alpha + beta - kneeBend + slopePitch) * factor;
         foot.rotation.z = slopeRoll * factor;
       }
+    },
+    solveArmIK(side, target, pole = null, weight = 1) {
+      const arm = skeleton.arms[side];
+      if (!arm || weight <= 0) return;
+      group.updateMatrixWorld(true);
+      const upper = arm.upper;
+      const fore = arm.fore;
+      const L1 = 0.42 * s;
+      const L2 = 0.38 * s;
+      upper.getWorldPosition(_ikUpper);
+      _ikTarget.copy(target);
+      _ikDir.subVectors(_ikTarget, _ikUpper);
+      let D = _ikDir.length();
+      if (D < 0.0001) return;
+      D = clamp(D, Math.abs(L1 - L2) + 0.01, L1 + L2 - 0.01);
+      _ikDir.normalize();
+      if (pole) {
+        _ikPerp.copy(pole);
+        _ikPerp.addScaledVector(_ikDir, -_ikPerp.dot(_ikDir));
+      } else {
+        _ikPerp.set(0, -1, 0);
+        _ikPerp.addScaledVector(_ikDir, _ikDir.y);
+      }
+      if (_ikPerp.lengthSq() < 0.0001) _ikPerp.set(0, 0, 1);
+      _ikPerp.normalize();
+      const a = (L1 * L1 - L2 * L2 + D * D) / (2 * D);
+      const h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+      _ikElbow.copy(_ikUpper).addScaledVector(_ikDir, a).addScaledVector(_ikPerp, h);
+
+      _ikDir.subVectors(_ikElbow, _ikUpper).normalize();
+      _ikDesired.setFromUnitVectors(_ikDown, _ikDir);
+      upper.parent.getWorldQuaternion(_ikParent);
+      _ikParent.invert().multiply(_ikDesired);
+      upper.quaternion.slerp(_ikParent, Math.min(1, weight));
+      upper.updateMatrixWorld(true);
+
+      _ikDir.subVectors(_ikTarget, _ikElbow).normalize();
+      _ikDesired.setFromUnitVectors(_ikDown, _ikDir);
+      fore.parent.getWorldQuaternion(_ikParent);
+      _ikParent.invert().multiply(_ikDesired);
+      fore.quaternion.slerp(_ikParent, Math.min(1, weight));
+      fore.updateMatrixWorld(true);
     },
     setPose(dt, moving, phase) {
       const m = moving ? 1 : 0;

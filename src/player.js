@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { damp, clamp, deriveSeed } from './rng.js';
 import { buildSkinnedHumanoid } from './skinned.js';
@@ -13,6 +14,7 @@ export class Player {
     // R2: one skinned body, 16-bone skeleton, gear parented to the bones.
     const rig = buildSkinnedHumanoid(deriveSeed('player'), {
       archetype: 'lean',
+      scale: 1.08,
       headGeometry: baseHeadGeometry,
       skipHead: !!baseHeadGeometry,
       skin: '#c08d60',
@@ -55,6 +57,8 @@ export class Player {
     this.reserve = Infinity;
     this.reloadTimer = 0;
     this.recoil = 0;
+    this._ikTarget = new THREE.Vector3();
+    this._ikPole = new THREE.Vector3(-1, -1, 0.2);
     this.aim = new AimController({
       faction: 'player',
       firePolicy: 'manual',
@@ -214,6 +218,11 @@ export class Player {
         forearmL.rotation.x = -0.65;
         b.chest.rotation.y = -0.05;
         b.head.rotation.x = pitch * 0.55 - kick * 0.3;
+      }
+      if (this.weapon.twoHanded && this.rig.foregrip && this.reloadTimer <= 0) {
+        this.group.updateMatrixWorld(true);
+        this.rig.foregrip.getWorldPosition(this._ikTarget);
+        this.rig.solveArmIK('L', this._ikTarget, this._ikPole, 1);
       }
     }
 
