@@ -16,6 +16,7 @@ export class UI {
     this.lastAmmo = '';
     this.lastArmed = null;
     this.lastMag = 0;
+    this.lastReserve = Infinity;
     this.lastReloading = false;
     this.lastRaid = -1;
     this.hitTimer = 0;
@@ -34,6 +35,9 @@ export class UI {
       toast: document.getElementById('toast'),
       flash: document.getElementById('flash'),
       death: document.getElementById('death-screen'),
+      raidResult: document.getElementById('raid-result'),
+      raidResultTitle: document.getElementById('raid-result-title'),
+      raidResultSub: document.getElementById('raid-result-sub'),
       gather: document.getElementById('gather-btn'),
       build: document.getElementById('build-btn'),
       strike: document.getElementById('strike-btn'),
@@ -50,6 +54,11 @@ export class UI {
       outfitBtn: document.getElementById('outfit-btn'),
       wardrobePanel: document.getElementById('wardrobe-panel'),
       wardrobeList: document.getElementById('wardrobe-list'),
+      armory: document.getElementById('armory'),
+      armoryWeapon: document.getElementById('armory-weapon'),
+      armoryAmmo: document.getElementById('armory-ammo'),
+      armoryUpgrades: document.getElementById('armory-upgrades'),
+      armoryScrap: document.getElementById('armory-scrap'),
       wardrobeClose: document.getElementById('wardrobe-close'),
       ammo: document.getElementById('hud-ammo'),
       raidBanner: document.getElementById('raid-banner'),
@@ -256,16 +265,20 @@ export class UI {
 
   setAmmo(state) {
     if (!this.el.ammo || !this.el.ammoChip) return;
+    const reserve = state.reserve;
     this.lastArmed = state.armed;
     this.lastMag = state.mag;
+    this.lastReserve = reserve;
     this.lastReloading = !!state.reloading;
     this.el.strike.classList.toggle('is-firearm', !!state.armed);
-    const key = `${state.armed}|${state.mag}|${state.reloading}`;
+    const key = `${state.armed}|${state.mag}|${reserve}|${state.reloading}`;
     if (key !== this.lastAmmo) {
       this.lastAmmo = key;
       this.el.ammoChip.classList.toggle('hidden', !state.armed);
       this.el.ammoChip.classList.toggle('reloading', !!state.reloading);
-      this.el.ammo.textContent = state.reloading ? '··' : String(state.mag);
+      this.el.ammoChip.classList.toggle('dry', state.armed && state.mag <= 0 && reserve <= 0);
+      const mag = state.reloading ? '··' : String(state.mag);
+      this.el.ammo.textContent = Number.isFinite(reserve) ? `${mag}/${reserve}` : mag;
       this.renderStrikeLabel();
     }
   }
@@ -275,7 +288,21 @@ export class UI {
     if (!label) return;
     if (!this.lastArmed) label.textContent = 'STRIKE';
     else if (this.lastReloading) label.textContent = 'RELOAD';
+    else if (this.lastMag <= 0 && this.lastReserve <= 0) label.textContent = 'EMPTY';
     else label.textContent = `FIRE ${this.lastMag}`;
+  }
+
+  /** Raid outcome card: victory on clear, defeat when the camp overruns the player. */
+  showRaidResult(win, sub = '') {
+    const el = this.el.raidResult;
+    if (!el) return;
+    this.el.raidResultTitle.textContent = win ? 'RAID CLEARED' : 'RAID LOST';
+    this.el.raidResultSub.textContent = sub;
+    el.classList.toggle('win', !!win);
+    el.classList.toggle('lose', !win);
+    el.classList.remove('hidden');
+    clearTimeout(this.raidResultTimer);
+    this.raidResultTimer = setTimeout(() => el.classList.add('hidden'), win ? 2800 : 2400);
   }
 
   setRaid(count) {
@@ -297,7 +324,7 @@ export class UI {
     this.hitTimer = setTimeout(() => el.classList.remove('hit', 'kill'), 140);
   }
 
-  buildWardrobe(equipment) {
+  buildWardrobe(equipment, armory = null) {
     if (!this.el.wardrobeList) return;
     this.el.wardrobeList.innerHTML = '';
     for (const slot of SLOTS) {
@@ -315,6 +342,64 @@ export class UI {
         this.cb.wardrobeCycle?.(slot.id, e.shiftKey ? -1 : 1);
       });
       this.el.wardrobeList.appendChild(row);
+    }
+    this.buildArmory(armory, armory?.scrap ?? 0);
+  }
+
+  /** Ammo reserve and per-weapon upgrade tracks; both spend scrap. */
+  buildArmory(view, scrap = 0) {
+    if (!this.el.armory) return;
+    this.el.armory.classList.toggle('hidden', !view);
+    if (!view) return;
+    if (this.el.armoryWeapon) this.el.armoryWeapon.textContent = view.name;
+    if (this.el.armoryScrap) this.el.armoryScrap.innerHTML = `SCRAP <b>${scrap}</b>`;
+
+    if (this.el.armoryAmmo) {
+      this.el.armoryAmmo.innerHTML = '';
+      if (view.ammo) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'wardrobe-row ammo-row';
+        row.disabled = view.ammo.full || !view.ammo.affordable;
+        const label = document.createElement('small');
+        label.textContent = view.ammo.label;
+        const value = document.createElement('b');
+        value.textContent = `${view.reserve} / ${view.ammo.max}`;
+        const cost = document.createElement('span');
+        cost.className = 'buy';
+        cost.textContent = view.ammo.full ? 'FULL' : `+${view.ammo.pack} · ${view.ammo.cost}`;
+        row.append(label, value, cost);
+        row.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.cb.armoryAmmo?.();
+        });
+        this.el.armoryAmmo.appendChild(row);
+      }
+    }
+
+    if (this.el.armoryUpgrades) {
+      this.el.armoryUpgrades.innerHTML = '';
+      for (const track of view.tracks) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'wardrobe-row upgrade-row';
+        row.disabled = !track.next;
+        const label = document.createElement('small');
+        label.textContent = `${track.label} ${track.tier}/${track.maxTier}`;
+        const value = document.createElement('b');
+        value.textContent = track.next ? `${track.next.from} → ${track.next.to}` : track.value;
+        const cost = document.createElement('span');
+        cost.className = 'buy';
+        cost.textContent = track.next ? `${track.next.cost}` : 'MAX';
+        row.append(label, value, cost);
+        row.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.cb.armoryUpgrade?.(track.id);
+        });
+        this.el.armoryUpgrades.appendChild(row);
+      }
     }
   }
 

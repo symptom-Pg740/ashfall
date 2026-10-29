@@ -227,11 +227,21 @@
           <button id="wardrobe-close" class="mini-x" aria-label="Close wardrobe">✕</button>
         </header>
         <div id="wardrobe-list" class="wardrobe-list"></div>
+        <div id="armory" class="armory hidden">
+          <header><span>ARMORY</span><b id="armory-weapon">—</b></header>
+          <div id="armory-scrap" class="armory-scrap">SCRAP <b>0</b></div>
+          <div id="armory-ammo" class="armory-ammo"></div>
+          <div id="armory-upgrades" class="wardrobe-list"></div>
+        </div>
         <p class="perf-note">Tap a slot to cycle its item. Changes apply immediately and save with the run.</p>
       </section>
 
       <div id="hit-marker" class="hit-marker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <div id="toast" class="toast" role="status"></div>
+      <div id="raid-result" class="raid-result hidden" role="status">
+        <strong id="raid-result-title">RAID CLEARED</strong>
+        <span id="raid-result-sub">+10 SCRAP · THE DUST SETTLES</span>
+      </div>
       <div id="death-screen" class="death-screen hidden">
         <strong>YOU DIED</strong>
         <span>the wastes remember</span>

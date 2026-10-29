@@ -52,6 +52,8 @@ export class Player {
     this.hitTimer = 0;
 
     this.weaponId = this.rig.equipment.weapon;
+    this.armory = null;
+    this.onDry = null;
     this.weapon = WEAPONS[this.weaponId] || null;
     this.mag = this.weapon ? this.weapon.magazine : 0;
     this.reserve = Infinity;
@@ -76,11 +78,35 @@ export class Player {
     return !!this.weapon;
   }
 
+  /** Wire the ammo economy and upgrade resolver. Called once from main. */
+  setArmory(armory) {
+    this.armory = armory;
+    this.refreshWeapon();
+  }
+
+  /** Re-resolve the equipped weapon after an upgrade purchase. */
+  refreshWeapon() {
+    this.weapon = this.armory
+      ? this.armory.weapon(this.weaponId)
+      : WEAPONS[this.weaponId] || null;
+    this.mag = this.armory
+      ? this.armory.setMag(this.weaponId, this.armory.magOf(this.weaponId))
+      : this.weapon
+        ? this.weapon.magazine
+        : 0;
+    this.aim?.setRange(this.weapon?.range || 22);
+  }
+
   syncWeapon() {
     this.weaponId = this.rig.equipment.weapon;
-    this.weapon = WEAPONS[this.weaponId] || null;
-    this.mag = this.weapon ? this.weapon.magazine : 0;
-    this.reserve = Infinity;
+    this.weapon = this.armory
+      ? this.armory.weapon(this.weaponId)
+      : WEAPONS[this.weaponId] || null;
+    this.mag = this.armory
+      ? this.armory.setMag(this.weaponId, this.armory.magOf(this.weaponId))
+      : this.weapon
+        ? this.weapon.magazine
+        : 0;
     this.reloadTimer = 0;
     this.attackCooldown = 0;
     this.attackTime = 0;
@@ -93,7 +119,7 @@ export class Player {
     return {
       armed: !!this.weapon,
       mag: this.mag,
-      reserve: this.reserve,
+      reserve: this.armory ? this.armory.reserve(this.weaponId) : this.reserve,
       reloading: this.reloadTimer > 0,
       name: this.weapon?.name || '',
     };
@@ -120,7 +146,7 @@ export class Player {
     this.recoil = damp(this.recoil, 0, 12, dt);
     if (this.reloadTimer > 0) {
       this.reloadTimer = Math.max(0, this.reloadTimer - dt);
-      if (this.reloadTimer === 0 && this.weapon) this.mag = this.weapon.magazine;
+      if (this.reloadTimer === 0 && this.weapon) this.finishReload();
     }
 
     const len = Math.hypot(moveX, moveZ);
@@ -214,10 +240,15 @@ export class Player {
     if (!this.weapon) return null;
     if (this.reloadTimer > 0 || this.attackCooldown > 0) return null;
     if (this.mag <= 0) {
-      this.startReload();
+      if (!this.startReload() && this.reloadTimer <= 0) {
+        // Nothing in the gun and nothing in the pouch.
+        this.attackCooldown = 0.35;
+        this.onDry?.(this.weapon.name);
+      }
       return null;
     }
     this.mag--;
+    this.armory?.setMag(this.weaponId, this.mag);
     this.attackCooldown = 60 / this.weapon.rpm;
     this.attackTime = 0.12;
     this.recoil = 1;
@@ -229,8 +260,20 @@ export class Player {
     return { weapon: this.weapon, aimPoint: this.aim.target ? this.aim.targetPoint : null };
   }
 
+  /** Called when the reload timer completes: top up from the reserve. */
+  finishReload() {
+    if (!this.weapon) return;
+    if (this.armory) {
+      this.mag = this.armory.fill(this.weaponId);
+    } else {
+      this.mag = this.weapon.magazine;
+    }
+    this.armory?.setMag(this.weaponId, this.mag);
+  }
+
   startReload() {
     if (!this.weapon || this.reloadTimer > 0 || this.mag >= this.weapon.magazine) return false;
+    if (this.armory && !this.armory.hasReserve(this.weaponId)) return false;
     this.reloadTimer = this.weapon.reload;
     return true;
   }

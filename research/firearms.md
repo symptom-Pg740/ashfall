@@ -1,8 +1,8 @@
 # Firearms: bullets, weapons, auto-aim and impact effects
 
-- **Status:** phase 1 implemented; phase 2 battle slice implemented (single-shot rifle, shotgun,
-  two-handed IK, camp guard, raiders, two-way damage, raid banner). Cover/suppression, upgrades and
-  the ammo economy remain.
+- **Status:** phase 1 + battle slice implemented (single-shot rifle, shotgun, two-handed IK, camp
+  guard, raiders, two-way damage, raid banner, suppression). The armory added finite per-caliber ammo,
+  per-weapon magazines, four data-driven upgrade tracks and save `v: 2`. FX/audio polish remains.
 - **Date:** 2026-10-28
 - **Question:** If Ashfall adds firearms, what is the best way to implement hit resolution, bullets,
   weapons, auto-aim and the firing→flight→impact effects on a mobile-first, procedural,
@@ -1131,8 +1131,49 @@ smallest amount of code. Everything after it is additive.
   one-shot kill. The behind-rock capture was inconclusive: the raider had a camp target, so it held
   position instead of entering the no-LOS reposition branch, and the headless sim advances slowly.
   The reposition needs a live play check.
-- **Still open.** Deliberate cover use/suppression, raid victory/defeat screens, weapon upgrades
-  and per-weapon progression, the ammo economy and save `v: 2`, and the FX/audio polish pass.
+- **Still open.** Deliberate cover use (the reposition search is not tactical cover), squad focus
+  fire, and the FX/audio polish pass.
+
+---
+
+## 15. Phase 4 — ammo economy, weapon upgrades and suppression (2026-10-29)
+
+- **Per-caliber reserve.** `src/armory.js` owns the economy. `state.ammo` holds a reserve for each
+  caliber (`rifle`, `pistol`, `shell`), `state.mags` holds the magazine currently in each gun, and
+  `state.upgrades` holds the purchased tiers. Weapons map to calibers in `WEAPON_CALIBER`. Starter
+  loadout is 8 rifle rounds, 36 pistol rounds and 6 shells; packs cost 5/4/6 scrap for +6/+12/+4.
+- **Magazines are per weapon.** Swapping in the wardrobe stores and restores that weapon's magazine,
+  so cycling guns cannot refill a rifle for free. `Armory.fill()` is the only path that moves rounds
+  from the reserve into a magazine; `Player.finishReload()` calls it when the reload timer completes.
+  A dry gun with an empty pouch does not start a reload and reports `onDry` once per attempt
+  (`OUT OF AMMO` toast, button reads `EMPTY`, chip turns red).
+- **Upgrade tracks.** Damage (×1 → 1.25 → 1.5 → 1.8), rate (×1 → 1.2 → 1.45), reload (×1 → 0.82 →
+  0.66) and spread (×1 → 0.75 → 0.55), each with its own scrap costs. `resolveWeapon(id, upgrades)`
+  returns a copy of the base spec with the multipliers applied and caches by upgrade state. The
+  player re-resolves on purchase; NPCs always use the stock `WEAPONS` entry, so upgrades are
+  player-only progression. Adding a weapon or a track is a data edit.
+- **Suppression.** A raider that survives a hit (`hp > 0`) sets `suppressed = 1.5 s`, abandons its
+  current firing position and relocates to a fresh one; it cannot fire until the flinch ends. This
+  gives the pistol a use against rifle raiders: three hits force them off their firing line instead
+  of trading shots.
+- **Raid outcome card.** Clearing the last hostile shows **RAID CLEARED · +10 SCRAP**; dying while a
+  raid is live shows **RAID LOST · THE CAMP IS OVERRUN**. `?raidclear=1` spawns and kills a squad for
+  a headless capture.
+- **Save `v: 2`.** `SAVE_KEY` stays `ashfall-save-v1` so existing runs are found, the reader accepts
+  `v: 1` and `v: 2`, and bumps the loaded record to 2. `loadGame()` fills any missing ammo block with
+  the starter pouch, so a v1 save continues with default ammo instead of failing.
+- **Verification.** `?fastforward=<seconds>` steps `simulate()` plus the NPC updates at a fixed
+  1/60 for deterministic headless checks, because rAF under `--virtual-time-budget` only runs a
+  handful of frames. Results:
+  - rifle fire + 4 s sim → HUD `1/7` (one round drawn from the 8-round reserve);
+  - `?raider=1&fastforward=2` → health 0 and `YOU DIED` (two 60-damage raider hits);
+  - `?raider=1&fastforward=4` → respawn at 100 HP with scrap 26 → 20 (the 20 % death penalty) and
+    `SILAS DOWN — RESPAWNING` (the guard was downed too);
+  - `?noammo=1&fire=1` → HUD `0/0` and `OUT OF AMMO · PIPE RIFLE`;
+  - `?upgrade=damage` → `DAMAGE 1/3`, `75 → 90`, scrap 200 → 186, and `resolveWeapon()` returns 75.
+  The Node run of `src/armory.js` covers fill/magazine persistence/pack caps and the `save.js` run
+  covers `v: 1 → 2` migration. Headless captures show the armory panel (`1/8` rounds, four tracks)
+  and the raid-clear card with scrap 26 → 36.
 
 ---
 

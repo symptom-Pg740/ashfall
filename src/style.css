@@ -1525,3 +1525,121 @@ body.build-open .actions {
   font-size: 7px;
   letter-spacing: 0.1em;
 }
+
+/* armory: ammo reserve and upgrade tracks inside the wardrobe panel */
+.armory {
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(138, 107, 66, 0.32);
+}
+
+.armory header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--amber);
+}
+
+.armory header b {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--amber-hot);
+  letter-spacing: 0.06em;
+}
+
+.armory-ammo {
+  margin-top: 6px;
+}
+
+.armory-scrap {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(138, 107, 66, 0.22);
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+}
+
+.armory-scrap b {
+  color: var(--amber-hot);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wardrobe-row .buy {
+  margin-left: auto;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+
+.wardrobe-row:disabled {
+  opacity: 0.42;
+}
+
+.wardrobe-row:disabled:hover {
+  border-color: rgba(138, 107, 66, 0.28);
+  background: var(--panel-soft);
+}
+
+.res-chip.dry b {
+  color: #e2705a;
+}
+
+/* raid outcome card */
+.raid-result {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 30px;
+  background: rgba(24, 16, 12, 0.9);
+  border: 1px solid rgba(196, 100, 74, 0.7);
+  box-shadow: 0 0 46px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  pointer-events: none;
+  animation: raid-pop 0.32s ease-out;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+
+.raid-result strong {
+  font-size: 20px;
+  letter-spacing: 0.22em;
+  color: #f0b282;
+}
+
+.raid-result span {
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+
+.raid-result.lose {
+  border-color: rgba(180, 60, 48, 0.8);
+}
+
+.raid-result.lose strong {
+  color: #e2705a;
+}
+
+@keyframes raid-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}

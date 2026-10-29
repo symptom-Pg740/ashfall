@@ -128,9 +128,10 @@ The graph keeps the last ~45 seconds.
   barrels, rubble, clustered dry grass and distant mesas. Placed with blue-noise scatter masked by
   slope, moisture and roads; grass and shrubs sway in a vertex shader. Rocks use a cracked-rock
   albedo + normal set; houses use plaster detail and baked base AO.
-- **Continue a run** — seed + player state + equipment + buildings + scrap + production timers are
-  auto-saved to localStorage. Reload shows **CONTINUE**; **NEW RUN** clears the save, and PERF has
-  **RESET SAVE**.
+- **Continue a run** — seed + player state + equipment + buildings + scrap + ammo/magazines + weapon
+  upgrades + production timers are auto-saved to localStorage (schema `v: 2`; `v: 1` runs migrate in
+  place and start with the default ammo pouch). Reload shows **CONTINUE**; **NEW RUN** clears the
+  save, and PERF has **RESET SAVE**.
 - **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
   jitter. The player is a skinned R4 character: the MakeHuman `hm08` head (CC0) with a procedural
   hair shell, eyes and brows, on a slim 20-bone skinned body with automatic weights, two-bone foot
@@ -153,9 +154,17 @@ The graph keeps the last ~45 seconds.
   skinned riflemen use the same auto-aim/fire path, can hit the player and the camp guard, and the
   guard can go down and respawn. The **RAID** banner tracks the remaining hostiles; clearing the
   squad awards +10 scrap. Raiders that lose line of sight move to a firing position around the
-  player instead of standing behind cover. The wardrobe also carries a **sawn-off shotgun** (6×9
-  pellets, 2 shells, close range, two-handed). Ammo is infinite for now; melee remains available by
-  equipping the blade/club. There are no automatic player weapons yet.
+  player instead of standing behind cover, and a raider that survives a hit flinches to a new firing
+  position and holds fire briefly (**suppression**). The wardrobe also carries a **sawn-off shotgun**
+  (6×9 pellets, 2 shells, close range, two-handed). Clearing a raid shows a **RAID CLEARED** card
+  (+10 scrap); dying during one shows **RAID LOST**. Melee remains available by equipping the
+  blade/club. There are no automatic player weapons yet.
+- **Ammo and upgrades** — a finite reserve per caliber (rifle rounds, pistol rounds, shells) is
+  carried in the save; every gun keeps the magazine you left in it, and reloading draws from the
+  reserve. The **ARMORY** section of the outfit panel spends scrap on ammo packs and on four
+  per-weapon tracks (**damage, rate, reload, spread**, 2–3 tiers each). Tracks are data-driven
+  multipliers over the base weapon spec, so variants and new weapons are config, not code.
+  `?armory=1` opens the panel for testing.
 - **Pinch or the mouse wheel zooms 0.8–2.2×.**
 
 - **Six settlement structures** — Barricade, Campfire, Rain Catcher, Adobe House, Watchtower and Chapel.

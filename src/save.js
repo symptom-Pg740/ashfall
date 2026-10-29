@@ -1,5 +1,12 @@
 export const SAVE_KEY = 'ashfall-save-v1';
 
+/**
+ * Schema history (the key stays `-v1` so existing runs are found and migrated in place):
+ *  1 — scrap/water/kills/health/time, equipment, buildings, scrap field, timers
+ *  2 — adds `ammo`, `mags` and `upgrades` (the armory economy)
+ */
+export const SAVE_VERSION = 2;
+
 let suppressed = false;
 
 export function readSave() {
@@ -8,7 +15,10 @@ export function readSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (!data || data.v !== 1 || !Number.isFinite(data.seed)) return null;
+    if (!data || !Number.isFinite(data.seed)) return null;
+    if (data.v !== 1 && data.v !== SAVE_VERSION) return null;
+    // v1 runs simply have no armory block; `loadGame` fills the starter ammo.
+    data.v = SAVE_VERSION;
     return data;
   } catch {
     return null;

@@ -13,9 +13,11 @@ import { UI } from './ui.js';
 import { Input } from './input.js';
 import { CampFolk } from './npcs.js';
 import { Raiders } from './raiders.js';
+import { Armory } from './armory.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readSave, writeSave } from './save.js';
 import { itemLabel } from './wardrobe.js';
+import { WEAPONS } from './weapons.js';
 import { paint } from './geo.js';
 import { TargetRegistry } from './actors.js';
 import { Firearms } from './firearms.js';
@@ -137,6 +139,11 @@ const state = {
   time: 0,
   lastDamage: -99,
 };
+
+// Ammo reserve, per-weapon magazines and upgrade tiers live in the save state.
+const armory = new Armory(state);
+player.setArmory(armory);
+player.onDry = (name) => ui.toast(`OUT OF AMMO · ${name}`, true);
 
 // Shared target registry: the player, camp folk and ghouls all describe themselves the same way.
 const registry = new TargetRegistry();
@@ -262,6 +269,10 @@ const input = new Input(canvas, activeCamera, {
   },
 });
 
+function refreshWardrobe() {
+  ui.buildWardrobe(player.rig.equipment, armory.view(player.rig.equipment.weapon));
+}
+
 let nearScrap = -1;
 let shadowsOn = true;
 let shadowAutoFallback = false;
@@ -343,8 +354,36 @@ ui.on('compassNorth', () => {
 ui.on('recenter', () => recenterCamera());
 ui.on('wardrobeCycle', (slot, dir) => {
   const id = player.rig.cycleEquipment(slot, dir);
-  ui.buildWardrobe(player.rig.equipment);
+  refreshWardrobe();
+  ui.setWeapon(player.armed, player.weapon?.name);
+  ui.setAmmo(player.ammoState());
   ui.toast(`${slot.toUpperCase()} · ${itemLabel(slot, id)}`);
+  saveGame();
+});
+
+ui.on('armoryAmmo', () => {
+  const added = armory.buyAmmo(player.weaponId);
+  if (!added) {
+    ui.toast(armory.reserve(player.weaponId) > 0 ? 'POUCH ALREADY FULL' : 'NOT ENOUGH SCRAP', true);
+    return;
+  }
+  ui.toast(`+${added} ${player.weapon.name} AMMO`);
+  ui.updateHUD(state);
+  ui.setAmmo(player.ammoState());
+  refreshWardrobe();
+  saveGame();
+});
+
+ui.on('armoryUpgrade', (trackId) => {
+  if (!armory.buyUpgrade(player.weaponId, trackId)) {
+    ui.toast('NOT ENOUGH SCRAP', true);
+    return;
+  }
+  player.refreshWeapon();
+  ui.setAmmo(player.ammoState());
+  ui.toast(`${player.weapon.name} · ${trackId.toUpperCase()} UP`);
+  ui.updateHUD(state);
+  refreshWardrobe();
   saveGame();
 });
 
@@ -554,6 +593,7 @@ function damagePlayer(amount, fromX, fromZ) {
   state.lastDamage = state.time;
   player.hit();
   ui.flashDamage();
+  ui.updateHUD(state);
   cameraShake = Math.max(cameraShake, 0.35);
   if (state.health <= 0) {
     state.health = 0;
@@ -564,6 +604,7 @@ function damagePlayer(amount, fromX, fromZ) {
     ui.setGather(false);
     ui.hideHint();
     ui.toast('YOU DIED', true);
+    if (raidActive) ui.showRaidResult(false, 'THE CAMP IS OVERRUN');
     return true;
   }
   return false;
@@ -594,7 +635,7 @@ function respawn() {
 function saveGame() {
   if (!state.started || state.dead) return;
   writeSave({
-    v: 1,
+    v: 2,
     seed: WORLD_SEED,
     savedAt: Date.now(),
     state: {
@@ -604,6 +645,9 @@ function saveGame() {
       health: state.health,
       maxHealth: state.maxHealth,
       time: state.time,
+      ammo: { ...state.ammo },
+      mags: { ...state.mags },
+      upgrades: JSON.parse(JSON.stringify(state.upgrades)),
     },
     player: { x: player.x, z: player.z, heading: player.heading },
     equipment: { ...player.rig.equipment },
@@ -639,6 +683,17 @@ function loadGame() {
   player.targetHeading = player.heading;
   player.group.rotation.y = player.heading;
   if (save.equipment) player.rig.setEquipment(save.equipment);
+  if (s.ammo && typeof s.ammo === 'object') {
+    for (const key of Object.keys(armory.state.ammo)) {
+      if (Number.isFinite(s.ammo[key])) armory.state.ammo[key] = s.ammo[key];
+    }
+  }
+  if (s.mags && typeof s.mags === 'object') armory.state.mags = { ...s.mags };
+  if (s.upgrades && typeof s.upgrades === 'object') {
+    armory.state.upgrades = s.upgrades;
+    armory._resolved.clear();
+  }
+  player.refreshWeapon();
 
   settlement.restore(save.buildings);
   scrapField.restore(save.scrap);
@@ -956,6 +1011,7 @@ function simulate(dt) {
       ui.updateHUD(state);
       ui.toast('RAID CLEARED · +10 SCRAP');
       ui.hint('THE DUST SETTLES — FOR NOW', 2600);
+      ui.showRaidResult(true, '+10 SCRAP · THE DUST SETTLES');
       saveGame();
     }
   }
@@ -1009,6 +1065,11 @@ function loop(now) {
 
   campFolk.update(dt, state.time, player, settlement.buildings);
   raiders.update(dt, state.time, player);
+  // Damage and passive regen change health outside the event-driven HUD paths.
+  if (now - lastUIUpdate > 120) {
+    lastUIUpdate = now;
+    ui.updateHUD(state);
+  }
   if (state.started && !state.dead && now - lastSave > 5000) {
     lastSave = now;
     saveGame();
@@ -1054,7 +1115,7 @@ ui.setQuality(coarse ? 'balanced' : 'high');
 
 resumedGame = loadGame();
 ui.setResume(resumedGame);
-ui.buildWardrobe(player.rig.equipment);
+refreshWardrobe();
 ui.setWeapon(player.armed, player.weapon?.name);
 ui.setAmmo(player.ammoState());
 ui.setRaid(0);
@@ -1102,11 +1163,12 @@ if (debugParams.has('raider')) {
   r.recoil = 0;
   r.aim.target = null;
   r.aim._initialised = false;
-  const x = player.x;
-  const z = player.z + 7;
+  const x = player.x + 7;
+  const z = player.z;
+  const face = Math.atan2(player.x - x, player.z - z);
   r.rig.group.position.set(x, heightAt(x, z), z);
-  r.rig.group.rotation.y = Math.PI;
-  r.heading = Math.PI;
+  r.rig.group.rotation.y = face;
+  r.heading = face;
   r.rig.group.visible = true;
   r.rig.mesh.visible = true;
   if (r.farTier) r.farTier.visible = false;
@@ -1114,6 +1176,16 @@ if (debugParams.has('raider')) {
 }
 if (debugParams.has('raid')) {
   setTimeout(() => startRaid(2, 9), 1200);
+}
+if (debugParams.has('raidclear')) {
+  setTimeout(() => {
+    startRaid(2, 10);
+    setTimeout(() => {
+      for (const p of raiders.people) {
+        if (p.active) raiders.damage(p.target.ref, 999);
+      }
+    }, 400);
+  }, 800);
 }
 if (debugParams.has('guardtest')) {
   const n = campFolk.people[0];
@@ -1143,15 +1215,53 @@ if (debugParams.has('ghoul')) {
 }
 if (debugParams.has('weapon')) {
   player.rig.equip('weapon', debugParams.get('weapon'));
-  ui.buildWardrobe(player.rig.equipment);
+  refreshWardrobe();
   ui.setWeapon(player.armed, player.weapon?.name);
   ui.setAmmo(player.ammoState());
+}
+if (debugParams.has('hurt')) {
+  setTimeout(() => damagePlayer(Number(debugParams.get('hurt')) || 35), 1000);
+}
+if (debugParams.has('noammo')) {
+  setTimeout(() => {
+    for (const key of Object.keys(state.ammo)) state.ammo[key] = 0;
+    for (const key of Object.keys(WEAPONS)) state.mags[key] = 0;
+    player.refreshWeapon();
+    ui.setAmmo(player.ammoState());
+  }, 400);
+}
+if (debugParams.has('armory')) {
+  setTimeout(() => ui.toggleWardrobe(true), 500);
+}
+if (debugParams.has('upgrade')) {
+  setTimeout(() => {
+    state.scrap = Math.max(state.scrap, 200);
+    ui.updateHUD(state);
+    ui.cb.armoryUpgrade?.(debugParams.get('upgrade'));
+    ui.toggleWardrobe(true);
+  }, 600);
 }
 if (debugParams.has('fire')) {
   setTimeout(() => window.__ashfall.actions.doStrike(), 1500);
 }
 if (debugParams.has('autostart')) {
   requestAnimationFrame(() => document.getElementById('start-btn')?.click());
+}
+if (debugParams.has('fastforward')) {
+  // Deterministic headless step: rAF advances very slowly under virtual time.
+  setTimeout(() => {
+    const seconds = Math.min(60, Number(debugParams.get('fastforward')) || 5);
+    const steps = Math.round(seconds * 60);
+    for (let i = 0; i < steps; i++) {
+      if (!state.started) break;
+      simulate(1 / 60);
+      campFolk.update(1 / 60, state.time, player, settlement.buildings);
+      raiders.update(1 / 60, state.time, player);
+    }
+    ui.updateHUD(state);
+    ui.setAmmo(player.ammoState());
+    ui.hint(`SIM +${seconds}s`, 1800);
+  }, Number(debugParams.get('ffdelay')) || 700);
 }
 
 requestAnimationFrame(loop);

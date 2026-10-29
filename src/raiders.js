@@ -91,6 +91,7 @@ export class Raiders {
         phase: rng() * 6.28,
         reposition: null,
         repositionTimer: 0,
+        suppressed: 0,
       });
     }
   }
@@ -132,6 +133,7 @@ export class Raiders {
       p.phase = this.rng() * 6.28;
       p.reposition = null;
       p.repositionTimer = 0;
+      p.suppressed = 0;
       spawned++;
     }
     return spawned;
@@ -167,6 +169,10 @@ export class Raiders {
       }
       return true;
     }
+    // Hit but alive: flinch into a new firing position and hold fire briefly.
+    p.suppressed = 1.5;
+    p.reposition = null;
+    p.repositionTimer = 0;
     return false;
   }
 
@@ -236,11 +242,12 @@ export class Raiders {
       p.aimActor.heading = p.rig.group.rotation.y;
       p.aim.update(dt, p.aimActor, this.registry, p.weapon);
 
+      p.suppressed = Math.max(0, p.suppressed - dt);
+
       const target = p.aim.target;
       let moving = false;
-      if (target) {
+      if (target && !p.reposition) {
         p.heading = p.aim.aimYaw;
-        p.reposition = null;
         p.repositionTimer = 0;
         p.phase += dt * 1.2;
       } else {
@@ -248,6 +255,11 @@ export class Raiders {
         const dz = player.z - pos.z;
         const dist = Math.hypot(dx, dz) || 1;
         p.repositionTimer = Math.max(0, p.repositionTimer - dt);
+
+        if (!p.reposition && p.suppressed > 0) {
+          p.reposition = this.findFiringPosition(p, player);
+          p.repositionTimer = 1.6;
+        }
 
         if (p.reposition) {
           const rx = p.reposition.x - pos.x;
@@ -291,7 +303,7 @@ export class Raiders {
         p.rig.applyWeaponPose(p.aim.pitch, p.recoil, p.reloadTimer > 0, true);
       }
 
-      if (target && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
+      if (target && p.suppressed <= 0 && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
         this.shoot(p);
       }
     }
