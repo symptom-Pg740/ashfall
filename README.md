@@ -149,8 +149,10 @@ The graph keeps the last ~45 seconds.
   travelling tracer, muzzle flash and smoke, surface-specific impacts and ground decals. The rifle
   is **two-handed**: its left hand is solved onto the foregrip with a two-bone arm IK, while the
   right hand holds the grip. One camp folk is armed with a pistol and **auto-engages ghouls** using
-  the same aim controller; the policy is ready for hostile raiders. Ammo is infinite for now; melee
-  remains available by equipping the blade/club. There are no automatic player weapons yet.
+  the same aim controller. After about a minute a small **raider squad** attacks the camp: hostile
+  skinned riflemen use the same auto-aim/fire path, can hit the player and the camp guard, and the
+  guard can go down and respawn. Ammo is infinite for now; melee remains available by equipping the
+  blade/club. There are no automatic player weapons yet.
 - **Pinch or the mouse wheel zooms 0.8–2.2×.**
 
 - **Six settlement structures** — Barricade, Campfire, Rain Catcher, Adobe House, Watchtower and Chapel.

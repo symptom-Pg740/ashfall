@@ -1,8 +1,8 @@
 # Firearms: bullets, weapons, auto-aim and impact effects
 
-- **Status:** phase 1 implemented; phase 2 first slice implemented (single-shot pipe rifle,
-  two-handed arm IK, part-tagged skinning, one auto-firing camp guard). Hostile raiders, camp/player
-  damage and the ammo economy remain.
+- **Status:** phase 1 implemented; phase 2 battle slice implemented (single-shot rifle, two-handed
+  IK, camp guard, hostile raiders, two-way damage). Cover/suppression AI, more weapons/upgrades and
+  the ammo economy remain.
 - **Date:** 2026-10-28
 - **Question:** If Ashfall adds firearms, what is the best way to implement hit resolution, bullets,
   weapons, auto-aim and the firing→flight→impact effects on a mobile-first, procedural,
@@ -1082,6 +1082,33 @@ smallest amount of code. Everything after it is additive.
 - **Still open.** Hostile raiders and camp/player damage, more weapons and per-weapon variants/
   upgrades, per-caliber ammo and save `v: 2`, casings/audio/damage numbers. Automatic player weapons
   are intentionally out for now.
+
+---
+
+## 13. Phase 2 — hostile raiders and two-way damage (2026-10-29)
+
+- **Generic target ray.** `Firearms.raycastTargets()` now walks the shared `TargetRegistry` and
+  tests every combatant capsule (ghoul, player, camp folk, raider), filtered by `canAttack`. A
+  target owns its `hit(damage, fromX, fromZ)` callback: ghouls call `Enemies.damage`, the player
+  calls `damagePlayer`, camp folk call `CampFolk.damage`, raiders call `Raiders.damage`. The closest
+  of target/static wins. The old ghoul-only ray remains as a fallback when no registry is supplied.
+- **Raiders.** `src/raiders.js` builds three skinned riflemen with the pipe rifle, a baked far LOD
+  and an auto `AimController` (faction `hostile`). They spawn at the edge of the camp, advance to
+  rifle range, stop, aim and fire, reload after each shot, and die to the player or camp guard.
+  A small squad spawns roughly every minute after the first 70 s; `?raid=1` spawns one immediately
+  for testing.
+- **Two-way damage.** The player target feeds `damagePlayer` (same health/death/respawn path as
+  ghouls). Camp folk have HP, can be downed by raider fire, hide their rig and respawn at home after
+  20 s. The camp guard's kills still award the player scrap; the raiders' kills handle the player and
+  camp damage through the target callbacks.
+- **First-slice limits.** Raiders approach in a straight line and do not yet use cover, suppression or
+  squad focus; a rock between a raider and the player blocks both LOS and fire, and the raider may
+  stand behind it. Repositioning around cover is the next AI behavior. There is no win/lose raid
+  objective yet.
+- **Verification.** Headless Chrome captures show a raider spawning into the camp, the player's
+  rifle one-shotting a raider (HUD: 1 kill, +2 scrap), and the camp guard engaging. The raider's
+  player-damage path is wired through the same target-hit callback; a dedicated health/death capture
+  is the next test.
 
 ---
 

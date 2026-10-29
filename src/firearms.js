@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { clamp, deriveSeed, makeRng } from './rng.js';
+import { canAttack } from './actors.js';
 
 /**
  * Hit resolution, static blockers and the per-shot FX dispatch.
@@ -25,13 +26,23 @@ const _end = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _origin = new THREE.Vector3();
+const _tRay = new THREE.Ray();
+const _tRayOrigin = new THREE.Vector3();
+const _tRayDir = new THREE.Vector3();
+const _tCapA = new THREE.Vector3();
+const _tCapB = new THREE.Vector3();
+const _tPointOnRay = new THREE.Vector3();
+const _tPointOnSeg = new THREE.Vector3();
+const _tTmp = new THREE.Vector3();
+const _tPoint = new THREE.Vector3();
 
 export class Firearms {
-  constructor({ enemies, settlement, wasteland, fx }) {
+  constructor({ enemies, settlement, wasteland, fx, registry = null }) {
     this.enemies = enemies;
     this.settlement = settlement;
     this.wasteland = wasteland;
     this.fx = fx;
+    this.registry = registry;
     this.rng = makeRng(deriveSeed('firearms'));
     this._impact = new THREE.Vector3();
     this._normal = new THREE.Vector3();
@@ -75,21 +86,42 @@ export class Firearms {
       _pellet.copy(_dir);
       this.applySpread(_pellet, weapon.spread);
 
-      const enemyHit = this.enemies.raycast(
-        muzzle.x, muzzle.y, muzzle.z,
-        _pellet.x, _pellet.y, _pellet.z,
-        weapon.range,
-      );
+      const targetHit = this.raycastTargets(muzzle, _pellet, weapon.range, actor.faction || 'player');
+      const enemyHit = this.registry
+        ? null
+        : this.enemies.raycast(
+            muzzle.x, muzzle.y, muzzle.z,
+            _pellet.x, _pellet.y, _pellet.z,
+            weapon.range,
+          );
       const staticHit = this.raycastStatic(muzzle, _pellet, weapon.range);
+      const targetT = targetHit ? targetHit.t : Infinity;
       const enemyT = enemyHit ? enemyHit.t : Infinity;
       const staticT = staticHit ? staticHit.t : Infinity;
 
-      if (enemyHit && enemyT <= staticT) {
+      if (targetHit && targetT <= staticT) {
+        const target = targetHit.target;
+        const killed = target.hit ? target.hit(weapon.damage, actor.x, actor.z, 0.35) : false;
+        hitAny = true;
+        if (killed) kills++;
+        this._impact.copy(targetHit.point);
+        // Lift the hit off the far side of the capsule so the spray reads from the top-down camera.
+        this._impact.y += 0.15;
+        _normal.set(0, 1, 0);
+        lastX = this._impact.x;
+        lastZ = this._impact.z;
+        this.fx.fire({
+          muzzle,
+          impact: this._impact,
+          surface: 'flesh',
+          normal: _normal,
+          visualSpeed: weapon.visualSpeed,
+        });
+      } else if (enemyHit && enemyT <= staticT) {
         const killed = this.enemies.damage(enemyHit.index, weapon.damage, actor.x, actor.z, 0.35);
         hitAny = true;
         if (killed) kills++;
         this._impact.copy(enemyHit.point);
-        // Lift the hit off the far side of the capsule so the spray reads from the top-down camera.
         this._impact.y += 0.15;
         _normal.set(0, 1, 0);
         lastX = this._impact.x;
@@ -117,6 +149,37 @@ export class Firearms {
     }
 
     return { hit: hitAny, killed: kills, x: lastX, z: lastZ };
+  }
+
+  /** A ray against every registered combatant capsule. */
+  raycastTargets(origin, dir, maxDist, faction) {
+    if (!this.registry) return null;
+    _tRayOrigin.copy(origin);
+    _tRayDir.copy(dir);
+    _tRay.set(_tRayOrigin, _tRayDir);
+    let bestT = maxDist;
+    let best = null;
+    this.registry.forEach((t) => {
+      if (!t || t.dead || !canAttack(faction, t.faction)) return;
+      const h = t.height || 1.8;
+      const y = t.y || 0;
+      _tCapA.set(t.x, y + h * 0.2, t.z);
+      _tCapB.set(t.x, y + h * 0.85, t.z);
+      const r = t.radius || 0.35;
+      const d2 = _tRay.distanceSqToSegment(_tCapA, _tCapB, _tPointOnRay, _tPointOnSeg);
+      if (d2 > r * r) return;
+      const tt = _tTmp.subVectors(_tPointOnRay, _tRayOrigin).dot(_tRayDir);
+      if (tt < 0 || tt > bestT) return;
+      bestT = tt;
+      best = t;
+    });
+    if (!best) return null;
+    _tPoint.set(
+      origin.x + dir.x * bestT,
+      origin.y + dir.y * bestT,
+      origin.z + dir.z * bestT,
+    );
+    return { target: best, t: bestT, point: _tPoint };
   }
 
   /** A ray against buildings, obstacles and the height field. */

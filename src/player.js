@@ -34,6 +34,7 @@ export class Player {
       },
     });
     this.rig = rig;
+    this.faction = 'player';
     this.group = rig.group;
     this.mesh = rig.mesh;
     this.bones = rig.bones;

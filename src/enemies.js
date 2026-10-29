@@ -88,6 +88,7 @@ export class Enemies {
           height: 1.5,
           dead: true,
           ref: i,
+          hit: (damage, fromX, fromZ, knock = 1) => this.damage(i, damage, fromX, fromZ, knock),
         },
       });
       _o.position.set(0, -50, 0);

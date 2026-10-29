@@ -78,6 +78,10 @@ export class CampFolk {
         phase: rng() * 6.28,
         armed,
         weapon,
+        hp: 100,
+        maxHp: 100,
+        dead: false,
+        respawnTimer: 0,
         mag: weapon ? weapon.magazine : 0,
         reserve: Infinity,
         reloadTimer: 0,
@@ -99,14 +103,35 @@ export class CampFolk {
     }
   }
 
-  attachCombat({ registry, firearms, onKill }) {
+  attachCombat({ registry, firearms, onKill, onDown }) {
     this.registry = registry;
     this.firearms = firearms;
     this.onKill = onKill || null;
+    this.onDown = onDown || null;
     for (const p of this.people) {
       if (!p.armed || !p.aim) continue;
       p.aim.los = (x1, y1, z1, x2, y2, z2) => firearms.hasLineOfSight(x1, y1, z1, x2, y2, z2);
     }
+  }
+
+  damage(index, amount) {
+    const p = this.people[index];
+    if (!p || p.dead) return false;
+    p.hp -= amount;
+    if (p.hp <= 0) {
+      p.hp = 0;
+      p.dead = true;
+      p.respawnTimer = 20;
+      p.rig.group.visible = false;
+      if (p.farTier) p.farTier.visible = false;
+      if (p.aim) {
+        p.aim.target = null;
+        p.aim.canFire = false;
+      }
+      this.onDown?.(p.name);
+      return true;
+    }
+    return false;
   }
 
   update(dt, time, player, buildings = []) {
@@ -122,6 +147,29 @@ export class CampFolk {
           p.rig.mesh.visible = !p.isFar;
           p.farTier.visible = p.isFar;
         }
+      }
+
+      if (p.dead) {
+        p.respawnTimer = Math.max(0, p.respawnTimer - dt);
+        if (p.respawnTimer === 0) {
+          p.dead = false;
+          p.hp = p.maxHp;
+          p.isFar = false;
+          pos.set(p.home.x, heightAt(p.home.x, p.home.z), p.home.z);
+          p.rig.group.visible = true;
+          p.rig.mesh.visible = true;
+          if (p.farTier) p.farTier.visible = false;
+          p.heading = p.rng() * Math.PI * 2;
+          p.rig.group.rotation.y = p.heading;
+          if (p.aim) p.aim.target = null;
+          if (p.weapon) {
+            p.mag = p.weapon.magazine;
+            p.reloadTimer = 0;
+            p.cooldown = 0;
+            p.recoil = 0;
+          }
+        }
+        continue;
       }
 
       if (p.armed) {
@@ -219,7 +267,7 @@ export class CampFolk {
         p.rig.applyWeaponPose(p.aim?.pitch || 0, p.recoil, p.reloadTimer > 0, !!p.weapon.twoHanded);
         if (combatTarget && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
           const shot = this.firearms.fire(
-            { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading },
+            { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'camp' },
             { weapon: p.weapon, aimPoint: p.aim.targetPoint },
           );
           p.mag--;

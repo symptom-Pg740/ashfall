@@ -12,6 +12,7 @@ import { Perf, QUALITY } from './perf.js';
 import { UI } from './ui.js';
 import { Input } from './input.js';
 import { CampFolk } from './npcs.js';
+import { Raiders } from './raiders.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readSave, writeSave } from './save.js';
 import { itemLabel } from './wardrobe.js';
@@ -122,6 +123,7 @@ const enemies = new Enemies(scene, deriveSeed('enemies'));
 const charStyle = new URLSearchParams(window.location.search).get('chars');
 const npcStyle = charStyle === 'blocky' ? 'blocky' : charStyle === 'smooth' ? 'smooth' : 'skinned';
 const campFolk = new CampFolk(scene, 3, { style: npcStyle });
+const raiders = new Raiders(scene, deriveSeed('raiders'));
 
 const state = {
   started: false,
@@ -146,17 +148,19 @@ const playerTarget = {
   radius: 0.38,
   height: 1.8,
   dead: false,
+  hit: (damage) => damagePlayer(damage),
 };
 const playerAimActor = { x: 0, y: 0, z: 0, heading: 0 };
 const campTargets = campFolk.people.map((p, i) => ({
   id: `camp:${i}`,
   faction: 'camp',
   x: 0, y: 0, z: 0,
-  hp: 100, maxHp: 100,
+  hp: p.hp, maxHp: p.maxHp,
   radius: 0.38,
   height: 1.8,
   dead: false,
   ref: p,
+  hit: (damage) => campFolk.damage(i, damage),
 }));
 registry.add(enemies);
 registry.add({
@@ -173,16 +177,21 @@ registry.add({
 registry.add({
   forEachTarget(cb) {
     for (let i = 0; i < campFolk.people.length; i++) {
+      const person = campFolk.people[i];
+      if (person.dead) continue;
       const t = campTargets[i];
-      const pos = campFolk.people[i].rig.group.position;
+      const pos = person.rig.group.position;
       t.x = pos.x;
       t.y = pos.y;
       t.z = pos.z;
-      t.hp = campFolk.people[i].rig.hp || 100;
+      t.hp = person.hp;
+      t.maxHp = person.maxHp;
+      t.dead = false;
       cb(t);
     }
   },
 });
+registry.add(raiders);
 
 const ui = new UI();
 const settlement = new Settlement({
@@ -203,7 +212,7 @@ const settlement = new Settlement({
   obstacles: wasteland.obstacles,
 });
 const perf = new Perf(renderer);
-const firearms = new Firearms({ enemies, settlement, wasteland, fx });
+const firearms = new Firearms({ enemies, settlement, wasteland, fx, registry });
 player.aim.los = (x1, y1, z1, x2, y2, z2) => firearms.hasLineOfSight(x1, y1, z1, x2, y2, z2);
 campFolk.attachCombat({
   registry,
@@ -215,7 +224,9 @@ campFolk.attachCombat({
     ui.updateHUD(state);
     saveGame();
   },
+  onDown: (name) => ui.toast(`${name} DOWN — RESPAWNING`, true),
 });
+raiders.attachCombat({ registry, firearms });
 
 // ---------------------------------------------------------------------------
 // input wiring
@@ -279,6 +290,7 @@ window.__ashfall = {
   actions: { doPlace, doGather, doStrike, doStress, applyQuality, setOrtho, rotateBy, saveGame, loadGame, validateWorld },
 };
 let spawnAt = 0;
+let nextRaid = 70;
 let spawnWarned = false;
 let nextSpawnGap = 16;
 let resumedGame = false;
@@ -535,8 +547,8 @@ function doStress(kind) {
 // damage / death
 // ---------------------------------------------------------------------------
 
-enemies.onPlayerHit = (amount, enemy) => {
-  if (state.dead || !state.started) return;
+function damagePlayer(amount, fromX, fromZ) {
+  if (state.dead || !state.started) return false;
   state.health -= amount;
   state.lastDamage = state.time;
   player.hit();
@@ -551,8 +563,11 @@ enemies.onPlayerHit = (amount, enemy) => {
     ui.setGather(false);
     ui.hideHint();
     ui.toast('YOU DIED', true);
+    return true;
   }
-};
+  return false;
+}
+enemies.onPlayerHit = (amount, enemy) => damagePlayer(amount, enemy?.x, enemy?.z);
 
 function respawn() {
   state.dead = false;
@@ -913,6 +928,18 @@ function simulate(dt) {
     }
   }
 
+  // raider pressure: a small squad every minute or so
+  if (state.time > nextRaid) {
+    const n = 1 + Math.floor(state.time / 150);
+    const spawned = raiders.spawnWave(Math.min(2, n), player.x, player.z, 30);
+    if (spawned) {
+      ui.hint('RAIDERS IN THE DUST', 3400);
+      nextRaid = state.time + 60;
+    } else {
+      nextRaid = state.time + 8;
+    }
+  }
+
   // scavenge proximity
   nearScrap = scrapField.nearest(player.x, player.z, 2.7);
   ui.setGather(nearScrap >= 0 && !settlement.placing);
@@ -961,6 +988,7 @@ function loop(now) {
   }
 
   campFolk.update(dt, state.time, player, settlement.buildings);
+  raiders.update(dt, state.time, player);
   if (state.started && !state.dead && now - lastSave > 5000) {
     lastSave = now;
     saveGame();
@@ -1042,6 +1070,30 @@ if (debugParams.has('heading')) {
 }
 if (debugParams.get('hide') === 'body') player.rig.mesh.visible = false;
 if (debugParams.get('hide') === 'outfit' && player.rig.outfit) player.rig.outfit.visible = false;
+if (debugParams.has('raider')) {
+  const r = raiders.people[0];
+  r.active = true;
+  r.dead = false;
+  r.hp = r.maxHp;
+  r.mag = r.weapon.magazine;
+  r.reloadTimer = 0;
+  r.cooldown = 0;
+  r.recoil = 0;
+  r.aim.target = null;
+  r.aim._initialised = false;
+  const x = player.x;
+  const z = player.z + 7;
+  r.rig.group.position.set(x, heightAt(x, z), z);
+  r.rig.group.rotation.y = Math.PI;
+  r.heading = Math.PI;
+  r.rig.group.visible = true;
+  r.rig.mesh.visible = true;
+  if (r.farTier) r.farTier.visible = false;
+  r.isFar = false;
+}
+if (debugParams.has('raid')) {
+  setTimeout(() => raiders.spawnWave(2, player.x, player.z, 9), 1200);
+}
 if (debugParams.has('guardtest')) {
   const n = campFolk.people[0];
   const nx = player.x + 1.2;
