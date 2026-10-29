@@ -205,6 +205,17 @@ const settlement = new Settlement({
 const perf = new Perf(renderer);
 const firearms = new Firearms({ enemies, settlement, wasteland, fx });
 player.aim.los = (x1, y1, z1, x2, y2, z2) => firearms.hasLineOfSight(x1, y1, z1, x2, y2, z2);
+campFolk.attachCombat({
+  registry,
+  firearms,
+  onKill: (x, z) => {
+    state.kills++;
+    state.scrap += 2;
+    particles.burst(x, heightAt(x, z) + 0.7, z, '#a8c07a', 12, 2.6);
+    ui.updateHUD(state);
+    saveGame();
+  },
+});
 
 // ---------------------------------------------------------------------------
 // input wiring
@@ -1031,6 +1042,14 @@ if (debugParams.has('heading')) {
 }
 if (debugParams.get('hide') === 'body') player.rig.mesh.visible = false;
 if (debugParams.get('hide') === 'outfit' && player.rig.outfit) player.rig.outfit.visible = false;
+if (debugParams.has('guardtest')) {
+  const n = campFolk.people[0];
+  const nx = player.x + 1.2;
+  const nz = player.z + 0.4;
+  n.rig.group.position.set(nx, heightAt(nx, nz), nz);
+  n.rig.group.rotation.y = 0;
+  n.heading = 0;
+}
 if (debugParams.has('compare')) {
   const n = campFolk.people[0];
   const nx = player.x + 1.15;
@@ -1038,11 +1057,25 @@ if (debugParams.has('compare')) {
   n.rig.group.rotation.y = 0;
   campFolk.update = () => {};
 }
+if (debugParams.has('ghoul')) {
+  const g = enemies.pool[0];
+  g.active = true;
+  g.x = player.x;
+  g.z = player.z + 7;
+  g.y = heightAt(g.x, g.z);
+  g.hp = 46;
+  g.scale = 1;
+  g.speed = 0;
+  g.attackCd = 999;
+}
 if (debugParams.has('weapon')) {
   player.rig.equip('weapon', debugParams.get('weapon'));
   ui.buildWardrobe(player.rig.equipment);
   ui.setWeapon(player.armed, player.weapon?.name);
   ui.setAmmo(player.ammoState());
+}
+if (debugParams.has('fire')) {
+  setTimeout(() => window.__ashfall.actions.doStrike(), 1500);
 }
 if (debugParams.has('autostart')) {
   requestAnimationFrame(() => document.getElementById('start-btn')?.click());

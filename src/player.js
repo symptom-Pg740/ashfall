@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { damp, clamp, deriveSeed } from './rng.js';
 import { buildSkinnedHumanoid } from './skinned.js';
@@ -57,8 +56,6 @@ export class Player {
     this.reserve = Infinity;
     this.reloadTimer = 0;
     this.recoil = 0;
-    this._ikTarget = new THREE.Vector3();
-    this._ikPole = new THREE.Vector3(-1, -1, 0.2);
     this.aim = new AimController({
       faction: 'player',
       firePolicy: 'manual',
@@ -132,7 +129,7 @@ export class Player {
     if (moving) {
       const nx = moveX / len;
       const nz = moveZ / len;
-      const speed = SPEED * (this.weapon ? 0.92 : 1) * (this.attackTime > 0 ? 0.55 : 1);
+      const speed = SPEED * (this.weapon?.moveScale ?? 1) * (this.attackTime > 0 ? 0.55 : 1);
       this.pos.x = clamp(this.pos.x + nx * speed * dt, -MAX_RADIUS, MAX_RADIUS);
       this.pos.z = clamp(this.pos.z + nz * speed * dt, -MAX_RADIUS, MAX_RADIUS);
       const d = Math.hypot(this.pos.x, this.pos.z);
@@ -200,30 +197,7 @@ export class Player {
     }
 
     if (this.weapon) {
-      const pitch = this.aim.pitch || 0;
-      const kick = this.recoil * 0.35;
-      if (this.reloadTimer > 0) {
-        upperArmR.rotation.x = -0.55;
-        upperArmR.rotation.z = -0.18;
-        forearmR.rotation.x = -0.9;
-        upperArmL.rotation.x = -0.45;
-        upperArmL.rotation.z = 0.2;
-        forearmL.rotation.x = -1.0;
-      } else {
-        upperArmR.rotation.x = -1.35 - pitch - kick;
-        upperArmR.rotation.z = -0.08;
-        forearmR.rotation.x = -0.15;
-        upperArmL.rotation.x = -0.5 - pitch * 0.3;
-        upperArmL.rotation.z = 0.18;
-        forearmL.rotation.x = -0.65;
-        b.chest.rotation.y = -0.05;
-        b.head.rotation.x = pitch * 0.55 - kick * 0.3;
-      }
-      if (this.weapon.twoHanded && this.rig.foregrip && this.reloadTimer <= 0) {
-        this.group.updateMatrixWorld(true);
-        this.rig.foregrip.getWorldPosition(this._ikTarget);
-        this.rig.solveArmIK('L', this._ikTarget, this._ikPole, 1);
-      }
+      this.rig.applyWeaponPose(this.aim.pitch, this.recoil, this.reloadTimer > 0, !!this.weapon.twoHanded);
     }
 
     if (this.hitTimer > 0) {
@@ -246,6 +220,11 @@ export class Player {
     this.attackCooldown = 60 / this.weapon.rpm;
     this.attackTime = 0.12;
     this.recoil = 1;
+    if (this.weapon.singleShot || this.weapon.magazine <= 1) {
+      // A single-shot rifle reloads immediately after the shot; the player cannot fire until it
+      // is ready again.
+      this.reloadTimer = this.weapon.reload;
+    }
     return { weapon: this.weapon, aimPoint: this.aim.target ? this.aim.targetPoint : null };
   }
 

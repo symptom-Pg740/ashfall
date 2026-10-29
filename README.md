@@ -141,14 +141,16 @@ The graph keeps the last ~45 seconds.
   weapon) with multiple items each. Torso/legs/feet rebuild a skinned outfit layer that shares the
   body skeleton; the rest are meshes on bone sockets. Changes are live, saved with the run, and the
   far LOD is re-baked for NPCs. Open it with **OUTFIT** / `O` and tap a slot to cycle.
-- **Firearms** — the player starts with a **scrap pistol** (12-round magazine, 1.3 s reload,
-  300 rpm); the wardrobe also carries a **pipe rifle** (30 rounds, 600 rpm, 30 m). Shots are hitscan
-  rays tested against analytic ghoul capsules; a shared target registry auto-aims the character,
-  while firing stays on the player's input. The shot is presented with a travelling tracer, muzzle
-  flash and smoke, surface-specific impacts and ground decals. The rifle is **two-handed**: its
-  left hand is solved onto the foregrip with a two-bone arm IK, while the right hand holds the grip.
-  Ammo is infinite for now; melee remains available by equipping the blade/club. The same aim/fire
-  policy is wired for future armed camp folk and raiders.
+- **Firearms** — the player starts with a **scrap pistol**, the fast/light sidearm (12-round
+  magazine, 360 rpm, 1.3 s reload). The wardrobe also carries the **pipe rifle**, a slow single-shot
+  weapon: 60 damage (one-shots a ghoul), 0.3° spread, 35 m, one round with a 1.1 s reload after each
+  shot. Shots are hitscan rays tested against analytic ghoul capsules; a shared target registry
+  auto-aims the character, while firing stays on the player's input. The shot is presented with a
+  travelling tracer, muzzle flash and smoke, surface-specific impacts and ground decals. The rifle
+  is **two-handed**: its left hand is solved onto the foregrip with a two-bone arm IK, while the
+  right hand holds the grip. One camp folk is armed with a pistol and **auto-engages ghouls** using
+  the same aim controller; the policy is ready for hostile raiders. Ammo is infinite for now; melee
+  remains available by equipping the blade/club. There are no automatic player weapons yet.
 - **Pinch or the mouse wheel zooms 0.8–2.2×.**
 
 - **Six settlement structures** — Barricade, Campfire, Rain Catcher, Adobe House, Watchtower and Chapel.

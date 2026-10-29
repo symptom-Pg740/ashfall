@@ -528,6 +528,7 @@ export function buildSkinnedHumanoid(seed, options = {}) {
   const _ikDown = new THREE.Vector3(0, -1, 0);
   const _ikDesired = new THREE.Quaternion();
   const _ikParent = new THREE.Quaternion();
+  const _ikPole = new THREE.Vector3(-1, -1, 0.2);
 
   const rig = {
     group,
@@ -624,6 +625,36 @@ export function buildSkinnedHumanoid(seed, options = {}) {
         shin.rotation.x = walkShin + (kneeBend - walkShin) * factor;
         foot.rotation.x = (alpha + beta - kneeBend + slopePitch) * factor;
         foot.rotation.z = slopeRoll * factor;
+      }
+    },
+    applyWeaponPose(pitch = 0, recoil = 0, reloading = false, twoHanded = false) {
+      const b = skeleton;
+      const kick = recoil * 0.35;
+      const upperArmR = b.arms.R.upper;
+      const forearmR = b.arms.R.fore;
+      const upperArmL = b.arms.L.upper;
+      const forearmL = b.arms.L.fore;
+      if (reloading) {
+        upperArmR.rotation.x = -0.55;
+        upperArmR.rotation.z = -0.18;
+        forearmR.rotation.x = -0.9;
+        upperArmL.rotation.x = -0.45;
+        upperArmL.rotation.z = 0.2;
+        forearmL.rotation.x = -1.0;
+      } else {
+        upperArmR.rotation.x = -1.35 - pitch - kick;
+        upperArmR.rotation.z = -0.08;
+        forearmR.rotation.x = -0.15;
+        upperArmL.rotation.x = -0.5 - pitch * 0.3;
+        upperArmL.rotation.z = 0.18;
+        forearmL.rotation.x = -0.65;
+        b.chest.rotation.y = -0.05;
+        b.head.rotation.x = pitch * 0.55 - kick * 0.3;
+      }
+      if (twoHanded && foregrip && !reloading) {
+        group.updateMatrixWorld(true);
+        foregrip.getWorldPosition(_ikTarget);
+        this.solveArmIK('L', _ikTarget, _ikPole, 1);
       }
     },
     solveArmIK(side, target, pole = null, weight = 1) {

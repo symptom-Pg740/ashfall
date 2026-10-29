@@ -1,7 +1,8 @@
 # Firearms: bullets, weapons, auto-aim and impact effects
 
-- **Status:** phase 1 implemented; phase 2 first slice implemented (pipe rifle, two-handed arm IK,
-  part-tagged skinning). Held auto-fire, armed AI combatants and the ammo economy remain.
+- **Status:** phase 1 implemented; phase 2 first slice implemented (single-shot pipe rifle,
+  two-handed arm IK, part-tagged skinning, one auto-firing camp guard). Hostile raiders, camp/player
+  damage and the ammo economy remain.
 - **Date:** 2026-10-28
 - **Question:** If Ashfall adds firearms, what is the best way to implement hit resolution, bullets,
   weapons, auto-aim and the firing→flight→impact effects on a mobile-first, procedural,
@@ -262,10 +263,10 @@ wardrobe already works (`ITEMS[slot][id]` in `wardrobe.js:41-472`), so the patte
 
 ```js
 // src/weapons.js — starting values, not tuned
-pistol:  { name:'Scrap pistol', damage:18, rpm:300, pellets:1, spread:1.2, range:22,
+pistol:  { name:'Scrap pistol', damage:18, rpm:360, pellets:1, spread:1.3, range:22,
            visualSpeed:140, ammo:12, reload:1.30, recoil:1.5, shake:0.05,
            mode:'semi',  socketJitter:0.02 }
-rifle:   { name:'Pipe rifle',   damage:12, rpm:600, pellets:1, spread:1.8, range:30,
+rifle:   { name:'Pipe rifle',   damage:60, rpm:50,  pellets:1, spread:0.3, range:35,
            visualSpeed:150, ammo:30, reload:1.90, recoil:1.0, shake:0.04,
            mode:'auto',  bloom:0.45, bloomMax:4.0, bloomDecay:6 }
 shotgun: { name:'Sawn-off',     damage:9,  rpm:75,  pellets:6, spread:9.0, range:11,
@@ -921,7 +922,7 @@ smallest amount of code. Everything after it is additive.
 
 | Parameter | Value |
 | --- | --- |
-| Fire rate | pistol 300 rpm (0.200 s), rifle 600 rpm (0.100 s), shotgun 75 rpm (0.800 s) |
+| Fire rate | pistol 360 rpm (0.167 s), rifle 50 rpm (1.200 s, single-shot), shotgun 75 rpm (0.800 s) |
 | Spread | 1.2° / 1.8° (+0.45°/shot to 4°) / 9° |
 | Tracer travel | `min(0.10 s, dist / 140)` |
 | Recoil recovery | 0.18 s arm, 0.22 s chest, 0.25 s aim yaw |
@@ -1054,9 +1055,11 @@ smallest amount of code. Everything after it is additive.
   two-bone shoulder/elbow chain with the law of cosines, orients the bones in world space and slerps
   the result over the walk pose. The player calls it for the left arm with the rifle's `foregrip`
   socket as the target; the right arm keeps the grip pose. Reloading releases the support hand.
-- **Pipe rifle.** A 30-round, 600 rpm, 30 m rifle with a dedicated `foregrip` socket and a longer
-  procedural mesh (`src/weapons.js`). It is selectable in the wardrobe weapon slot. The fire mode is
-  semi for now; held auto-fire is the next input change.
+- **Pipe rifle.** A single-shot rifle: 60 damage (one-shots the 46 HP ghoul), 0.3° spread, 35 m,
+  one round and a 1.1 s reload that starts **after every shot**. It has a dedicated `foregrip` socket
+  and a longer procedural mesh (`src/weapons.js`). The pistol is the fast/light counterpart
+  (360 rpm, 18 damage, 1.3° spread). There are no automatic player weapons; more guns and upgrades
+  will come later.
 - **Part-tagged skinning.** The root cause of the persistent "fan" from the arm to the hip was the
   shirt's top/chest vertices sharing arm weights. Base body and outfit parts now carry an `aGroup`
   attribute (`BODY`, `ARM_L/R`, `LEG_L/R`); `skinGeometry()` restricts each vertex to its own limb
@@ -1066,13 +1069,19 @@ smallest amount of code. Everything after it is additive.
   than the tall camp folk), the base hip joint is painted as the dark undersuit instead of skin,
   the boots have a taller shaft over the ankle, and the trousers carry a knee ball so bent legs do
   not show skin between thigh and shin.
+- **Camp guard.** The first skinned camp survivor is armed with a pistol and uses the shared
+  `AimController` with `firePolicy: 'auto'`: it acquires a ghoul, turns, stops, fires, reloads and
+  awards scavenge. This is the first friendly AI combatant; raiders, camp damage and the generic
+  target ray are the next step.
 - **Verification.** Headless Chrome (SwiftShader) captures confirm: clean side/front poses with the
-  rifle held two-handed, no fan, no hip/ankle skin, and the player at or above the stocky camp
-  folk's height. The browser was not available through the old MCP catalog this session, so the
-  captures used `google-chrome --headless` with the `?autostart`, `?zoom`, `?heading`, `?hide` and
-  `?weapon` development URL flags.
-- **Still open.** Held auto-fire for the rifle, armed camp folk/raiders, per-caliber ammo and save
-  `v: 2`, casings/audio/damage numbers.
+  rifle held two-handed, no fan, no hip/ankle skin, the player at or above the stocky camp folk's
+  height, the rifle's one-shot kill with the HUD showing the reload state, and the camp guard firing
+  a tracer at a ghoul. The browser was not available through the old MCP catalog this session, so
+  the captures used `google-chrome --headless` with `?autostart`, `?zoom`, `?heading`, `?hide`,
+  `?weapon`, `?ghoul`, `?fire` and `?guardtest` development URL flags.
+- **Still open.** Hostile raiders and camp/player damage, more weapons and per-weapon variants/
+  upgrades, per-caliber ammo and save `v: 2`, casings/audio/damage numbers. Automatic player weapons
+  are intentionally out for now.
 
 ---
 
