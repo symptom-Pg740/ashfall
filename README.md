@@ -285,27 +285,35 @@ suggests Add to Home Screen instead. iPad, Android Chrome and desktop browsers s
 
 ---
 
-## What to push next
+## Direction: from prototype to game
 
-1. **Real-device matrix**: iPhone 12 / SE, Pixel 6a / 8, a Galaxy A-series, iPad; Safari + Chrome;
-   10-minute thermal runs with the perf lab open.
-2. **Extend the automatic fallback**: the one-shot shadow disable is a floor, not a full solution.
-   Add a 30 fps battery mode and a LOW-preset fallback when the adaptive floor still cannot hold.
-3. **PWA/standalone install**, especially for iOS fullscreen and home-screen launches.
-4. **More adobe town content**: storefronts, awnings, walls, water tower, market stalls, planters.
-   Keep new structures merged/instanced and watch draw calls.
-5. **Baked AO / lightmaps** to keep depth on low-end devices without a runtime shadow pass.
-6. **Audio and weather**: procedural wind/fire, blowing dust sheets, a slow day cycle, smoke columns.
-7. **Combat feel**: hit-stop, directional hits, a dodge, two or three enemy archetypes.
-8. **Persistence**: IndexedDB/localStorage save for the settlement and resources.
-9. **Device-tier calibration**: GPU string, DPR, memory and a short calibration burst to choose the
-   starting preset; keep adaptive resolution as the safety net.
+Ashfall is moving from a single-character prototype to a **settlement command game**. The camp
+survivors become a roster of units you order around; you can still take direct control of any one of
+them. Resources are hauled to a warehouse, and defences run on a solar → pole → wire → turret power
+chain. The turret only engages non-humans; human raids are your units' problem.
+
+- **[docs/GAME_PLAN.md](docs/GAME_PLAN.md)** — the full plan: control model, contextual orders,
+  warehouse/economy, day/night, electricity, Vickers turret, watchtower assignment, progression and
+  the relay objective. It includes the phased build order and acceptance gates.
+- **[docs/REALISM.md](docs/REALISM.md)** — the backlog of realism work we are deliberately
+  deferring (audio tails/occlusion, animation, wounds, needs, weather, destruction), with cost and
+  priority, so it is not lost.
+
+**Immediate next slice (Phase 1):** unify the leader and NPCs into `Unit`, add the roster and
+tap-vs-drag selection, contextual move/attack/gather orders, and `TAKE CONTROL` / `RELEASE` with the
+joystick hidden in command mode. The first milestone is: select a survivor, send them to a scrap
+pile, watch them walk, gather and return, then take control and walk back yourself.
+
+The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
+fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgotten work.
 
 ---
 
 ## Known limitations
 
 - Not yet profiled on a physical phone.
+- Command mode, the warehouse and the power chain are planned but not built yet; see
+  [docs/GAME_PLAN.md](docs/GAME_PLAN.md).
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question.
 - Circle collisions; no navmesh/pathfinding. Ghouls and raiders can catch on large wreckage.
