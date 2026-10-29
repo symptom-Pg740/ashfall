@@ -16,6 +16,8 @@ import { Raiders } from './raiders.js';
 import { Commander } from './commander.js';
 import { Armory } from './armory.js';
 import { AudioFx } from './audio.js';
+import { DayCycle } from './daycycle.js';
+import { PowerNetwork } from './power.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readSave, writeSave, clearSave } from './save.js';
 import { itemLabel } from './wardrobe.js';
@@ -154,6 +156,7 @@ const state = {
 // Ammo reserve, per-weapon magazines and upgrade tiers live in the save state.
 const armory = new Armory(state);
 const audio = new AudioFx();
+const dayCycle = new DayCycle({ atmosphere, scene, renderer, state });
 player.setArmory(armory);
 player.onDry = (name) => {
   ui.toast(`OUT OF AMMO · ${name}`, true);
@@ -252,6 +255,7 @@ const settlement = new Settlement({
   },
   obstacles: wasteland.obstacles,
 });
+const power = new PowerNetwork({ scene, settlement, state, ui });
 const perf = new Perf(renderer);
 const firearms = new Firearms({ enemies, settlement, wasteland, fx, registry });
 /** Ground-plane stereo position of a world point relative to the camera's right axis. */
@@ -360,6 +364,7 @@ window.__ashfall = {
   campFolk,
   raiders,
   commander,
+  power,
   settlement,
   player,
   enemies,
@@ -564,6 +569,7 @@ function doPlace() {
     return;
   }
   state.scrap -= res.cost;
+  power.attach(res.building);
   if (res.building.type === 'chapel') {
     state.maxHealth += 25;
     state.health = Math.min(state.maxHealth, state.health + 25);
@@ -771,7 +777,7 @@ function saveGame() {
   // the write instead of saving the leader on the wrong tile; release/down saves immediately.
   if (player.possessedUnit) return;
   writeSave({
-    v: 2,
+    v: 3,
     seed: WORLD_SEED,
     savedAt: Date.now(),
     state: {
@@ -789,6 +795,7 @@ function saveGame() {
     equipment: { ...player.rig.equipment },
     buildings: settlement.serialize().buildings,
     scrap: scrapField.serialize(),
+    power: power.serialize(),
     timers: {
       spawnAt,
       nextSpawnGap,
@@ -832,6 +839,7 @@ function loadGame() {
   player.refreshWeapon();
 
   settlement.restore(save.buildings);
+  power.restore(save.power);
   scrapField.restore(save.scrap);
   if (save.timers) {
     spawnAt = num(save.timers.spawnAt, state.time + 45);
@@ -1212,6 +1220,9 @@ function loop(now) {
   campFolk.update(dt, state.time, player, settlement.buildings);
   raiders.update(dt, state.time, player);
   commander.update(dt);
+  const dayInfo = dayCycle.update(dt);
+  ui.setClock(dayInfo);
+  power.update(dt, dayInfo.daylight);
   // Damage and passive regen change health outside the event-driven HUD paths.
   if (now - lastUIUpdate > 120) {
     lastUIUpdate = now;
@@ -1261,7 +1272,7 @@ input.camera = activeCamera;
 ui.updateHUD(state);
 ui.setQuality(coarse ? 'balanced' : 'high');
 
-if (new URLSearchParams(window.location.search).has('fresh')) clearSave();
+if (new URLSearchParams(window.location.search).has('fresh')) clearSave(false);
 resumedGame = loadGame();
 ui.setResume(resumedGame);
 refreshWardrobe();

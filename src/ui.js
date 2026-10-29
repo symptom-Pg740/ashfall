@@ -70,6 +70,12 @@ export class UI {
       unitHpFill: document.getElementById('unit-hp-fill'),
       unitStatus: document.getElementById('unit-status'),
       unitControl: document.getElementById('unit-control'),
+      gridPanel: document.getElementById('grid-panel'),
+      gridDay: document.getElementById('grid-day'),
+      gridClock: document.getElementById('grid-clock'),
+      gridPower: document.getElementById('grid-power'),
+      gridBarFill: document.getElementById('grid-bar-fill'),
+      gridNote: document.getElementById('grid-note'),
       unitClose: document.getElementById('unit-close'),
       wardrobeClose: document.getElementById('wardrobe-close'),
       ammo: document.getElementById('hud-ammo'),
@@ -326,6 +332,28 @@ export class UI {
     el.classList.remove('hidden');
     clearTimeout(this.raidResultTimer);
     this.raidResultTimer = setTimeout(() => el.classList.add('hidden'), win ? 2800 : 2400);
+  }
+
+  setClock(info) {
+    if (!this.el.gridClock || !info) return;
+    const key = `${info.clock}|${info.day}|${info.night}`;
+    if (key === this._clockKey) return;
+    this._clockKey = key;
+    this.el.gridDay.textContent = `DAY ${info.day}`;
+    this.el.gridClock.textContent = info.clock;
+    this.el.gridPanel?.classList.toggle('night', !!info.night);
+  }
+
+  setPower(info) {
+    if (!this.el.gridPower || !info) return;
+    const key = `${info.output.toFixed(1)}|${info.demand.toFixed(1)}|${Math.round(info.battery)}|${info.capacity}|${info.powered}|${info.hasGrid}|${info.note}`;
+    if (key === this._powerKey) return;
+    this._powerKey = key;
+    this.el.gridPower.textContent = `${info.output.toFixed(1)} / ${info.demand.toFixed(1)}`;
+    const fill = info.capacity > 0 ? info.battery / info.capacity : info.powered ? 1 : 0;
+    this.el.gridBarFill.style.width = `${Math.max(0, Math.min(100, fill * 100))}%`;
+    this.el.gridNote.textContent = info.note;
+    this.el.gridPanel?.classList.toggle('low', !!info.hasGrid && !info.powered);
   }
 
   setCommanderMode(mode) {

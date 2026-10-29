@@ -89,11 +89,14 @@ reliable way to select a unit when the camp is crowded.
 2. Build a **Warehouse** (22) early: **+120 storage** and the hauling drop point. The crates inside
    fill as scrap accumulates. Then a **Campfire** (8) to heal inside its light, or a **Barricade** (4)
    for solid cover.
-3. A **Rain Catcher** (12) adds **+1 water / 6 s**. An **Adobe House** (18) sends out scavengers for
+3. Power the camp: a **Solar Array** (14), a **Power Pole** (3), a **Battery Bank** (16) and a **Yard
+   Light** (8). Wires cost scrap per metre. By day the panels charge the battery; by night the light
+   drains it. The clock in the lower-right shows the time of day.
+4. A **Rain Catcher** (12) adds **+1 water / 6 s**. An **Adobe House** (18) sends out scavengers for
    **+1 scrap / 9 s**.
-4. A **Watchtower** (20) auto-fires at ghouls within 13 m. A **Chapel** (32) grants **+25 max vitality**
+5. A **Watchtower** (20) auto-fires at ghouls within 13 m. A **Chapel** (32) grants **+25 max vitality**
    and heals nearby.
-5. Ghouls arrive after a grace period, drop **2 scrap**, and get denser over time. Death costs 20% of
+6. Ghouls arrive after a grace period, drop **2 scrap**, and get denser over time. Death costs 20% of
    your scrap and respawns you at the old camp. Buildings persist.
 
 Placement is ghost-previewed, grid-snapped, slope-checked, and blocked by structures and wreckage.
@@ -142,9 +145,9 @@ The graph keeps the last ~45 seconds.
   slope, moisture and roads; grass and shrubs sway in a vertex shader. Rocks use a cracked-rock
   albedo + normal set; houses use plaster detail and baked base AO.
 - **Continue a run** — seed + player state + equipment + buildings + scrap + ammo/magazines + weapon
-  upgrades + production timers are auto-saved to localStorage (schema `v: 2`; `v: 1` runs migrate in
-  place and start with the default ammo pouch). Reload shows **CONTINUE**; **NEW RUN** clears the
-  save, and PERF has **RESET SAVE**.
+  upgrades + production timers + power links are auto-saved to localStorage (schema `v: 3`; runs
+  from `v: 1`/`v: 2` migrate in place). Reload shows **CONTINUE**; **NEW RUN** clears the save, and
+  PERF has **RESET SAVE**.
 - **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
   ring and contextual orders: tap an enemy to engage, a scrap pile to gather/haul, or the ground to
   move. `TAKE CONTROL` possesses any survivor (joystick, camera follow, that unit's weapon and HP);
@@ -152,7 +155,13 @@ The graph keeps the last ~45 seconds.
 - **Warehouse and storage (Phase 2)** — a 4×4 shed with a growing crate stack. Base field stock is
   80; each warehouse adds 120. Gatherers haul to the nearest warehouse (or to you if there is none)
   and wait at the door when it is full. The HUD shows `stored/capacity`, and the build costs are the
-  sink. Power, turrets and tower assignment are the next phases.
+  sink.
+- **Day/night and power (Phase 3)** — a 6-minute cycle drives the sun/moon, sky, fog, shadows and a
+  solar output curve. **Solar arrays** generate 2.2 power, **poles** carry it 12 m, **battery banks**
+  store 30 and **yard lights** burn 0.5 at night. A placed power building auto-wires to the nearest
+  node in range for scrap; the wires sag and glow when energised. The HUD shows the clock,
+  output/demand and battery charge. At night the lights run on batteries; empty batteries leave the
+  camp dark. Turrets and tower assignment are the next phase.
 - **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
   jitter. The player is a skinned R4 character: the MakeHuman `hm08` head (CC0) with a procedural
   hair shell, eyes and brows, on a slim 20-bone skinned body with automatic weights, two-bone foot
@@ -319,10 +328,9 @@ chain. The turret only engages non-humans; human raids are your units' problem.
   deferring (audio tails/occlusion, animation, wounds, needs, weather, destruction), with cost and
   priority, so it is not lost.
 
-**Immediate next slice (Phase 1):** unify the leader and NPCs into `Unit`, add the roster and
-tap-vs-drag selection, contextual move/attack/gather orders, and `TAKE CONTROL` / `RELEASE` with the
-joystick hidden in command mode. The first milestone is: select a survivor, send them to a scrap
-pile, watch them walk, gather and return, then take control and walk back yourself.
+**Phases 1–3 are in:** command/possession, warehouse hauling, and the day/night power chain.
+The next slice is **Phase 4**: the Vickers-style turret that only engages non-humans (powered by the
+grid) and the watchtower that needs an assigned gunner. See the plan for the acceptance gates.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgotten work.
@@ -332,8 +340,10 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgott
 ## Known limitations
 
 - Not yet profiled on a physical phone.
-- Command mode and the warehouse are first slices: the power chain, turrets and tower assignment are
-  not built yet. Movement is direct steering with collision push, not a navmesh.
+- Command mode, the warehouse and the power chain are first slices: turrets and tower assignment are
+  not built yet, wires auto-link (no manual LINK mode), and there is no occlusion.
+- Movement is direct steering with collision push, not a navmesh.
+- The day/night cycle is 6 minutes and night raids are not yet differentiated.
 - The watchtower still auto-fires until Phase 4 gives it an assigned gunner.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question.

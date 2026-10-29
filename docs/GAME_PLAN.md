@@ -8,8 +8,8 @@ a single avatar.
 This document is the working plan. `docs/REALISM.md` is the separate backlog of realism items so
 they are not lost while the systems work happens.
 
-**Status:** Phases 1 and 2 first slices shipped (command mode/possession; warehouse, storage cap and
-hauling). Power/defences are next. See §6 for the gate notes.
+**Status:** Phases 1–3 first slices shipped (command mode/possession; warehouse and hauling;
+day/night and the power chain). Defences are next. See §6 for the gate notes.
 
 ---
 
@@ -321,11 +321,17 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
   hauled, full at 200 held 9 until 150 was left, then 159).
 - Deliberately not yet: per-resource warehouses, hauling between warehouses, a nav mesh.
 
-### Phase 3 — Day/night and power
+### Phase 3 — Day/night and power — **implemented (first slice)**
 
-- Day cycle, sky/lighting, solar curve, solar panel, pole, wire tool, battery, power HUD, priorities.
-- Gate: panels produce by day and charge a battery; at night the battery drains; a consumer shows
-  powered/unpowered; wires are visible and costed.
+- Six-minute day/night cycle: sun/moon direction, sky gradient, fog, ambient/fill, exposure and the
+  solar curve. A clock sits in the HUD's power panel.
+- Solar array (2.2), power pole (12 m span), battery bank (30) and yard light (0.5 at night).
+- Placing a power building auto-wires it to the nearest node within 12 m for scrap; wires sag and
+  change colour when energised. The HUD shows output/demand and a battery bar.
+- Gate: panels charge a battery by day; at night the light runs from the battery and drains it; an
+  empty battery leaves the light off; wires are visible and costed. **Passed** (30 stored at noon,
+  battery 29.4 and the lamp on at 00:04, 27.4 after 4 s; empty battery → light off).
+- Deliberately not yet: manual LINK mode, wire damage, indoor power, turret consumers.
 
 ### Phase 4 — Defences
 
@@ -386,13 +392,13 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 
 ## 9. Immediate next slice
 
-Phase 1 is in. The next slice is **Phase 2 — warehouse and hauling**:
+Phases 1–3 are in. The next slice is **Phase 4 — defences**:
 
-1. Add the warehouse building (capacity, crate stacks, HUD stockpile).
-2. Change the gather drop-off from the player to the nearest warehouse; add carry capacity.
-3. Add the full-storage reason and a spend/build loop around it.
-4. Add the 1 m nav grid only where units still catch on the adobe houses.
-5. Keep the command-mode UX: no new buttons unless they earn their place.
+1. Build the Vickers-style turret as a power consumer: tripod, water-cooled jacket, 220° arc.
+2. Targeting rule: ghouls/non-human creatures only; raiders, camp folk and the player are ignored.
+3. Burst fire, power draw, a visible powered lamp, and an ammo belt that can empty.
+4. Watchtower assignment: select an armed survivor, tap the tower; the gunner gains range and cover.
+5. Raid composition by time of day; raiders target the warehouse and power infrastructure.
 
-The next visible milestone: **a survivor loops a scrap pile → warehouse without input, the warehouse
-visibly fills, and a full store stops the loop with a clear reason.**
+The next visible milestone: **the turret shreds a night ghoul wave while ignoring the raiders, and a
+gunner on the watchtower covers the human attack — then the player can unassign them.**

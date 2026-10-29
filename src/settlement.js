@@ -274,6 +274,61 @@ function tower() {
   return merge(p);
 }
 
+function solarArray() {
+  const p = [baseDisc(1.7)];
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      p.push(box(0.08, 0.55, 0.08, PALETTE.metalDark, sx * 0.72, 0.27, sz * 0.48));
+    }
+  }
+  p.push(box(1.9, 0.07, 1.2, '#203f52', 0, 0.86, 0, -0.42, 0, 0));
+  p.push(box(1.7, 0.04, 1.02, '#35617a', 0, 0.9, 0.06, -0.42, 0, 0));
+  for (let i = -1; i <= 1; i++) {
+    p.push(box(0.025, 0.02, 1.0, '#7fa6b8', i * 0.5, 0.93, 0.06, -0.42, 0, 0));
+  }
+  for (let i = 0; i < 3; i++) {
+    p.push(box(1.66, 0.02, 0.025, '#7fa6b8', 0, 0.91, -0.2 + i * 0.26, -0.42, 0, 0));
+  }
+  p.push(box(0.35, 0.26, 0.2, PALETTE.metal, 0.92, 0.2, 0.5));
+  p.push(cyl(0.03, 0.03, 0.55, 4, '#20262a', 0.92, 0.45, 0.5, 0, 0, 0.35));
+  return merge(p);
+}
+
+function powerPole() {
+  const p = [baseDisc(0.55)];
+  p.push(cyl(0.1, 0.16, 3.4, 6, PALETTE.woodDark, 0, 1.7, 0));
+  p.push(box(1.55, 0.1, 0.12, PALETTE.wood, 0, 3.12, 0));
+  for (const sx of [-0.62, 0.62]) {
+    p.push(cyl(0.055, 0.055, 0.18, 6, '#cfd7d2', sx, 3.25, 0));
+  }
+  p.push(box(0.32, 0.4, 0.24, PALETTE.metal, 0, 2.55, 0.15));
+  p.push(cyl(0.025, 0.025, 1.15, 4, '#20262a', 0.0, 2.82, -0.08, 0.45, 0, 0.12));
+  p.push(box(0.5, 0.05, 0.05, PALETTE.metalLight, 0.0, 2.98, 0.05));
+  return merge(p);
+}
+
+function batteryBank() {
+  const p = [baseDisc(1.25)];
+  p.push(box(1.5, 0.92, 0.92, PALETTE.metalDark, 0, 0.46, 0));
+  p.push(box(1.56, 0.1, 0.98, PALETTE.metal, 0, 0.94, 0));
+  for (const sx of [-0.35, 0.35]) {
+    p.push(cyl(0.12, 0.12, 0.5, 8, '#b9543c', sx, 0.42, 0.47, Math.PI / 2, 0, 0));
+    p.push(cyl(0.05, 0.05, 0.08, 6, '#d6c07a', sx, 0.62, 0.68, Math.PI / 2, 0, 0));
+  }
+  p.push(box(0.55, 0.16, 0.03, '#8fe0a0', 0, 0.62, 0.47));
+  p.push(box(0.4, 0.06, 0.03, '#1c2a1e', 0, 0.46, 0.48));
+  return merge(p);
+}
+
+function yardLight() {
+  const p = [baseDisc(0.7)];
+  p.push(cyl(0.07, 0.1, 2.8, 6, PALETTE.metalDark, 0, 1.4, 0));
+  p.push(box(0.52, 0.26, 0.36, PALETTE.metal, 0, 2.84, 0));
+  p.push(box(0.34, 0.04, 0.26, '#ffe3a8', 0, 2.69, 0.02));
+  p.push(box(0.85, 0.05, 0.05, PALETTE.metal, 0.32, 2.98, 0, 0, 0, 0.4));
+  return merge(p);
+}
+
 function warehouse() {
   const adobe = '#c9a878';
   const adobeDark = '#a98a61';
@@ -346,6 +401,42 @@ export const BUILDINGS = [
     geometry: null,
   },
   {
+    id: 'solar',
+    name: 'SOLAR ARRAY',
+    cost: 14,
+    radius: 1.75,
+    desc: 'Generates 2.2 power.',
+    power: { kind: 'source', output: 2.2, attach: 1.0 },
+    geometry: null,
+  },
+  {
+    id: 'pole',
+    name: 'POWER POLE',
+    cost: 3,
+    radius: 0.8,
+    desc: 'Carries power 12m.',
+    power: { kind: 'relay', attach: 3.25 },
+    geometry: null,
+  },
+  {
+    id: 'battery',
+    name: 'BATTERY BANK',
+    cost: 16,
+    radius: 1.25,
+    desc: 'Stores 30 power.',
+    power: { kind: 'storage', capacity: 30, attach: 1.0 },
+    geometry: null,
+  },
+  {
+    id: 'light',
+    name: 'YARD LIGHT',
+    cost: 8,
+    radius: 0.7,
+    desc: 'Burns power at night.',
+    power: { kind: 'consumer', demand: 0.5, nightOnly: true, attach: 2.8 },
+    geometry: null,
+  },
+  {
     id: 'tower',
     name: 'WATCHTOWER',
     cost: 20,
@@ -369,6 +460,10 @@ const GEO_BUILDERS = {
   catcher,
   house: adobeHouse,
   warehouse,
+  solar: solarArray,
+  pole: powerPole,
+  battery: batteryBank,
+  light: yardLight,
   tower,
   chapel,
 };
@@ -383,6 +478,7 @@ export class Settlement {
     this.onScrap = onScrap;
     this.obstacles = obstacles;
     this.buildings = [];
+    this.nextBuildId = 1;
     this.buildSeq = 0;
     this.occlusionTimer = 0;
     this.occlusionRay = new THREE.Raycaster();
@@ -480,6 +576,16 @@ export class Settlement {
       depthWrite: false,
       toneMapped: false,
     });
+    this.lampMat = new THREE.SpriteMaterial({
+      map: glowTexture(),
+      color: 0xffd7a0,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    });
+
     this.towerGlowMat = new THREE.SpriteMaterial({
       map: glowTexture(),
       color: 0xffb466,
@@ -598,7 +704,7 @@ export class Settlement {
   }
 
   /** Create one building at a world position. Shared by placement and save restore. */
-  createBuilding(def, x, z) {
+  createBuilding(def, x, z, id = null) {
     const y = heightAt(x, z);
     const group = new THREE.Group();
     group.position.set(x, y, z);
@@ -622,9 +728,12 @@ export class Settlement {
     group.updateMatrixWorld(true);
     const sphere = mesh.geometry.boundingSphere.clone().applyMatrix4(group.matrixWorld);
 
+    if (id != null && id >= this.nextBuildId) this.nextBuildId = id + 1;
     const building = {
       def,
+      id: id ?? this.nextBuildId++,
       type: def.id,
+      charge: 0,
       x,
       z,
       y,
@@ -663,6 +772,20 @@ export class Settlement {
       }
     }
 
+    if (def.id === 'light') {
+      const glow = new THREE.Sprite(this.lampMat);
+      glow.position.set(0, 2.7, 0.02);
+      glow.scale.setScalar(1.5);
+      glow.visible = false;
+      group.add(glow);
+      building.lamp = glow;
+      const lampLight = new THREE.PointLight(0xffd7a0, 0, 10, 1.7);
+      lampLight.position.set(0, 2.6, 0);
+      lampLight.castShadow = false;
+      group.add(lampLight);
+      building.lampLight = lampLight;
+    }
+
     if (def.id === 'campfire') {
       const flame = new THREE.Mesh(this.flameGeo, this.flameMat);
       flame.position.set(0, 0.58, 0);
@@ -684,6 +807,12 @@ export class Settlement {
       glow.scale.setScalar(3.4);
       group.add(glow);
       building.glow = glow;
+
+      const fireLight = new THREE.PointLight(0xffa45e, 4.5, 9, 1.6);
+      fireLight.position.set(0, 1.15, 0);
+      fireLight.castShadow = false;
+      group.add(fireLight);
+      building.fireLight = fireLight;
     }
 
     if (def.id === 'tower') {
@@ -704,14 +833,23 @@ export class Settlement {
     if (!Array.isArray(items)) return;
     for (const item of items) {
       const def = BUILDINGS.find((b) => b.id === item.type);
-      if (def) this.createBuilding(def, item.x, item.z);
+      if (def) {
+        const building = this.createBuilding(def, item.x, item.z, Number.isFinite(item.id) ? item.id : null);
+        building.charge = Number.isFinite(item.charge) ? item.charge : 0;
+      }
     }
     this.syncStorage();
   }
 
   serialize() {
     return {
-      buildings: this.buildings.map((b) => ({ type: b.type, x: b.x, z: b.z })),
+      buildings: this.buildings.map((b) => ({
+        id: b.id,
+        type: b.type,
+        x: b.x,
+        z: b.z,
+        charge: b.charge || 0,
+      })),
       prodTimer: this.prodTimer,
       houseTimer: this.houseTimer,
     };

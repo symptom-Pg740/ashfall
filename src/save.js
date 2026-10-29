@@ -4,8 +4,9 @@ export const SAVE_KEY = 'ashfall-save-v1';
  * Schema history (the key stays `-v1` so existing runs are found and migrated in place):
  *  1 — scrap/water/kills/health/time, equipment, buildings, scrap field, timers
  *  2 — adds `ammo`, `mags` and `upgrades` (the armory economy)
+ *  3 — adds `power` links, building ids and battery charge
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 let suppressed = false;
 
@@ -16,7 +17,7 @@ export function readSave() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || !Number.isFinite(data.seed)) return null;
-    if (data.v !== 1 && data.v !== SAVE_VERSION) return null;
+    if (data.v !== 1 && data.v !== 2 && data.v !== SAVE_VERSION) return null;
     // v1 runs simply have no armory block; `loadGame` fills the starter ammo.
     data.v = SAVE_VERSION;
     return data;
@@ -35,10 +36,10 @@ export function writeSave(data) {
   }
 }
 
-export function clearSave() {
-  // A clear is always followed by a reload/new run. Suppress the pagehide auto-save so the old
-  // run cannot be written back between clearSave() and navigation.
-  suppressed = true;
+export function clearSave(suppressWrites = true) {
+  // A normal clear is followed by a reload/new run, so suppress the pagehide auto-save. The `fresh`
+  // test hook clears in place and must keep saving enabled.
+  suppressed = suppressWrites;
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.removeItem(SAVE_KEY);
