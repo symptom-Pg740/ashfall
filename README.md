@@ -151,8 +151,11 @@ The graph keeps the last ~45 seconds.
   right hand holds the grip. One camp folk is armed with a pistol and **auto-engages ghouls** using
   the same aim controller. After about a minute a small **raider squad** attacks the camp: hostile
   skinned riflemen use the same auto-aim/fire path, can hit the player and the camp guard, and the
-  guard can go down and respawn. Ammo is infinite for now; melee remains available by equipping the
-  blade/club. There are no automatic player weapons yet.
+  guard can go down and respawn. The **RAID** banner tracks the remaining hostiles; clearing the
+  squad awards +10 scrap. Raiders that lose line of sight move to a firing position around the
+  player instead of standing behind cover. The wardrobe also carries a **sawn-off shotgun** (6×9
+  pellets, 2 shells, close range, two-handed). Ammo is infinite for now; melee remains available by
+  equipping the blade/club. There are no automatic player weapons yet.
 - **Pinch or the mouse wheel zooms 0.8–2.2×.**
 
 - **Six settlement structures** — Barricade, Campfire, Rain Catcher, Adobe House, Watchtower and Chapel.

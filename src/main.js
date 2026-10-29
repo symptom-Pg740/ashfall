@@ -291,6 +291,7 @@ window.__ashfall = {
 };
 let spawnAt = 0;
 let nextRaid = 70;
+let raidActive = false;
 let spawnWarned = false;
 let nextSpawnGap = 16;
 let resumedGame = false;
@@ -871,6 +872,16 @@ function collidePlayer() {
 // simulation
 // ---------------------------------------------------------------------------
 
+function startRaid(count = 2, distance = 30) {
+  const spawned = raiders.spawnWave(count, player.x, player.z, distance);
+  if (spawned) {
+    raidActive = true;
+    ui.setRaid(raiders.activeCount);
+    ui.hint('RAIDERS IN THE DUST', 3400);
+  }
+  return spawned;
+}
+
 function simulate(dt) {
   state.time += dt;
 
@@ -931,12 +942,21 @@ function simulate(dt) {
   // raider pressure: a small squad every minute or so
   if (state.time > nextRaid) {
     const n = 1 + Math.floor(state.time / 150);
-    const spawned = raiders.spawnWave(Math.min(2, n), player.x, player.z, 30);
-    if (spawned) {
-      ui.hint('RAIDERS IN THE DUST', 3400);
-      nextRaid = state.time + 60;
-    } else {
-      nextRaid = state.time + 8;
+    const spawned = startRaid(Math.min(2, n), 30);
+    nextRaid = spawned ? state.time + 60 : state.time + 8;
+  }
+
+  if (raidActive) {
+    const remaining = raiders.activeCount;
+    ui.setRaid(remaining);
+    if (remaining === 0) {
+      raidActive = false;
+      ui.setRaid(0);
+      state.scrap += 10;
+      ui.updateHUD(state);
+      ui.toast('RAID CLEARED · +10 SCRAP');
+      ui.hint('THE DUST SETTLES — FOR NOW', 2600);
+      saveGame();
     }
   }
 
@@ -1037,6 +1057,7 @@ ui.setResume(resumedGame);
 ui.buildWardrobe(player.rig.equipment);
 ui.setWeapon(player.armed, player.weapon?.name);
 ui.setAmmo(player.ammoState());
+ui.setRaid(0);
 if (resumedGame) {
   ui.updateHUD(state);
   ui.setGather(false);
@@ -1092,7 +1113,7 @@ if (debugParams.has('raider')) {
   r.isFar = false;
 }
 if (debugParams.has('raid')) {
-  setTimeout(() => raiders.spawnWave(2, player.x, player.z, 9), 1200);
+  setTimeout(() => startRaid(2, 9), 1200);
 }
 if (debugParams.has('guardtest')) {
   const n = campFolk.people[0];

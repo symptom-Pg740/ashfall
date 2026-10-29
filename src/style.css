@@ -1491,3 +1491,37 @@ body.build-open .actions {
   0% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
 }
+
+
+/* raid objective */
+.raid-banner {
+  position: absolute;
+  top: calc(86px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 12px;
+  background: rgba(28, 18, 14, 0.86);
+  border: 1px solid rgba(196, 100, 74, 0.75);
+  box-shadow: 0 0 22px rgba(180, 80, 50, 0.22);
+  pointer-events: none;
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: #e28a66;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+
+.raid-banner b {
+  font-size: 17px;
+  line-height: 1;
+  color: #ffb38a;
+  font-variant-numeric: tabular-nums;
+}
+
+.raid-banner small {
+  color: var(--muted);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}

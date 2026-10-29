@@ -17,6 +17,7 @@ export class UI {
     this.lastArmed = null;
     this.lastMag = 0;
     this.lastReloading = false;
+    this.lastRaid = -1;
     this.hitTimer = 0;
     this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: true };
     this.orientationLock = null;
@@ -51,6 +52,8 @@ export class UI {
       wardrobeList: document.getElementById('wardrobe-list'),
       wardrobeClose: document.getElementById('wardrobe-close'),
       ammo: document.getElementById('hud-ammo'),
+      raidBanner: document.getElementById('raid-banner'),
+      raidCount: document.getElementById('raid-count'),
       ammoChip: document.getElementById('ammo-chip'),
       hitMarker: document.getElementById('hit-marker'),
       pSeed: document.getElementById('p-seed'),
@@ -273,6 +276,14 @@ export class UI {
     if (!this.lastArmed) label.textContent = 'STRIKE';
     else if (this.lastReloading) label.textContent = 'RELOAD';
     else label.textContent = `FIRE ${this.lastMag}`;
+  }
+
+  setRaid(count) {
+    if (!this.el.raidBanner) return;
+    if (count === this.lastRaid) return;
+    this.lastRaid = count;
+    this.el.raidBanner.classList.toggle('hidden', count <= 0);
+    if (count > 0 && this.el.raidCount) this.el.raidCount.textContent = String(count);
   }
 
   hitMarker(kill = false) {

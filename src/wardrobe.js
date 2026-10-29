@@ -304,6 +304,13 @@ export const ITEMS = {
       foregrip: WEAPONS.rifle.foregrip,
       twoHanded: WEAPONS.rifle.twoHanded,
     },
+    shotgun: {
+      label: 'Sawn-off',
+      build: (spec) => buildWeaponParts('shotgun', spec),
+      muzzle: WEAPONS.shotgun.muzzle,
+      foregrip: WEAPONS.shotgun.foregrip,
+      twoHanded: WEAPONS.shotgun.twoHanded,
+    },
     blade: {
       label: 'Scrap blade',
       build: (spec) => {

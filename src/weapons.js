@@ -31,6 +31,26 @@ export const WEAPONS = {
     muzzle: { x: 0, y: -0.62, z: 0.012 },
     foregrip: { x: 0, y: -0.34, z: 0.02 },
   },
+  shotgun: {
+    id: 'shotgun',
+    name: 'SAWN-OFF',
+    damage: 9,
+    rpm: 75,
+    pellets: 6,
+    spread: 9,
+    range: 12,
+    visualSpeed: 110,
+    magazine: 2,
+    reload: 2.2,
+    recoil: 3,
+    shake: 0.14,
+    mode: 'semi',
+    twoHanded: true,
+    moveScale: 0.9,
+    hold: { forward: 0.32, right: 0.05, up: 0.04 },
+    muzzle: { x: 0, y: -0.44, z: 0.01 },
+    foregrip: { x: 0, y: -0.22, z: 0.02 },
+  },
   pistol: {
     id: 'pistol',
     name: 'SCRAP PISTOL',
@@ -105,8 +125,28 @@ function buildRifle(spec) {
   return [{ bone: 'arms.R.hand', geometry: smoothMerge(p) }];
 }
 
+function buildShotgun(spec) {
+  const metal = '#8f9193';
+  const metalDark = '#5c5e60';
+  const wood = '#5a3f2b';
+  const p = [];
+
+  p.push(setRegionUV(rbox(0.036, 0.1, 0.05, 0.008, wood, 0, 0.005, 0.012, -0.15), 'leather'));
+  p.push(setRegionUV(rbox(0.05, 0.18, 0.06, 0.01, metal, 0, -0.08, 0), 'metal'));
+  for (const sx of [-1, 1]) {
+    p.push(setRegionUV(capsule(0.014, 0.26, metal, sx * 0.017, -0.28, 0.006), 'metal'));
+  }
+  p.push(setRegionUV(rbox(0.032, 0.05, 0.06, 0.008, wood, 0, -0.22, 0.02), 'leather'));
+  p.push(setRegionUV(rbox(0.035, 0.14, 0.075, 0.008, wood, 0, 0.09, -0.045, 0.12), 'leather'));
+  p.push(setRegionUV(rbox(0.012, 0.02, 0.04, 0.003, metalDark, 0, -0.2, 0.038), 'metal'));
+  p.push(setRegionUV(ring(0.023, 0.005, metalDark, 0, -0.42, 0.006), 'metal'));
+
+  return [{ bone: 'arms.R.hand', geometry: smoothMerge(p) }];
+}
+
 export function buildWeaponParts(id, spec) {
   if (id === 'pistol') return buildPistol(spec);
   if (id === 'rifle') return buildRifle(spec);
+  if (id === 'shotgun') return buildShotgun(spec);
   return [];
 }

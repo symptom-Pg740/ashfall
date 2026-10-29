@@ -89,6 +89,8 @@ export class Raiders {
         isFar: true,
         speed: rng.range(1.25, 1.6),
         phase: rng() * 6.28,
+        reposition: null,
+        repositionTimer: 0,
       });
     }
   }
@@ -128,6 +130,8 @@ export class Raiders {
       if (p.farTier) p.farTier.visible = false;
       p.isFar = false;
       p.phase = this.rng() * 6.28;
+      p.reposition = null;
+      p.repositionTimer = 0;
       spawned++;
     }
     return spawned;
@@ -168,6 +172,27 @@ export class Raiders {
 
   get activeCount() {
     return this.people.reduce((n, p) => n + (p.active ? 1 : 0), 0);
+  }
+
+  findFiringPosition(p, player) {
+    if (!this.firearms) return null;
+    const pos = p.rig.group.position;
+    const base = Math.atan2(pos.z - player.z, pos.x - player.x);
+    const eyeY = player.pos.y + 1.25;
+    for (let i = 0; i < 12; i++) {
+      const a = base + (this.rng() * 2 - 1) * Math.PI * 0.75;
+      const r = 9 + this.rng() * 6;
+      const x = player.x + Math.cos(a) * r;
+      const z = player.z + Math.sin(a) * r;
+      const y = heightAt(x, z);
+      if (this.firearms.hasLineOfSight(x, y + 1.45, z, player.x, eyeY, player.z)) {
+        return { x, z };
+      }
+    }
+    // Fallback: swing wide to one side and try again from there.
+    const a = base + (this.rng() < 0.5 ? 1 : -1) * Math.PI * 0.5;
+    const r = 10 + this.rng() * 4;
+    return { x: player.x + Math.cos(a) * r, z: player.z + Math.sin(a) * r };
   }
 
   shoot(p) {
@@ -215,12 +240,31 @@ export class Raiders {
       let moving = false;
       if (target) {
         p.heading = p.aim.aimYaw;
+        p.reposition = null;
+        p.repositionTimer = 0;
         p.phase += dt * 1.2;
       } else {
         const dx = player.x - pos.x;
         const dz = player.z - pos.z;
         const dist = Math.hypot(dx, dz) || 1;
-        if (dist > 18) {
+        p.repositionTimer = Math.max(0, p.repositionTimer - dt);
+
+        if (p.reposition) {
+          const rx = p.reposition.x - pos.x;
+          const rz = p.reposition.z - pos.z;
+          const rd = Math.hypot(rx, rz);
+          if (rd > 0.6 && p.repositionTimer > 0) {
+            const step = Math.min(p.speed * dt, rd);
+            pos.x += (rx / rd) * step;
+            pos.z += (rz / rd) * step;
+            p.heading = Math.atan2(rx, rz);
+            moving = true;
+            p.phase += dt * (5 + p.speed);
+          } else {
+            p.reposition = null;
+            p.repositionTimer = 0;
+          }
+        } else if (dist > 18) {
           const step = Math.min(p.speed * dt, dist - 18);
           pos.x += (dx / dist) * step;
           pos.z += (dz / dist) * step;
@@ -228,6 +272,9 @@ export class Raiders {
           moving = true;
           p.phase += dt * (5 + p.speed);
         } else {
+          // In range but no line of sight: move to a firing position around the player.
+          p.repositionTimer = 4.5 + this.rng() * 2;
+          p.reposition = this.findFiringPosition(p, player);
           p.heading = Math.atan2(dx, dz);
           p.phase += dt * 1.2;
         }

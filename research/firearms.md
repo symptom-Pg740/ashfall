@@ -1,7 +1,7 @@
 # Firearms: bullets, weapons, auto-aim and impact effects
 
-- **Status:** phase 1 implemented; phase 2 battle slice implemented (single-shot rifle, two-handed
-  IK, camp guard, hostile raiders, two-way damage). Cover/suppression AI, more weapons/upgrades and
+- **Status:** phase 1 implemented; phase 2 battle slice implemented (single-shot rifle, shotgun,
+  two-handed IK, camp guard, raiders, two-way damage, raid banner). Cover/suppression, upgrades and
   the ammo economy remain.
 - **Date:** 2026-10-28
 - **Question:** If Ashfall adds firearms, what is the best way to implement hit resolution, bullets,
@@ -1109,6 +1109,30 @@ smallest amount of code. Everything after it is additive.
   rifle one-shotting a raider (HUD: 1 kill, +2 scrap), and the camp guard engaging. The raider's
   player-damage path is wired through the same target-hit callback; a dedicated health/death capture
   is the next test.
+
+---
+
+## 14. Phase 3 — raid objective, cover reposition and shotgun (2026-10-29)
+
+- **Cover reposition.** When a raider is inside rifle range but has no target (LOS blocked), it
+  samples firing positions around the player at 9–15 m, tests each with the shared
+  `hasLineOfSight()`, and walks to the first clear one for 4.5–6.5 s; if none is found it swings wide
+  to one side. This fixes the "stands behind a rock forever" case. It is still a firing-position
+  search, not cover use or suppression; a raider does not yet deliberately hide while reloading.
+- **Raid objective.** `startRaid()` spawns a squad and raises the **RAID** banner with the live
+  hostile count. When `raiders.activeCount` reaches zero the raid is cleared: +10 scrap, a toast and
+  a hint. The first raid is at 70 s and repeats roughly every 60 s; `?raid=1` starts one immediately
+  at test range. The player death remains the loss; there is no separate raid-failure screen yet.
+- **Sawn-off shotgun.** Six pellets ×9 damage, 9° spread, 12 m, two shells, 2.2 s reload, two-handed
+  with the left-hand foregrip IK. It is selectable in the wardrobe. Close range only; at 7 m the
+  pellet spread means it does not reliably one-shot a 46 HP ghoul, which is intentional.
+- **Verification.** Headless captures show the RAID banner counting two hostiles, the raider
+  entering the camp, the player's shotgun consuming a shell (HUD `FIRE 1`), and the earlier rifle
+  one-shot kill. The behind-rock capture was inconclusive: the raider had a camp target, so it held
+  position instead of entering the no-LOS reposition branch, and the headless sim advances slowly.
+  The reposition needs a live play check.
+- **Still open.** Deliberate cover use/suppression, raid victory/defeat screens, weapon upgrades
+  and per-weapon progression, the ammo economy and save `v: 2`, and the FX/audio polish pass.
 
 ---
 
