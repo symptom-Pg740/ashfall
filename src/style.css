@@ -1596,7 +1596,7 @@ body.build-open .actions {
 /* raid outcome card */
 .raid-result {
   position: absolute;
-  top: 46%;
+  top: 32%;
   left: 50%;
   transform: translate(-50%, -50%);
   display: flex;
