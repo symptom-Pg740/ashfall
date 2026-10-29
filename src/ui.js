@@ -20,7 +20,7 @@ export class UI {
     this.lastReloading = false;
     this.lastRaid = -1;
     this.hitTimer = 0;
-    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: true };
+    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: true, sound: true };
     this.orientationLock = null;
     this.compassDrag = null;
     this.compassAngle = 0;
@@ -289,6 +289,7 @@ export class UI {
     if (!this.lastArmed) label.textContent = 'STRIKE';
     else if (this.lastReloading) label.textContent = 'RELOAD';
     else if (this.lastMag <= 0 && this.lastReserve <= 0) label.textContent = 'EMPTY';
+    else if (Number.isFinite(this.lastReserve)) label.textContent = `FIRE ${this.lastMag}/${this.lastReserve}`;
     else label.textContent = `FIRE ${this.lastMag}`;
   }
 

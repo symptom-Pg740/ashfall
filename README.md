@@ -148,8 +148,10 @@ The graph keeps the last ~45 seconds.
   shot. Shots are hitscan rays tested against analytic ghoul capsules; a shared target registry
   auto-aims the character, while firing stays on the player's input. The shot is presented with a
   travelling tracer, muzzle flash and smoke, surface-specific impacts and ground decals, a brass
-  casing with a bounce, a synthesised gunshot (no audio files), a floating damage number and a
-  brief hit-stop on kills. The rifle
+  casing with a bounce, a layered procedural gunshot (transient, crack, saturated body, sub, action
+  and a generated convolution tail — no audio files), a floating damage number and a brief hit-stop
+  on kills. Impacts, reloads, dry fire, casings, footsteps and a low wind bed are synthesised too;
+  **SOUND** in the PERF panel mutes everything and the choice persists. The rifle
   is **two-handed**: its left hand is solved onto the foregrip with a two-bone arm IK, while the
   right hand holds the grip. One camp folk is armed with a pistol and **auto-engages ghouls** using
   the same aim controller. After about a minute a small **raider squad** attacks the camp: hostile

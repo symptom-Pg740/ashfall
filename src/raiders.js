@@ -3,6 +3,7 @@ import { AimController } from './aim.js';
 import { WEAPONS } from './weapons.js';
 import { heightAt } from './terrain.js';
 import { deriveSeed, makeRng, damp } from './rng.js';
+import { shortestAngle } from './actors.js';
 
 const POOL = 3;
 
@@ -19,6 +20,7 @@ export class Raiders {
     this.registry = null;
     this.firearms = null;
     this.onKill = null;
+    this.baseAngle = this.rng() * Math.PI * 2;
 
     for (let i = 0; i < POOL; i++) {
       const rng = makeRng(deriveSeed(`raider:${i}`));
@@ -92,6 +94,8 @@ export class Raiders {
         reposition: null,
         repositionTimer: 0,
         suppressed: 0,
+        seekingCover: false,
+        slotAngle: (i / POOL) * Math.PI * 2,
       });
     }
   }
@@ -134,6 +138,7 @@ export class Raiders {
       p.reposition = null;
       p.repositionTimer = 0;
       p.suppressed = 0;
+      p.seekingCover = false;
       spawned++;
     }
     return spawned;
@@ -183,7 +188,10 @@ export class Raiders {
   findFiringPosition(p, player) {
     if (!this.firearms) return null;
     const pos = p.rig.group.position;
-    const base = Math.atan2(pos.z - player.z, pos.x - player.x);
+    const approach = Math.atan2(pos.z - player.z, pos.x - player.x);
+    // Squad spread: each raider prefers its own slice of the circle around the player.
+    const slot = this.baseAngle + p.slotAngle;
+    const base = approach + shortestAngle(approach, slot) * 0.6;
     const eyeY = player.pos.y + 1.25;
     for (let i = 0; i < 12; i++) {
       const a = base + (this.rng() * 2 - 1) * Math.PI * 0.75;
@@ -199,6 +207,31 @@ export class Raiders {
     const a = base + (this.rng() < 0.5 ? 1 : -1) * Math.PI * 0.5;
     const r = 10 + this.rng() * 4;
     return { x: player.x + Math.cos(a) * r, z: player.z + Math.sin(a) * r };
+  }
+
+  /** A point that breaks line of sight to the player, used while reloading. */
+  findCoverPosition(p, player) {
+    if (!this.firearms) return null;
+    const pos = p.rig.group.position;
+    const eyeY = player.pos.y + 1.25;
+    let best = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < 16; i++) {
+      const a = this.rng() * Math.PI * 2;
+      const r = 8 + this.rng() * 8;
+      const x = player.x + Math.cos(a) * r;
+      const z = player.z + Math.sin(a) * r;
+      const y = heightAt(x, z);
+      if (this.firearms.hasLineOfSight(x, y + 1.45, z, player.x, eyeY, player.z)) continue;
+      const travel = Math.hypot(x - pos.x, z - pos.z);
+      // Close cover beats a long run, and ~12 m keeps the player in rifle range.
+      const score = -travel * 0.18 - Math.abs(r - 12) * 0.08 + this.rng() * 0.7;
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, z };
+      }
+    }
+    return best || this.findFiringPosition(p, player);
   }
 
   shoot(p) {
@@ -233,7 +266,15 @@ export class Raiders {
       p.recoil = damp(p.recoil, 0, 12, dt);
       if (p.reloadTimer > 0) {
         p.reloadTimer = Math.max(0, p.reloadTimer - dt);
-        if (p.reloadTimer === 0) p.mag = p.weapon.magazine;
+        if (p.reloadTimer === 0) {
+          p.mag = p.weapon.magazine;
+          p.seekingCover = false;
+        } else if (!p.seekingCover) {
+          // Reloading in the open is a death sentence: step behind something until the mag is in.
+          p.seekingCover = true;
+          p.reposition = this.findCoverPosition(p, player);
+          p.repositionTimer = p.weapon.reload + 0.4;
+        }
       }
 
       p.aimActor.x = pos.x;

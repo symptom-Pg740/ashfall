@@ -1496,7 +1496,7 @@ body.build-open .actions {
 /* raid objective */
 .raid-banner {
   position: absolute;
-  top: calc(86px + var(--safe-t));
+  top: calc(118px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   display: flex;

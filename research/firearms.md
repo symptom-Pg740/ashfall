@@ -1182,11 +1182,9 @@ smallest amount of code. Everything after it is additive.
   trigger pull (not per pellet) from just behind the muzzle to the shooter's right, with a random
   spin and a ballistic arc. The update integrates gravity, bounces once on `heightAt()` with energy
   loss, then slides to rest and fades over the last 0.25 s. Disabled on the `low` quality preset.
-- **Procedural gunshots.** `src/audio.js` synthesises each shot from a pre-baked noise buffer:
-  band-passed noise crack (pistol 2.4 kHz, rifle 1.5 kHz, shotgun 900 Hz) plus a pitched sine thump,
-  both with exponential envelopes. Distance from the listener lowers the gain and the low-pass
-  cutoff, so raider fire across the camp reads as distant. `AudioContext` is created on the start
-  button gesture; dry fire plays a mechanical click. No audio assets.
+- **Procedural gunshots.** `src/audio.js` was later rebuilt as a six-layer synthesizer with
+  round-robin variants, a generated convolution IR, distance filtering and a speed-of-sound delay.
+  See [audio.md](audio.md) for the design, research and measurements. No audio assets.
 - **Damage numbers.** Per-pellet hits are folded into one number per target per trigger pull
   (`Firearms._addDamage`) and pushed into a pooled DOM layer. `FX.update()` projects each number
   with the active camera, drifts it up and fades it over 0.85 s; kills render larger and orange.

@@ -225,11 +225,31 @@ const settlement = new Settlement({
 });
 const perf = new Perf(renderer);
 const firearms = new Firearms({ enemies, settlement, wasteland, fx, registry });
+/** Ground-plane stereo position of a world point relative to the camera's right axis. */
+const _panRight = new THREE.Vector3();
+function panFor(x, z) {
+  if (!activeCamera) return 0;
+  _panRight.setFromMatrixColumn(activeCamera.matrixWorld, 0).setY(0);
+  if (_panRight.lengthSq() < 1e-6) return 0;
+  _panRight.normalize();
+  const dx = x - player.x;
+  const dz = z - player.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.001) return 0;
+  return THREE.MathUtils.clamp(((dx * _panRight.x + dz * _panRight.z) / d) * 0.85, -0.85, 0.85);
+}
+
 firearms.onShot = (weapon, actor) => {
   const distance = Math.hypot(actor.x - player.x, actor.z - player.z);
-  audio.shot(weapon.id, distance);
-  if (distance < 0.5) setTimeout(() => audio.casing(), 240);
+  audio.shot(weapon.id, distance, panFor(actor.x, actor.z));
+  if (distance < 0.5) setTimeout(() => audio.casing(), 220);
 };
+firearms.onImpact = ({ surface, x, z }) => {
+  const distance = Math.hypot(x - player.x, z - player.z);
+  audio.impact(surface, distance, panFor(x, z));
+};
+player.onReload = (id) => audio.reload(id);
+player.onStep = () => audio.step(0);
 player.aim.los = (x1, y1, z1, x2, y2, z2) => firearms.hasLineOfSight(x1, y1, z1, x2, y2, z2);
 campFolk.attachCombat({
   registry,
@@ -293,12 +313,15 @@ window.__ashfall = {
   seed: WORLD_SEED,
   worldField,
   campFolk,
+  raiders,
   settlement,
   player,
   enemies,
   firearms,
   fx,
   registry,
+  armory,
+  audio,
   perf,
   renderer,
   scene,
@@ -322,6 +345,9 @@ let hitStopTimer = 0;
 let lastUIUpdate = 0;
 let stressMesh = null;
 let boundaryWarned = false;
+
+// Browsers only allow audio after a trusted gesture; every pointer-down retries the resume.
+window.addEventListener('pointerdown', () => audio.start(), { passive: true });
 
 ui.on('started', () => {
   if (state.started) return;
@@ -356,6 +382,8 @@ ui.on('toggle', (key, value) => {
     applyShadowState(value, QUALITY[perf.quality].shadowSize);
   } else if (key === 'ortho') {
     setOrtho(value);
+  } else if (key === 'sound') {
+    audio.setMuted(!value);
   }
 });
 ui.on('stress', (kind) => doStress(kind));
@@ -424,6 +452,7 @@ function applyQuality(name, silent = false) {
   enemies.maxActive = q.enemies;
   applyShadowState(q.shadows, q.shadowSize);
   fx.setQuality(name);
+  audio.setQuality(name);
   ui.setQuality(name);
   ui.setToggle('adaptive', perf.adaptive);
   ui.setToggle('shadows', q.shadows);
@@ -1126,6 +1155,7 @@ ui.setToggle('grass', true);
 ui.setToggle('embers', true);
 ui.setToggle('shadows', shadowsOn);
 ui.setToggle('ortho', orthoMode);
+ui.setToggle('sound', !audio.muted);
 ui.setSeed(WORLD_SEED);
 input.camera = activeCamera;
 ui.updateHUD(state);
@@ -1149,8 +1179,13 @@ window.addEventListener('resize', () => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) saveGame();
-  else last = performance.now();
+  if (document.hidden) {
+    saveGame();
+    audio.pause();
+  } else {
+    last = performance.now();
+    audio.resume();
+  }
 });
 window.addEventListener('pagehide', saveGame);
 
@@ -1247,6 +1282,21 @@ if (debugParams.has('noammo')) {
     player.refreshWeapon();
     ui.setAmmo(player.ammoState());
   }, 400);
+}
+if (debugParams.has('audiotest')) {
+  setTimeout(() => {
+    const seq = [
+      () => audio.shot('pistol', 0, 0),
+      () => audio.shot('rifle', 0, 0),
+      () => audio.shot('shotgun', 0, 0),
+      () => audio.shot('rifle', 35, -0.4),
+      () => audio.impact('stone', 2, 0.3),
+      () => audio.impact('flesh', 2, 0),
+      () => audio.reload('rifle'),
+      () => audio.dry(),
+    ];
+    seq.forEach((fn, i) => setTimeout(fn, i * 900));
+  }, 1200);
 }
 if (debugParams.has('armory')) {
   setTimeout(() => ui.toggleWardrobe(true), 500);

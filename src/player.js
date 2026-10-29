@@ -54,6 +54,9 @@ export class Player {
     this.weaponId = this.rig.equipment.weapon;
     this.armory = null;
     this.onDry = null;
+    this.onReload = null;
+    this.onStep = null;
+    this.stepTimer = 0;
     this.weapon = WEAPONS[this.weaponId] || null;
     this.mag = this.weapon ? this.weapon.magazine : 0;
     this.reserve = Infinity;
@@ -152,6 +155,16 @@ export class Player {
     const len = Math.hypot(moveX, moveZ);
     const moving = len > 0.08;
     this.moving = damp(this.moving, moving ? 1 : 0, 12, dt);
+
+    if (moving) {
+      this.stepTimer -= dt;
+      if (this.stepTimer <= 0) {
+        this.stepTimer = 0.38 + Math.random() * 0.08;
+        this.onStep?.();
+      }
+    } else {
+      this.stepTimer = 0;
+    }
 
     if (moving) {
       const nx = moveX / len;
@@ -256,6 +269,7 @@ export class Player {
       // A single-shot rifle reloads immediately after the shot; the player cannot fire until it
       // is ready again.
       this.reloadTimer = this.weapon.reload;
+      this.onReload?.(this.weapon.id);
     }
     return { weapon: this.weapon, aimPoint: this.aim.target ? this.aim.targetPoint : null };
   }
@@ -275,6 +289,7 @@ export class Player {
     if (!this.weapon || this.reloadTimer > 0 || this.mag >= this.weapon.magazine) return false;
     if (this.armory && !this.armory.hasReserve(this.weaponId)) return false;
     this.reloadTimer = this.weapon.reload;
+    this.onReload?.(this.weapon.id);
     return true;
   }
 

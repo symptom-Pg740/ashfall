@@ -45,6 +45,7 @@ export class Firearms {
     this.registry = registry;
     this.rng = makeRng(deriveSeed('firearms'));
     this.onShot = null;
+    this.onImpact = null;
     this._impact = new THREE.Vector3();
     this._normal = new THREE.Vector3();
   }
@@ -83,6 +84,7 @@ export class Firearms {
     let lastX = 0;
     let lastZ = 0;
     const damageByTarget = new Map();
+    let impactEvent = null;
 
     this.fx.casing(muzzle, actor.heading || 0, weapon.id);
     this.onShot?.(weapon, actor);
@@ -123,6 +125,9 @@ export class Firearms {
           visualSpeed: weapon.visualSpeed,
         });
         this._addDamage(damageByTarget, target.id, weapon.damage, killed, this._impact);
+        if (!impactEvent) {
+          impactEvent = { surface: 'flesh', x: this._impact.x, y: this._impact.y, z: this._impact.z };
+        }
       } else if (enemyHit && enemyT <= staticT) {
         const killed = this.enemies.damage(enemyHit.index, weapon.damage, actor.x, actor.z, 0.35);
         hitAny = true;
@@ -140,6 +145,9 @@ export class Firearms {
           visualSpeed: weapon.visualSpeed,
         });
         this._addDamage(damageByTarget, `ghoul:${enemyHit.index}`, weapon.damage, killed, this._impact);
+        if (!impactEvent) {
+          impactEvent = { surface: 'flesh', x: this._impact.x, y: this._impact.y, z: this._impact.z };
+        }
       } else if (staticHit) {
         this._impact.copy(muzzle).addScaledVector(_pellet, staticHit.t);
         this.fx.fire({
@@ -149,6 +157,14 @@ export class Firearms {
           normal: staticHit.normal,
           visualSpeed: weapon.visualSpeed,
         });
+        if (!impactEvent) {
+          impactEvent = {
+            surface: staticHit.surface || 'sand',
+            x: this._impact.x,
+            y: this._impact.y,
+            z: this._impact.z,
+          };
+        }
       } else {
         _end.copy(muzzle).addScaledVector(_pellet, weapon.range);
         this.fx.fire({ muzzle, impact: _end, surface: null, normal: null, visualSpeed: weapon.visualSpeed });
@@ -158,6 +174,7 @@ export class Firearms {
     for (const rec of damageByTarget.values()) {
       this.fx.damageNumber(rec.point, rec.amount, rec.killed);
     }
+    if (impactEvent) this.onImpact?.(impactEvent);
 
     return { hit: hitAny, killed: kills, x: lastX, z: lastZ };
   }
