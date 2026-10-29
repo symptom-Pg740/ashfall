@@ -8,8 +8,8 @@ a single avatar.
 This document is the working plan. `docs/REALISM.md` is the separate backlog of realism items so
 they are not lost while the systems work happens.
 
-**Status:** Phase 1 first slice shipped (command mode, roster, contextual move/attack/gather,
-possession, leader auto-defence). Warehouse/power/defences are next. See §6 for the gate notes.
+**Status:** Phases 1 and 2 first slices shipped (command mode/possession; warehouse, storage cap and
+hauling). Power/defences are next. See §6 for the gate notes.
 
 ---
 
@@ -310,12 +310,16 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
   `Player` a possess/release swap. Direct steering plus collision push and the flank search are
   enough for the camp; A* lands with the warehouse/hauling phase, when units cross the map.
 
-### Phase 2 — Warehouse and hauling
+### Phase 2 — Warehouse and hauling — **implemented (first slice)**
 
-- Warehouse building, stockpile, capacity, carry/deposit loop, crate visuals, HUD.
-- Gather repeat order; full-storage feedback; the player's gathering uses the same stockpile.
-- Gate: a gatherer loops node → warehouse without input; the warehouse visibly fills; a full
-  warehouse stops gathering with a clear reason.
+- Warehouse building (22 scrap, 4×4), base stock 80, +120 per warehouse, HUD `stored/capacity`.
+- Gatherers haul to the nearest warehouse (or the player if none); eight crates fill with the stock.
+- Full storage: the gatherer waits at the door with the load and retries every 2 s; the player's
+  instant gather refuses to consume a pile while full.
+- Gate: a gatherer walks node → warehouse and deposits without input; the warehouse visibly fills;
+  a full warehouse holds the load and releases it after the player spends. **Passed** (100→109
+  hauled, full at 200 held 9 until 150 was left, then 159).
+- Deliberately not yet: per-resource warehouses, hauling between warehouses, a nav mesh.
 
 ### Phase 3 — Day/night and power
 

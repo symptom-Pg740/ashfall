@@ -690,9 +690,11 @@ export class UI {
   }
 
   updateHUD(state) {
-    if (state.scrap !== this.last.scrap) {
+    const cap = state.scrapCap || 0;
+    if (state.scrap !== this.last.scrap || cap !== this.last.scrapCap) {
       this.last.scrap = state.scrap;
-      this.el.scrap.textContent = String(state.scrap);
+      this.last.scrapCap = cap;
+      this.el.scrap.textContent = cap ? `${state.scrap}/${cap}` : String(state.scrap);
       this.el.buildScrap.textContent = `${state.scrap} scrap available`;
       this.el.buildList.querySelectorAll('.build-card').forEach((card) => {
         card.classList.toggle('cant', Number(card.dataset.cost) > state.scrap);

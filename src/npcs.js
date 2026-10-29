@@ -266,9 +266,16 @@ export class CampFolk {
         return null;
       }
       if (j.phase === 'return') {
-        const drop = this.dropPoint ? this.dropPoint() : { x: 0, z: 0 };
-        if (distTo(drop.x, drop.z) < 2.4) {
-          this.onScrap?.(p.carry || 0, p);
+        const drop = this.dropPoint ? this.dropPoint(p) : { x: 0, z: 0, radius: 2.4 };
+        if (distTo(drop.x, drop.z) < (drop.radius || 2.4)) {
+          j.retry = Math.max(0, (j.retry || 0) - dt);
+          if (j.retry > 0) return null;
+          const accepted = this.onScrap?.(p.carry || 0, p);
+          if (accepted === false) {
+            // Storage is full: wait at the drop instead of throwing the load away.
+            j.retry = 2;
+            return null;
+          }
           p.carry = 0;
           if (node.active) {
             j.phase = 'toNode';

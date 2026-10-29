@@ -121,7 +121,7 @@ export class Input {
       else if (k === 'f') this.cb.fullscreen?.();
       else if (k === 'escape') this.cb.cancel?.();
       else if (k === 'enter') this.cb.place?.();
-      else if (k.length === 1 && k >= '1' && k <= '6') this.cb.buildSelect?.(Number(k) - 1);
+      else if (k.length === 1 && k >= '1' && k <= '7') this.cb.buildSelect?.(Number(k) - 1);
     });
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.key.toLowerCase());

@@ -83,9 +83,12 @@ reliable way to select a unit when the camp is crowded.
 
 ## The 60-second loop
 
-1. Start with **26 scrap**. Scrap piles are marked by floating amber shards; each gives **6–12 scrap**.
-   In command mode, select a survivor and tap a pile: they gather it and haul it back to you.
-2. Build a **Campfire** (8) to heal inside its light, or a **Barricade** (4) for solid cover.
+1. Start with **26 scrap** and a field stock cap of **80**. Scrap piles are marked by floating amber
+   shards; each gives **6–12 scrap**. In command mode, select a survivor and tap a pile: they gather
+   it and haul it back to the nearest **Warehouse**, or to you if there is none.
+2. Build a **Warehouse** (22) early: **+120 storage** and the hauling drop point. The crates inside
+   fill as scrap accumulates. Then a **Campfire** (8) to heal inside its light, or a **Barricade** (4)
+   for solid cover.
 3. A **Rain Catcher** (12) adds **+1 water / 6 s**. An **Adobe House** (18) sends out scavengers for
    **+1 scrap / 9 s**.
 4. A **Watchtower** (20) auto-fires at ghouls within 13 m. A **Chapel** (32) grants **+25 max vitality**
@@ -145,8 +148,11 @@ The graph keeps the last ~45 seconds.
 - **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
   ring and contextual orders: tap an enemy to engage, a scrap pile to gather/haul, or the ground to
   move. `TAKE CONTROL` possesses any survivor (joystick, camera follow, that unit's weapon and HP);
-  `RELEASE` returns to command mode. This is the first slice: the warehouse, power chain and tower
-  assignment are the next phases.
+  `RELEASE` returns to command mode.
+- **Warehouse and storage (Phase 2)** — a 4×4 shed with a growing crate stack. Base field stock is
+  80; each warehouse adds 120. Gatherers haul to the nearest warehouse (or to you if there is none)
+  and wait at the door when it is full. The HUD shows `stored/capacity`, and the build costs are the
+  sink. Power, turrets and tower assignment are the next phases.
 - **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
   jitter. The player is a skinned R4 character: the MakeHuman `hm08` head (CC0) with a procedural
   hair shell, eyes and brows, on a slim 20-bone skinned body with automatic weights, two-bone foot
@@ -326,8 +332,8 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgott
 ## Known limitations
 
 - Not yet profiled on a physical phone.
-- Command mode is a first slice: the warehouse, power chain and tower assignment are not built yet.
-  Movement is direct steering with collision push, not a navmesh.
+- Command mode and the warehouse are first slices: the power chain, turrets and tower assignment are
+  not built yet. Movement is direct steering with collision push, not a navmesh.
 - The watchtower still auto-fires until Phase 4 gives it an assigned gunner.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question.

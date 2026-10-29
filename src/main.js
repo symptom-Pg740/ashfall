@@ -130,7 +130,10 @@ const campFolk = new CampFolk(scene, 3, {
   style: npcStyle,
   scrapField,
   obstacles: wasteland.obstacles,
-  dropPoint: () => ({ x: player.x, z: player.z }),
+  dropPoint: (person) =>
+    (person
+      ? settlement.nearestOfType('warehouse', person.rig.group.position.x, person.rig.group.position.z)
+      : null) || { x: player.x, z: player.z, radius: 2.4 },
 });
 const raiders = new Raiders(scene, deriveSeed('raiders'));
 
@@ -145,6 +148,7 @@ const state = {
   maxHealth: 100,
   time: 0,
   lastDamage: -99,
+  scrapCap: 80,
 };
 
 // Ammo reserve, per-weapon magazines and upgrade tiers live in the save state.
@@ -240,11 +244,11 @@ const settlement = new Settlement({
   },
   onKill: (x, z) => {
     state.kills++;
-    state.scrap += 2;
+    grantScrap(2);
     particles.burst(x, heightAt(x, z) + 0.7, z, '#a8c07a', 12, 2.6);
   },
   onScrap: (n) => {
-    state.scrap += n;
+    grantScrap(n);
   },
   obstacles: wasteland.obstacles,
 });
@@ -281,7 +285,7 @@ campFolk.attachCombat({
   firearms,
   onKill: (x, z) => {
     state.kills++;
-    state.scrap += 2;
+    grantScrap(2);
     particles.burst(x, heightAt(x, z) + 0.7, z, '#a8c07a', 12, 2.6);
     ui.updateHUD(state);
     saveGame();
@@ -290,13 +294,18 @@ campFolk.attachCombat({
 });
 raiders.attachCombat({ registry, firearms });
 campFolk.onScrap = (value, person) => {
-  if (!value) return;
-  state.scrap += value;
+  if (!value) return false;
+  const accepted = grantScrap(value);
+  if (!accepted) {
+    ui.hint('STORAGE FULL · SPEND SCRAP', 1800);
+    return false;
+  }
   const pos = person.rig.group.position;
   particles.burst(pos.x, pos.y + 0.9, pos.z, '#ffc37a', 10, 2.2);
-  ui.toast(`+${value} SCRAP · ${person.name}`);
+  ui.toast(`+${accepted} SCRAP · ${person.name}`);
   ui.updateHUD(state);
   saveGame();
+  return true;
 };
 
 // ---------------------------------------------------------------------------
@@ -559,6 +568,8 @@ function doPlace() {
     state.maxHealth += 25;
     state.health = Math.min(state.maxHealth, state.health + 25);
     ui.toast('SANCTUARY · +25 MAX VITALITY');
+  } else if (res.building.type === 'warehouse') {
+    ui.toast('WAREHOUSE · +120 STORAGE');
   } else {
     state.health = Math.min(state.maxHealth, state.health + 2);
     ui.toast(`${res.building.def.name} RAISED`);
@@ -579,12 +590,16 @@ function doGather() {
     ui.toast('NOTHING TO SCAVENGE HERE', true);
     return;
   }
+  if (state.scrap >= (state.scrapCap || 80)) {
+    ui.toast('STORAGE FULL', true);
+    return;
+  }
   const node = scrapField.nodes[nearScrap];
   const value = scrapField.gather(nearScrap, state.time);
   if (!value) return;
-  state.scrap += value;
+  const accepted = grantScrap(value);
   particles.burst(node.x, node.y + 0.5, node.z, '#ffc37a', 16, 2.8);
-  ui.toast(`+${value} SCRAP`);
+  ui.toast(`+${accepted} SCRAP`);
   ui.updateHUD(state);
   nearScrap = -1;
   ui.setGather(false);
@@ -592,13 +607,20 @@ function doGather() {
   saveGame();
 }
 
+function grantScrap(amount) {
+  const cap = state.scrapCap || 80;
+  const accepted = Math.max(0, Math.min(amount, cap - state.scrap));
+  state.scrap += accepted;
+  return accepted;
+}
+
 function awardKills(kills) {
   if (!kills) return;
   hitStopTimer = 0.055;
   state.kills += kills;
-  state.scrap += kills * 2;
+  const gained = grantScrap(kills * 2);
   ui.updateHUD(state);
-  ui.toast(`+${kills * 2} SCRAP`);
+  if (gained) ui.toast(`+${gained} SCRAP`);
   saveGame();
 }
 
@@ -1126,7 +1148,7 @@ function simulate(dt) {
     if (remaining === 0) {
       raidActive = false;
       ui.setRaid(0);
-      state.scrap += 10;
+      grantScrap(10);
       ui.updateHUD(state);
       ui.toast('RAID CLEARED · +10 SCRAP');
       ui.hint('THE DUST SETTLES — FOR NOW', 2600);

@@ -274,6 +274,37 @@ function tower() {
   return merge(p);
 }
 
+function warehouse() {
+  const adobe = '#c9a878';
+  const adobeDark = '#a98a61';
+  const wood = '#6b4a2e';
+  const woodDark = '#4e3522';
+  const tarp = '#7c6447';
+  const p = [baseDisc(3.15)];
+  // slab + back/side walls, open front with two piers
+  p.push(box(4.6, 0.12, 3.8, '#8f7552', 0, 0.06, 0));
+  p.push(box(4.4, 2.5, 0.2, adobe, 0, 1.25, -1.7));
+  p.push(box(0.2, 2.5, 3.4, adobe, -2.2, 1.25, 0));
+  p.push(box(0.2, 2.5, 3.4, adobe, 2.2, 1.25, 0));
+  p.push(box(1.25, 2.2, 0.2, adobe, -1.67, 1.1, 1.7));
+  p.push(box(1.25, 2.2, 0.2, adobe, 1.67, 1.1, 1.7));
+  p.push(box(4.4, 0.45, 0.22, adobeDark, 0, 2.42, 1.7));
+  p.push(box(4.9, 0.16, 4.0, '#b78f5d', 0, 2.62, 0));
+  for (let i = 0; i < 5; i++) {
+    p.push(box(0.12, 0.1, 3.9, wood, -1.8 + i * 0.9, 2.73, 0));
+  }
+  // tarp awning over the loading door
+  p.push(box(3.2, 0.06, 1.15, tarp, 0, 2.33, 2.25, 0.16, 0, 0));
+  for (let i = 0; i < 4; i++) {
+    p.push(cyl(0.04, 0.04, 1.2, 4, woodDark, -1.2 + i * 0.8, 1.9, 2.2, 0.32, 0, 0));
+  }
+  // a couple of permanent crates + a lantern
+  p.push(box(0.7, 0.5, 0.7, '#8a6a42', 1.4, 0.3, -1.1, 0, 0.2, 0));
+  p.push(box(0.55, 0.4, 0.55, '#9b7a4e', 1.3, 0.75, -1.15, 0, 0.7, 0));
+  p.push(box(0.16, 0.2, 0.16, '#ffb35e', 0, 2.02, 1.45));
+  return merge(p);
+}
+
 export const BUILDINGS = [
   {
     id: 'barricade',
@@ -307,6 +338,14 @@ export const BUILDINGS = [
     geometry: null,
   },
   {
+    id: 'warehouse',
+    name: 'WAREHOUSE',
+    cost: 22,
+    radius: 3.15,
+    desc: '+120 storage.',
+    geometry: null,
+  },
+  {
     id: 'tower',
     name: 'WATCHTOWER',
     cost: 20,
@@ -329,6 +368,7 @@ const GEO_BUILDERS = {
   campfire,
   catcher,
   house: adobeHouse,
+  warehouse,
   tower,
   chapel,
 };
@@ -373,6 +413,8 @@ export class Settlement {
       def.geometry = geo;
       this.geos[def.id] = geo;
     }
+
+    this.syncStorage();
 
     this.ghostMat = new THREE.MeshBasicMaterial({
       color: 0x9fdc86,
@@ -597,6 +639,30 @@ export class Settlement {
       glow: null,
     };
 
+    if (def.id === 'warehouse') {
+      this.crateGeo ||= new THREE.BoxGeometry(0.46, 0.36, 0.46);
+      this.crateMat ||= new THREE.MeshStandardMaterial({
+        color: 0x8a6a42,
+        roughness: 0.85,
+        metalness: 0.05,
+      });
+      const spots = [
+        [-0.75, 0, -1.1], [-0.25, 0, -1.15], [0.25, 0, -1.1], [0.75, 0, -1.05],
+        [-0.5, 0.38, -1.1], [0, 0.38, -1.12], [0.5, 0.38, -1.08], [-0.25, 0.76, -1.1],
+      ];
+      building.crates = [];
+      building._crateLevel = -1;
+      for (const [cx, cy, cz] of spots) {
+        const crate = new THREE.Mesh(this.crateGeo, this.crateMat);
+        crate.position.set(cx, 0.22 + cy, cz);
+        crate.rotation.y = (cx * 7 + cz * 3) % 0.35;
+        crate.castShadow = false;
+        crate.receiveShadow = true;
+        group.add(crate);
+        building.crates.push(crate);
+      }
+    }
+
     if (def.id === 'campfire') {
       const flame = new THREE.Mesh(this.flameGeo, this.flameMat);
       flame.position.set(0, 0.58, 0);
@@ -640,6 +706,7 @@ export class Settlement {
       const def = BUILDINGS.find((b) => b.id === item.type);
       if (def) this.createBuilding(def, item.x, item.z);
     }
+    this.syncStorage();
   }
 
   serialize() {
@@ -659,6 +726,7 @@ export class Settlement {
     const x = this.ghost.position.x;
     const z = this.ghost.position.z;
     const building = this.createBuilding(def, x, z);
+    this.syncStorage();
     const y = building.y;
     this.particles.burst(x, y + 0.4, z, '#b09572', 18, 3.2);
 
@@ -678,6 +746,32 @@ export class Settlement {
     let n = 0;
     for (const b of this.buildings) if (b.type === typeId) n++;
     return n;
+  }
+
+  /** Base field stock plus one warehouse's capacity per warehouse. */
+  storageCap() {
+    return 80 + 120 * this.count('warehouse');
+  }
+
+  syncStorage() {
+    const cap = this.storageCap();
+    this.state.scrapCap = cap;
+    if (this.state.scrap > cap) this.state.scrap = cap;
+    return cap;
+  }
+
+  nearestOfType(type, x, z) {
+    let best = null;
+    let bestD = Infinity;
+    for (const b of this.buildings) {
+      if (b.type !== type) continue;
+      const d = Math.hypot(b.x - x, b.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = { x: b.x, z: b.z, radius: b.radius + 1.2 };
+      }
+    }
+    return best;
   }
 
   isNearCampfire(x, z, radius = 5) {
@@ -812,6 +906,17 @@ export class Settlement {
         t.mesh.material.opacity = 0;
       } else {
         t.mesh.material.opacity = (t.life / 0.11) * 0.9;
+      }
+    }
+
+    // warehouse fill
+    const fill = Math.min(1, this.state.scrap / Math.max(1, this.storageCap()));
+    for (const b of this.buildings) {
+      if (!b.crates) continue;
+      const level = Math.round(b.crates.length * fill);
+      if (level !== b._crateLevel) {
+        b._crateLevel = level;
+        for (let i = 0; i < b.crates.length; i++) b.crates[i].visible = i < level;
       }
     }
 
