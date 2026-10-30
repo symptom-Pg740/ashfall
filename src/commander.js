@@ -26,6 +26,7 @@ export class Commander {
     getCamera,
     player,
     campFolk,
+    getSettlement,
     scrapField,
     registry,
     state,
@@ -40,6 +41,7 @@ export class Commander {
     this.getCamera = getCamera;
     this.player = player;
     this.campFolk = campFolk;
+    this.getSettlement = getSettlement || (() => null);
     this.scrapField = scrapField;
     this.registry = registry;
     this.state = state;
@@ -135,6 +137,7 @@ export class Commander {
     if (unit.isLeader || unit === this.player.possessedUnit) {
       return this.mode === 'direct' ? 'UNDER YOUR CONTROL' : 'TAKE CONTROL TO MOVE';
     }
+    if (unit.manning) return 'ON THE TOWER';
     const job = unit.job;
     if (!job) {
       if (unit.carry > 0) return `CARRYING ${unit.carry}`;
@@ -147,6 +150,7 @@ export class Commander {
       if (job.phase === 'return') return `HAULING ${unit.carry}`;
       return 'TO THE PILE';
     }
+    if (job.type === 'man') return 'TO THE TOWER';
     return 'WORKING';
   }
 
@@ -334,6 +338,30 @@ export class Commander {
     return best;
   }
 
+  pickBuilding(clientX, clientY) {
+    let best = null;
+    let bestD = PICK_UNIT * PICK_UNIT;
+    for (const b of this.getSettlement()?.buildings || []) {
+      const s = this.screenOf(b.x, b.y + Math.min(1.3, b.radius * 0.6), b.z);
+      if (!s.on) continue;
+      const dx = s.x - clientX;
+      const dy = s.y - clientY;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  orderManTower(unit, tower) {
+    this.campFolk.issueJob(unit, { type: 'man', tower });
+    this.marker(tower.x, tower.z, '#8fb0c2');
+    this.ui.toast(`${unit.name} → WATCHTOWER`);
+    this.refresh(unit);
+  }
+
   pickEnemy(clientX, clientY) {
     let best = null;
     let bestD = PICK_ENEMY * PICK_ENEMY;
@@ -389,6 +417,32 @@ export class Commander {
       this.orderAttack(this.selected, enemy);
       return;
     }
+
+    const building = this.pickBuilding(clientX, clientY);
+    if (building && building.type === 'tower') {
+      if (this.selected.isLeader) {
+        this.ui.hint('TAKE CONTROL OF A SURVIVOR TO MAN THE TOWER', 2000);
+        return;
+      }
+      if (this.selected.manning === building) {
+        this.campFolk.releaseTower(this.selected);
+        this.marker(building.x, building.z, '#8fb0c2');
+        this.ui.toast(`${this.selected.name} → GROUND`);
+        this.refresh(this.selected);
+        return;
+      }
+      if (!this.selected.weapon) {
+        this.ui.toast(`${this.selected.name} IS UNARMED`, true);
+        return;
+      }
+      if (building.manned) {
+        this.ui.toast('TOWER ALREADY MANNED', true);
+        return;
+      }
+      this.orderManTower(this.selected, building);
+      return;
+    }
+
     const node = this.scrapField.nearest(ground.x, ground.z, PICK_SCRAP);
     if (node >= 0) {
       this.orderGather(this.selected, node);

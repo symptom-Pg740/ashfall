@@ -8,8 +8,9 @@ a single avatar.
 This document is the working plan. `docs/REALISM.md` is the separate backlog of realism items so
 they are not lost while the systems work happens.
 
-**Status:** Phases 1–3 first slices shipped (command mode/possession; warehouse and hauling;
-day/night and the power chain). Defences are next. See §6 for the gate notes.
+**Status:** Phases 1–4 first slices shipped (command/possession; warehouse and hauling; day/night
+and power; Vickers turret + watchtower gunner + nav grid). Raid composition and infrastructure
+targeting are next. See §6 for the gate notes.
 
 ---
 
@@ -306,9 +307,9 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
   take control of her → joystick appears and the camera follows; release → command camera returns.
   **Passed** (gather +9 scrap, ghoul killed in 3 pistol shots, possession moved 3.5 m and restored
   the leader cleanly).
-- Deliberately not yet: a `Unit` class and a nav grid. The first slice extends `CampFolk` and gives
-  `Player` a possess/release swap. Direct steering plus collision push and the flank search are
-  enough for the camp; A* lands with the warehouse/hauling phase, when units cross the map.
+- The 1 m A* nav grid arrived with Phase 4; move/gather/man orders now route around houses and rock
+  clusters. A dedicated `Unit` class is still deferred: `CampFolk` + the `Player` possess/release
+  swap carry the slice without a second abstraction.
 
 ### Phase 2 — Warehouse and hauling — **implemented (first slice)**
 
@@ -333,13 +334,20 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
   battery 29.4 and the lamp on at 00:04, 27.4 after 4 s; empty battery → light off).
 - Deliberately not yet: manual LINK mode, wire damage, indoor power, turret consumers.
 
-### Phase 4 — Defences
+### Phase 4 — Defences — **implemented (first slice)**
 
-- Vickers turret model, power draw, non-human targeting, burst FX, ammo.
-- Watchtower assignment and release; gunner range/cover.
-- Raid composition by time of day; raiders target infrastructure.
-- Gate: the turret ignores raiders and shreds ghouls; the tower gunner fires only when assigned;
-  unpowering the turret stops it; releasing the gunner returns them to the ground.
+- Vickers turret (26 scrap, 1.2 power, 220° arc, 18 m, 8-round bursts, 250 belt, 4 s reload).
+  Target selection walks the ghoul pool only; raiders/camp/player are invisible to it. The head
+  turns, the lamp goes green/red with power, and bursts use the shared tracer/FX/audio.
+- Watchtower auto-fire removed. An armed survivor ordered to the tower walks there via A*, mounts
+  the platform, gains +6 m range and 40% damage reduction, and fires their own weapon. Tapping the
+  tower again or issuing another order releases them to the ground.
+- 1 m A* nav grid (settlement + props, 8-neighbour, line-simplified) for move/gather/man orders.
+- Gate: turret ignores raiders and kills ghouls; unpowered turret does not fire; tower gunner fires
+  only while assigned; release returns them to the ground. **Passed** (ghoul 500 → 266 under turret
+  fire; raider untouched; tower gunner 12 shots, 500 → 284; unpowered mag stayed 250).
+- Remaining for Phase 4b: raid composition by time of day and raiders targeting infrastructure.
+- Not saved yet: tower manning and turret belt/cooldown.
 
 ### Phase 5 — Economy and progression
 
@@ -392,13 +400,13 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 
 ## 9. Immediate next slice
 
-Phases 1–3 are in. The next slice is **Phase 4 — defences**:
+Phases 1–4 are in. The next slice is **Phase 4b — raids against the grid**, then Phase 5:
 
-1. Build the Vickers-style turret as a power consumer: tripod, water-cooled jacket, 220° arc.
-2. Targeting rule: ghouls/non-human creatures only; raiders, camp folk and the player are ignored.
-3. Burst fire, power draw, a visible powered lamp, and an ammo belt that can empty.
-4. Watchtower assignment: select an armed survivor, tap the tower; the gunner gains range and cover.
-5. Raid composition by time of day; raiders target the warehouse and power infrastructure.
+1. Raiders target the warehouse and power buildings when no unit is closer.
+2. Night raids favour ghouls; day raids favour raiders; mixed assaults later.
+3. Building HP for warehouses, poles and batteries, and a repair job for engineers.
+4. A raid warning that tells the player which side is coming, so the turret arc and gunner matter.
+5. Then food/water upkeep, recruitment and the workshop (Phase 5).
 
-The next visible milestone: **the turret shreds a night ghoul wave while ignoring the raiders, and a
-gunner on the watchtower covers the human attack — then the player can unassign them.**
+The next visible milestone: **a night wave breaks the north fence and the turret holds it, while a
+day raid goes for the warehouse and the watchtower gunner is the answer.**

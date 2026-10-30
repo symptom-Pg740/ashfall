@@ -18,6 +18,7 @@ import { Armory } from './armory.js';
 import { AudioFx } from './audio.js';
 import { DayCycle } from './daycycle.js';
 import { PowerNetwork } from './power.js';
+import { NavGrid } from './nav.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readSave, writeSave, clearSave } from './save.js';
 import { itemLabel } from './wardrobe.js';
@@ -224,6 +225,7 @@ const commander = new Commander({
   getCamera: () => activeCamera,
   player,
   campFolk,
+  getSettlement: () => settlement,
   scrapField,
   registry,
   state,
@@ -256,8 +258,15 @@ const settlement = new Settlement({
   obstacles: wasteland.obstacles,
 });
 const power = new PowerNetwork({ scene, settlement, state, ui });
+const nav = new NavGrid({ settlement, wasteland });
+campFolk.nav = nav;
 const perf = new Perf(renderer);
 const firearms = new Firearms({ enemies, settlement, wasteland, fx, registry });
+settlement.los = (x1, y1, z1, x2, y2, z2) => firearms.hasLineOfSight(x1, y1, z1, x2, y2, z2);
+settlement.onTurretShot = (x, z) => {
+  const distance = Math.hypot(x - player.x, z - player.z);
+  audio.shot('rifle', distance, panFor(x, z));
+};
 /** Ground-plane stereo position of a world point relative to the camera's right axis. */
 const _panRight = new THREE.Vector3();
 function panFor(x, z) {
@@ -297,6 +306,8 @@ campFolk.attachCombat({
   onDown: (name) => ui.toast(`${name} DOWN — RESPAWNING`, true),
 });
 raiders.attachCombat({ registry, firearms });
+campFolk.onTowerManned = (person) => ui.toast(`${person.name} ON THE TOWER`);
+campFolk.onTowerReleased = (person) => ui.toast(`${person.name} OFF THE TOWER`);
 campFolk.onScrap = (value, person) => {
   if (!value) return false;
   const accepted = grantScrap(value);
@@ -365,6 +376,7 @@ window.__ashfall = {
   raiders,
   commander,
   power,
+  nav,
   settlement,
   player,
   enemies,

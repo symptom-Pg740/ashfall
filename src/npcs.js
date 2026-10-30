@@ -21,6 +21,7 @@ export class CampFolk {
     this.scrapField = options.scrapField || null;
     this.dropPoint = options.dropPoint || null;
     this.obstacles = options.obstacles || [];
+    this.nav = options.nav || null;
     const style = options.style || 'skinned';
     for (let i = 0; i < count; i++) {
       const seed = deriveSeed(`npc:${i}`);
@@ -87,6 +88,12 @@ export class CampFolk {
         possessed: false,
         carry: 0,
         holdTimer: 0,
+        manning: null,
+        towerWeapon: null,
+        path: null,
+        pathIndex: 0,
+        pathKey: '',
+        pathTimer: 0,
         hp: 100,
         maxHp: 100,
         dead: false,
@@ -114,8 +121,13 @@ export class CampFolk {
 
   issueJob(person, job) {
     if (!person || person.dead) return false;
+    if (person.manning && job?.type !== 'man') this.releaseTower(person);
     person.job = job;
     person.holdTimer = 0;
+    person.path = null;
+    person.pathIndex = 0;
+    person.pathKey = '';
+    person.pathTimer = 0;
     if (person.aim) person.aim.setLock(job?.type === 'attack' ? job.target?.id ?? null : null);
     return true;
   }
@@ -134,6 +146,13 @@ export class CampFolk {
     person.respawnTimer = 20;
     person.carry = 0;
     person.job = null;
+    if (person.manning) {
+      person.manning.manned = null;
+      person.manning = null;
+      person.towerWeapon = null;
+      if (person.aim) person.aim.los = person.towerLos || null;
+      person.towerLos = null;
+    }
     person.possessed = false;
     person.rig.group.visible = false;
     if (person.farTier) person.farTier.visible = false;
@@ -159,12 +178,104 @@ export class CampFolk {
   damage(index, amount) {
     const p = this.people[index];
     if (!p || p.dead) return false;
-    p.hp -= amount;
+    p.hp -= p.manning ? amount * 0.6 : amount;
     if (p.hp <= 0) {
       this.down(p);
       return true;
     }
     return false;
+  }
+
+  mountTower(person, tower) {
+    if (!person || !tower || !person.weapon) return false;
+    if (tower.manned && tower.manned !== person) return false;
+    if (person.manning) this.releaseTower(person);
+    tower.manned = person;
+    person.manning = tower;
+    person.towerWeapon = { ...person.weapon, range: person.weapon.range + 6 };
+    person.job = null;
+    person.carry = 0;
+    person.holdTimer = 0;
+    person.phase = 0;
+    person.heading = tower.group.rotation.y;
+    person.rig.group.rotation.y = person.heading;
+    person.rig.group.position.set(tower.x, tower.y + 3.05, tower.z);
+    person.rig.mesh.visible = true;
+    if (person.farTier) person.farTier.visible = false;
+    person.target = { x: tower.x, z: tower.z };
+    if (person.aim) {
+      person.towerLos = person.aim.los;
+      // Start the sight ray outside the tower's own footprint, otherwise the building blocks
+      // every shot from the platform at the origin.
+      person.aim.los = (x1, y1, z1, x2, y2, z2) => {
+        if (!person.towerLos) return true;
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const d = Math.hypot(dx, dz) || 1;
+        return person.towerLos(x1 + (dx / d) * 2.3, y1, z1 + (dz / d) * 2.3, x2, y2, z2);
+      };
+      person.aim.setRange(person.towerWeapon.range);
+      person.aim.target = null;
+      person.aim._initialised = false;
+      person.aim.setLock(null);
+    }
+    this.onTowerManned?.(person, tower);
+    return true;
+  }
+
+  releaseTower(person) {
+    const tower = person?.manning;
+    if (!tower) return false;
+    tower.manned = null;
+    person.manning = null;
+    person.towerWeapon = null;
+    const x = tower.x + 1.25;
+    const z = tower.z + 1.25;
+    person.rig.group.position.set(x, heightAt(x, z), z);
+    person.heading = Math.atan2(-1, -1);
+    person.rig.group.rotation.y = person.heading;
+    person.target = { x, z };
+    person.timer = 1.6;
+    person.holdTimer = 2;
+    if (person.aim) {
+      person.aim.los = person.towerLos || null;
+      person.towerLos = null;
+      person.aim.setRange(person.weapon?.range || 22);
+      person.aim.target = null;
+      person.aim._initialised = false;
+      person.aim.setLock(null);
+    }
+    this.onTowerReleased?.(person, tower);
+    return true;
+  }
+
+  /** Steer around the nearest obstacle instead of walking into it. */
+  steerAround(p, dx, dz, buildings = []) {
+    let sx = dx;
+    let sz = dz;
+    const pos = p.rig.group.position;
+    const consider = (ox, oz, or) => {
+      const vx = ox - pos.x;
+      const vz = oz - pos.z;
+      const d = Math.hypot(vx, vz) || 1;
+      const radius = (or || 0.5) + 0.45;
+      if (d > radius + 1.5) return;
+      const ahead = (vx / d) * sx + (vz / d) * sz;
+      if (ahead < -0.15) return;
+      let tx = -vz / d;
+      let tz = vx / d;
+      if (tx * sx + tz * sz < 0) {
+        tx = -tx;
+        tz = -tz;
+      }
+      const push = 1 - Math.max(0, Math.min(1, (d - radius) / 1.5));
+      sx += tx * push * 1.5 + (vx / d) * push * 0.25;
+      sz += tz * push * 1.5 + (vz / d) * push * 0.25;
+    };
+    for (const b of buildings) consider(b.x, b.z, b.radius);
+    for (const o of this.obstacles) consider(o.x, o.z, o.r || 0.5);
+    const len = Math.hypot(sx, sz) || 1;
+    return { x: sx / len, z: sz / len };
   }
 
   /** Keep units out of buildings and props. Direct steering slides along the boundary. */
@@ -290,6 +401,23 @@ export class CampFolk {
       return null;
     }
 
+    if (j.type === 'man') {
+      const tower = j.tower;
+      if (!p.weapon) {
+        p.job = null;
+        return null;
+      }
+      if (!tower || (tower.manned && tower.manned !== p)) {
+        p.job = null;
+        return null;
+      }
+      if (distTo(tower.x, tower.z) < 3.0) {
+        this.mountTower(p, tower);
+        return null;
+      }
+      return { x: tower.x, z: tower.z };
+    }
+
     if (j.type === 'attack') {
       const t = j.target;
       if (!t || t.dead) {
@@ -323,9 +451,63 @@ export class CampFolk {
     return null;
   }
 
+  /** A gunner on the watchtower: fixed position, +6 m range, 40% cover. */
+  updateManning(p, dt) {
+    const tower = p.manning;
+    const pos = p.rig.group.position;
+    pos.set(tower.x, tower.y + 3.05, tower.z);
+    p.cooldown = Math.max(0, p.cooldown - dt);
+    p.recoil = damp(p.recoil, 0, 12, dt);
+    if (p.reloadTimer > 0) {
+      p.reloadTimer = Math.max(0, p.reloadTimer - dt);
+      if (p.reloadTimer === 0) p.mag = p.weapon.magazine;
+    }
+
+    let combatTarget = null;
+    if (p.armed && p.aim && this.registry && this.firearms) {
+      p.aimActor.x = pos.x;
+      p.aimActor.y = pos.y;
+      p.aimActor.z = pos.z;
+      p.aimActor.heading = p.rig.group.rotation.y;
+      p.aim.update(dt, p.aimActor, this.registry, p.towerWeapon || p.weapon);
+      combatTarget = p.aim.target;
+    }
+
+    if (combatTarget) {
+      p.heading = p.aim.aimYaw;
+      p.rig.lookAt(p.aim.targetPoint.x, p.aim.targetPoint.z, dt);
+    } else {
+      p.heading = tower.group.rotation.y;
+    }
+    let diff = p.heading - p.rig.group.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    p.rig.group.rotation.y += diff * (1 - Math.exp(-9 * dt));
+    p.phase += dt * 1.2;
+    p.rig.setPose(dt, false, p.phase);
+    if (p.armed) {
+      p.rig.applyWeaponPose(p.aim?.pitch || 0, p.recoil, p.reloadTimer > 0, !!p.weapon.twoHanded);
+      if (combatTarget && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
+        const shot = this.firearms.fire(
+          { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'camp' },
+          { weapon: p.weapon, aimPoint: p.aim.targetPoint },
+        );
+        p.mag--;
+        p.cooldown = 60 / p.weapon.rpm;
+        p.recoil = 1;
+        if (p.mag <= 0) p.reloadTimer = p.weapon.reload;
+        if (shot.killed) this.onKill?.(shot.x, shot.z);
+      }
+    }
+  }
+
   update(dt, time, player, buildings = []) {
     for (const p of this.people) {
       if (p.possessed) continue;
+      if (p.manning) {
+        this.updateManning(p, dt);
+        continue;
+      }
       const pos = p.rig.group.position;
       const toPlayer = Math.hypot(player.x - pos.x, player.z - pos.z);
 
@@ -402,13 +584,38 @@ export class CampFolk {
         lookZ = p.aim.targetPoint.z;
         p.phase += dt * 1.2;
       } else if (jobTarget) {
-        const dx = jobTarget.x - pos.x;
-        const dz = jobTarget.z - pos.z;
+        let tx = jobTarget.x;
+        let tz = jobTarget.z;
+        const type = p.job?.type;
+        if (this.nav && (type === 'move' || type === 'gather' || type === 'man')) {
+          const key = `${Math.round(jobTarget.x * 2)}:${Math.round(jobTarget.z * 2)}`;
+          p.pathTimer -= dt;
+          if (p.pathKey !== key || p.pathTimer <= 0) {
+            p.path = this.nav.path(pos.x, pos.z, jobTarget.x, jobTarget.z);
+            p.pathIndex = 0;
+            p.pathKey = key;
+            p.pathTimer = 2.5;
+          }
+          while (
+            p.path &&
+            p.pathIndex < p.path.length &&
+            Math.hypot(p.path[p.pathIndex].x - pos.x, p.path[p.pathIndex].z - pos.z) < 0.55
+          ) {
+            p.pathIndex++;
+          }
+          if (p.path && p.pathIndex < p.path.length) {
+            tx = p.path[p.pathIndex].x;
+            tz = p.path[p.pathIndex].z;
+          }
+        }
+        const dx = tx - pos.x;
+        const dz = tz - pos.z;
         const dist = Math.hypot(dx, dz) || 1;
         const step = Math.min(p.speed * dt, dist);
-        pos.x += (dx / dist) * step;
-        pos.z += (dz / dist) * step;
-        p.heading = Math.atan2(dx, dz);
+        const dir = this.steerAround(p, dx / dist, dz / dist, buildings);
+        pos.x += dir.x * step;
+        pos.z += dir.z * step;
+        p.heading = Math.atan2(dir.x, dir.z);
         moving = true;
         p.phase += dt * (5.2 + p.speed);
       } else if (jobActive) {
@@ -442,11 +649,10 @@ export class CampFolk {
         const dist = Math.hypot(dx, dz);
         if (dist > 0.35) {
           const step = Math.min(p.speed * dt, dist);
-          const nx = dx / dist;
-          const nz = dz / dist;
-          pos.x += nx * step;
-          pos.z += nz * step;
-          p.heading = Math.atan2(nx, nz);
+          const dir = this.steerAround(p, dx / dist, dz / dist, buildings);
+          pos.x += dir.x * step;
+          pos.z += dir.z * step;
+          p.heading = Math.atan2(dir.x, dir.z);
           moving = true;
           p.phase += dt * (5.2 + p.speed);
         } else {

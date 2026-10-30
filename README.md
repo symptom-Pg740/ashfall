@@ -51,6 +51,8 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Select a survivor | tap the unit or its roster button | click the unit |
 | Order | with a unit selected, tap enemy / scrap / ground | click the target |
 | Take / release control | `TAKE CONTROL` / `RELEASE` | same buttons |
+| Man the watchtower | select an armed survivor, tap the tower | same |
+| Release the tower | tap the tower again, or order the gunner away | same |
 | Move (direct mode) | Left stick | `WASD` / arrows |
 | Strike / fire | `STRIKE` / `FIRE` button | `Space` |
 | Gather scrap | `GATHER` button (appears near a pile) | `E` |
@@ -94,8 +96,8 @@ reliable way to select a unit when the camp is crowded.
    drains it. The clock in the lower-right shows the time of day.
 4. A **Rain Catcher** (12) adds **+1 water / 6 s**. An **Adobe House** (18) sends out scavengers for
    **+1 scrap / 9 s**.
-5. A **Watchtower** (20) auto-fires at ghouls within 13 m. A **Chapel** (32) grants **+25 max vitality**
-   and heals nearby.
+5. Build a **Vickers** (26) and power it: it shreds ghouls but cannot identify humans, so raiders
+   walk past it. Build a **Watchtower** (20) and assign an armed survivor to it for the human raids.
 6. Ghouls arrive after a grace period, drop **2 scrap**, and get denser over time. Death costs 20% of
    your scrap and respawns you at the old camp. Buildings persist.
 
@@ -161,7 +163,13 @@ The graph keeps the last ~45 seconds.
   store 30 and **yard lights** burn 0.5 at night. A placed power building auto-wires to the nearest
   node in range for scrap; the wires sag and glow when energised. The HUD shows the clock,
   output/demand and battery charge. At night the lights run on batteries; empty batteries leave the
-  camp dark. Turrets and tower assignment are the next phase.
+  camp dark.
+- **Defences (Phase 4)** — the **Vickers turret** is a power consumer (1.2) with a 220° arc, 18 m
+  range and 8-round bursts. It only sees **non-human creatures**, so raiders are ignored by design.
+  The **watchtower no longer auto-fires**: select an armed survivor and tap the tower to assign a
+  gunner; the gunner gains +6 m range and 40% cover, and can be released by tapping the tower again
+  or ordering them away. A 1 m A* navigation grid routes ordered units around houses and rock
+  clusters.
 - **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
   jitter. The player is a skinned R4 character: the MakeHuman `hm08` head (CC0) with a procedural
   hair shell, eyes and brows, on a slim 20-bone skinned body with automatic weights, two-bone foot
@@ -328,9 +336,10 @@ chain. The turret only engages non-humans; human raids are your units' problem.
   deferring (audio tails/occlusion, animation, wounds, needs, weather, destruction), with cost and
   priority, so it is not lost.
 
-**Phases 1–3 are in:** command/possession, warehouse hauling, and the day/night power chain.
-The next slice is **Phase 4**: the Vickers-style turret that only engages non-humans (powered by the
-grid) and the watchtower that needs an assigned gunner. See the plan for the acceptance gates.
+**Phases 1–4 are in:** command/possession, warehouse hauling, day/night power, and the defences
+(Vickers turret + watchtower gunner + A* unit movement). The next slice is **Phase 4b**: raids that
+target the warehouse and power grid, plus day/night raid composition, before the Phase 5 economy
+work.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgotten work.
@@ -340,10 +349,12 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgott
 ## Known limitations
 
 - Not yet profiled on a physical phone.
-- Command mode, the warehouse and the power chain are first slices: turrets and tower assignment are
-  not built yet, wires auto-link (no manual LINK mode), and there is no occlusion.
-- Movement is direct steering with collision push, not a navmesh.
-- The day/night cycle is 6 minutes and night raids are not yet differentiated.
+- Command mode, the warehouse, the power chain and defences are first slices. Wires auto-link (no
+  manual LINK mode), there is no occlusion, and turret belts reload themselves.
+- Tower manning and turret state are not saved; reload returns them to idle.
+- Raiders do not yet target the warehouse or power infrastructure, and night raids are not yet
+  differentiated.
+- The 1 m nav grid is coarse; very narrow gaps can still be unreachable.
 - The watchtower still auto-fires until Phase 4 gives it an assigned gunner.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question.

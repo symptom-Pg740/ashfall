@@ -329,6 +329,48 @@ function yardLight() {
   return merge(p);
 }
 
+function vickersBase() {
+  const p = [baseDisc(1.35)];
+  // tripod
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.4;
+    p.push(cyl(0.045, 0.06, 1.45, 5, PALETTE.metalDark,
+      Math.cos(a) * 0.34, 0.72, Math.sin(a) * 0.34,
+      Math.sin(a) * 0.22, 0, -Math.cos(a) * 0.22));
+  }
+  p.push(cyl(0.16, 0.2, 0.14, 8, PALETTE.metal, 0, 1.02, 0));
+  p.push(box(0.55, 0.2, 0.4, '#6b5134', 0.55, 0.12, -0.35, 0, 0.2, 0));
+  p.push(box(0.42, 0.14, 0.3, '#85663f', 0.58, 0.28, -0.36, 0, 0.5, 0));
+  // sandbags
+  for (let i = 0; i < 3; i++) {
+    p.push(box(0.52, 0.22, 0.32, '#a89068', -0.62 + i * 0.12, 0.11, 0.5 + i * 0.28, 0, 0.2 + i * 0.3, 0));
+  }
+  p.push(box(0.1, 0.1, 0.1, '#552222', 0.3, 1.16, 0.28));
+  return merge(p);
+}
+
+function vickersHead() {
+  const p = [];
+  const metal = '#777a78';
+  const metalLight = '#9a9d98';
+  const metalDark = '#4d504f';
+  // receiver + water jacket + muzzle
+  p.push(box(0.3, 0.28, 0.46, metal, 0, 0, -0.05));
+  p.push(cyl(0.1, 0.1, 1.15, 8, metal, 0, 0, 0.62, Math.PI / 2, 0, 0));
+  for (let i = 0; i < 7; i++) {
+    p.push(cyl(0.118, 0.118, 0.025, 8, metalLight, 0, 0, 0.16 + i * 0.13, Math.PI / 2, 0, 0));
+  }
+  p.push(cyl(0.07, 0.075, 0.18, 6, metalDark, 0, 0, 1.24, Math.PI / 2, 0, 0));
+  // top feed + spade grips
+  p.push(box(0.22, 0.18, 0.3, '#6f5a3a', 0, 0.22, 0.04));
+  p.push(box(0.03, 0.16, 0.03, metalDark, -0.18, -0.06, -0.32, 0.4, 0, 0));
+  p.push(box(0.03, 0.16, 0.03, metalDark, 0.18, -0.06, -0.32, 0.4, 0, 0));
+  p.push(box(0.3, 0.04, 0.04, metalDark, 0, 0.02, -0.32));
+  // small side ammunition box, keeps the silhouette readable without hiding the barrel
+  p.push(box(0.18, 0.2, 0.22, '#6f5a3a', -0.28, 0.1, 0.02));
+  return merge(p);
+}
+
 function warehouse() {
   const adobe = '#c9a878';
   const adobeDark = '#a98a61';
@@ -437,6 +479,15 @@ export const BUILDINGS = [
     geometry: null,
   },
   {
+    id: 'turret',
+    name: 'VICKERS',
+    cost: 26,
+    radius: 1.5,
+    desc: 'Ghouls only. 1.2 power.',
+    power: { kind: 'consumer', demand: 1.2, priority: 5, attach: 1.05 },
+    geometry: null,
+  },
+  {
     id: 'tower',
     name: 'WATCHTOWER',
     cost: 20,
@@ -464,6 +515,7 @@ const GEO_BUILDERS = {
   pole: powerPole,
   battery: batteryBank,
   light: yardLight,
+  turret: vickersBase,
   tower,
   chapel,
 };
@@ -509,6 +561,7 @@ export class Settlement {
       def.geometry = geo;
       this.geos[def.id] = geo;
     }
+    this.turretHeadGeo = vickersHead();
 
     this.syncStorage();
 
@@ -744,6 +797,7 @@ export class Settlement {
       occluded: false,
       cooldown: Math.random() * 0.5,
       phase: Math.random() * 6.28,
+      manned: null,
       flame: null,
       glow: null,
     };
@@ -770,6 +824,29 @@ export class Settlement {
         group.add(crate);
         building.crates.push(crate);
       }
+    }
+
+    if (def.id === 'turret') {
+      const head = new THREE.Mesh(this.turretHeadGeo, this.buildMat.clone());
+      head.castShadow = true;
+      head.receiveShadow = true;
+      const headGroup = new THREE.Group();
+      headGroup.position.set(0, 1.14, 0);
+      headGroup.add(head);
+      group.add(headGroup);
+      building.head = headGroup;
+      building.turretYaw = Math.atan2(-x, -z);
+      building.arcCenter = building.turretYaw;
+      building.burstLeft = 0;
+      building.burstTimer = 0;
+      building.cooldown = 0;
+      building.mag = 250;
+      building.reload = 0;
+      building.lampMat = new THREE.MeshBasicMaterial({ color: 0x5a1e1e });
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.11), building.lampMat);
+      lamp.position.set(0.3, 1.17, 0.28);
+      group.add(lamp);
+      building.lamp = lamp;
     }
 
     if (def.id === 'light') {
@@ -932,6 +1009,97 @@ export class Settlement {
     return this.isNearCampfire(x, z, 5.2) || this.isNearChapel(x, z, 7.5);
   }
 
+  updateTurret(b, dt, enemies) {
+    if (!b.head) return;
+    const powered = !!b.powered;
+    if (b.lampMat) b.lampMat.color.setHex(powered ? 0x2f7a45 : 0x5a1e1e);
+    if (!powered) {
+      b.burstLeft = 0;
+      return;
+    }
+    if (b.reload > 0) {
+      b.reload = Math.max(0, b.reload - dt);
+      if (b.reload === 0) b.mag = 250;
+    }
+    b.cooldown = Math.max(0, b.cooldown - dt);
+
+    // The turret only sees a 220° arc. Pick the closest ghoul inside that arc with a clear line,
+    // rather than the closest overall (which may be behind the tripod).
+    const candidates = [];
+    for (let i = 0; i < enemies.pool.length; i++) {
+      const e = enemies.pool[i];
+      if (!e.active) continue;
+      const dx = e.x - b.x;
+      const dz = e.z - b.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 18 || d < 0.4) continue;
+      const yaw = Math.atan2(dx, dz);
+      let arcDiff = yaw - b.arcCenter;
+      while (arcDiff > Math.PI) arcDiff -= Math.PI * 2;
+      while (arcDiff < -Math.PI) arcDiff += Math.PI * 2;
+      if (Math.abs(arcDiff) > 1.92) continue;
+      candidates.push({ i, e, d, yaw });
+    }
+    if (!candidates.length) {
+      b.burstLeft = 0;
+      return;
+    }
+    candidates.sort((a, c) => a.d - c.d);
+
+    const my = b.y + 1.14;
+    let chosen = null;
+    for (const c of candidates) {
+      const mx = b.x + Math.sin(c.yaw) * 1.3;
+      const mz = b.z + Math.cos(c.yaw) * 1.3;
+      if (this.los && !this.los(mx, my, mz, c.e.x, c.e.y + 0.75, c.e.z)) continue;
+      chosen = c;
+      break;
+    }
+    if (!chosen) {
+      b.burstLeft = 0;
+      return;
+    }
+
+    let diff = chosen.yaw - b.turretYaw;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    b.turretYaw += diff * (1 - Math.exp(-10 * dt));
+    b.head.rotation.y = b.turretYaw;
+    if (Math.abs(diff) > 0.18) return;
+
+    const e = chosen.e;
+    const index = chosen.i;
+    const mx = b.x + Math.sin(b.turretYaw) * 1.3;
+    const mz = b.z + Math.cos(b.turretYaw) * 1.3;
+
+    if (b.burstLeft <= 0) {
+      if (b.cooldown <= 0 && b.mag > 0 && b.reload <= 0) {
+        b.burstLeft = 8;
+        b.burstTimer = 0;
+        b.cooldown = 1.55;
+      }
+      return;
+    }
+
+    b.burstTimer -= dt;
+    if (b.burstTimer > 0) return;
+    b.burstTimer += 60 / 450;
+    b.burstLeft -= 1;
+    b.mag -= 1;
+    const killed = enemies.damage(index, 6, b.x, b.z);
+    const from = new THREE.Vector3(mx, my, mz);
+    const to = new THREE.Vector3(e.x, e.y + 0.75, e.z);
+    this.fireTracer(from, to);
+    this.particles.burst(mx, my, mz, '#ffd9a0', 3, 1.4);
+    this.particles.burst(to.x, to.y, to.z, killed ? '#a8c07a' : '#ffbd7a', killed ? 12 : 4, 2.2);
+    this.onTurretShot?.(b.x, b.z);
+    if (killed && this.onKill) this.onKill(to.x, to.z);
+    if (b.mag <= 0) {
+      b.burstLeft = 0;
+      b.reload = 4;
+    }
+  }
+
   fireTracer(from, to) {
     let slot = this.tracers.find((t) => t.life <= 0);
     if (!slot) slot = this.tracers[0];
@@ -1017,22 +1185,10 @@ export class Settlement {
       }
     }
 
-    // watchtower fire
+    // Vickers turrets: powered, ghoul-only, burst fire.
     if (enemies) {
       for (const b of this.buildings) {
-        if (b.type !== 'tower') continue;
-        b.cooldown -= dt;
-        if (b.cooldown > 0) continue;
-        const targetIndex = enemies.nearest(b.x, b.z, 13);
-        if (targetIndex < 0) continue;
-        b.cooldown = 1.15 + Math.random() * 0.35;
-        const e = enemies.getAt(targetIndex);
-        const killed = enemies.damage(targetIndex, 22, b.x, b.z);
-        const from = new THREE.Vector3(b.x, b.y + 3.3, b.z);
-        const to = new THREE.Vector3(e.x, e.y + 0.9, e.z);
-        this.fireTracer(from, to);
-        this.particles.burst(to.x, to.y, to.z, killed ? '#a8c07a' : '#ffbd7a', killed ? 14 : 6, 2.2);
-        if (killed && this.onKill) this.onKill(to.x, to.z);
+        if (b.type === 'turret') this.updateTurret(b, dt, enemies);
       }
     }
 
