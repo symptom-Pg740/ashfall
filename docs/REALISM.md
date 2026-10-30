@@ -10,8 +10,10 @@ Ground rules:
   Detail that cannot be seen from there is not worth its cost.
 - Prefer items that change **readability and feel** (silhouette, timing, weight, sound space) over
   items that only add polygons.
-- This file is a menu, not a sprint. Pick from it in Phase 7 of `docs/GAME_PLAN.md` and whenever a
+- This file is a menu, not a sprint. Pick from it in Phase 8 of `docs/GAME_PLAN.md` and whenever a
   phase has spare budget.
+- **Promoted to core:** needs (food/water), morale, recruitment and workplace roles are no longer
+  deferred realism. They are part of Phase 5 and specified in [ECONOMY.md](ECONOMY.md).
 
 ---
 
@@ -93,8 +95,8 @@ These change the game, not just the look. Treat them as design features with bal
 | **Suppression** | Raiders already flinch; add a real pinned state that lowers accuracy and forces cover. | M | Phase 4 |
 | **Wounding/bleeding** | A downed unit that can be stabilised by a medic creates rescue gameplay. | M | Phase 5 |
 | **Carry weight** | Heavier loads slow units; makes hauling a choice. | S | Phase 2 |
-| **Needs (food/water/sleep)** | The backbone of a survival camp; without it the economy is only build costs. | M | Phase 5 |
-| **Morale/fear** | Ghouls should scare units; guards hold, scavengers flee. | M | Phase 5 |
+| **Needs (food/water/sleep)** | The backbone of a survival camp; now core Phase 5 (ECONOMY.md). | M | **core Phase 5** |
+| **Morale/fear** | Ghouls should scare units; guards hold, scavengers flee. | M | **core Phase 5** |
 | **Fire spread** | Campfires, chapels and dry grass; a raid can start a fire. | L | later |
 | **Structural damage** | Raiders break poles/warehouse walls; repairs become a job. | L | Phase 5 |
 | **Weather effects** | Sandstorm reduces vision/accuracy and solar output. | M | Phase 6 |

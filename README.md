@@ -180,7 +180,8 @@ The graph keeps the last ~45 seconds.
   output/demand and battery charge. At night the lights run on batteries; empty batteries leave the
   camp dark.
 - **Defences (Phase 4)** — the **Vickers turret** is a power consumer (1.2) with a 220° arc, 18 m
-  range and 8-round bursts. It only sees **non-human creatures**, so raiders are ignored by design.
+  range and 8-round bursts (the next pass replaces the hidden arc with a visible 360° traverse). It
+  only sees **non-human creatures**, so raiders are ignored by design.
   The **watchtower no longer auto-fires**: select an armed survivor and tap the tower to assign a
   gunner; the gunner gains +6 m range and 40% cover, and can be released by tapping the tower again
   or ordering them away. A 1 m A* navigation grid routes ordered units around houses and rock
@@ -344,28 +345,35 @@ survivors become a roster of units you order around; you can still take direct c
 them. Resources are hauled to a warehouse, and defences run on a solar → pole → wire → turret power
 chain. The turret only engages non-humans; human raids are your units' problem.
 
-- **[docs/GAME_PLAN.md](docs/GAME_PLAN.md)** — the full plan: control model, contextual orders,
-  warehouse/economy, day/night, electricity, Vickers turret, watchtower assignment, progression and
-  the relay objective. It includes the phased build order and acceptance gates.
-- **[docs/REALISM.md](docs/REALISM.md)** — the backlog of realism work we are deliberately
-  deferring (audio tails/occlusion, animation, wounds, needs, weather, destruction), with cost and
-  priority, so it is not lost.
+The bigger direction is **workplaces, not task orders**: assign a survivor to a building and the
+building gives them a repeating job — build, scavenge, draw water, farm, craft. Manual orders are
+temporary overrides. The map grows, the camp is mud-and-scrap, and old-world ruins keep their own
+language.
+
+- **[docs/GAME_PLAN.md](docs/GAME_PLAN.md)** — the full plan: control model, building cards,
+  workplaces, warehouse/economy, day/night, electricity, Vickers turret, watchtower assignment,
+  progression, map scale and the relay objective. It includes the phased build order and gates.
+- **[docs/ECONOMY.md](docs/ECONOMY.md)** — the workplace/job design: Builder's Yard, Scavenger Hut,
+  Well Wheel, Farm, Workshop, needs, ammo, recruitment and attention states.
+- **[docs/ART_DIRECTION.md](docs/ART_DIRECTION.md)** — mud + scrap for the camp; concrete/glass for
+  old-world ruins; salvaged tech on camp-made mounts.
+- **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
 
 **Phases 1–4b are in, plus construction jobs:** buildings are placed anywhere in the camp and built
 by units; raids alternate between daytime raiders and night ghouls, and raiders go for the warehouse
-and the grid. The next slice is **Phase 5** — food/water upkeep, recruitment, the workshop and the
-relay objective.
+and the grid. The next slice is **Phase 4c** — the floating building card, manual wire dragging with
+pole ports, and the turret fix — then Phase 4d (bigger map + navigation) and Phase 5 (workplaces).
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
-fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgotten work.
+fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgotten work.
 
 ---
 
 ## Known limitations
 
 - Not yet profiled on a physical phone.
-- Command mode, the warehouse, the power chain and defences are first slices. Wires auto-link (no
-  manual LINK mode), there is no occlusion, and turret belts reload themselves.
+- Command mode, the warehouse, the power chain and defences are first slices. Wires auto-link (manual
+  LINK mode is next), there is no occlusion, and turret belts reload themselves.
 - Tower manning, turret belts and builder assignments are not saved; reload leaves towers and sites
   idle, and construction sites keep their progress but need a new builder.
 - Building HP is saved, but repair is free and has no engineer role yet.

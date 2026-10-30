@@ -5,20 +5,24 @@ survivors in a procedural wasteland: scavenge, haul, build, wire up power, and h
 the nights. You can still take direct control of any survivor, but the default game is command, not
 a single avatar.
 
-This document is the working plan. `docs/REALISM.md` is the separate backlog of realism items so
-they are not lost while the systems work happens.
+This document is the working plan. `docs/ECONOMY.md` is the detailed workplace/economy design;
+`docs/ART_DIRECTION.md` is the mud-and-scrap style guide; `docs/REALISM.md` is the deferred realism
+backlog. We are still in the **testing phase**: the economy numbers, building names and even the
+assignment model can change after playtests. Keep new systems data-driven and save-migrated.
 
 **Status:** Phases 1–4b first slices shipped (command/possession; warehouse and hauling; day/night
 and power; Vickers turret + watchtower gunner + nav grid; construction jobs; raids against the grid,
-building HP/damage/repair). Phase 5 economy is next. See §6 for the gate notes.
+building HP/damage/repair). The next slice is **Phase 4c — building management and power UX**, then
+world scale/navigation, then workplaces. See §6.
 
 ---
 
 ## 1. Where we are, and what changes
 
-Today Ashfall is a single-character prototype: one player avatar, a camp of three decorative
-survivors, a build menu, scrap/water, ghouls, raiders and firearms. The simulation is real, but the
-player is the only agent.
+Today Ashfall is a **command prototype**: a player avatar, a roster of three survivors, construction
+sites, a warehouse, a day/night cycle, a solar/pole/battery grid, a Vickers turret, a watchtower
+gunner, daytime raider raids and night ghoul raids. The player still issues most tasks by hand; the
+workplace model below is the next shift.
 
 The next version changes the unit of play from **one character** to **a faction**:
 
@@ -29,6 +33,13 @@ The next version changes the unit of play from **one character** to **a faction*
 - The economy becomes physical: resources are **hauled to a warehouse** and stacked there.
 - Defences become infrastructure: **solar → poles → wires → consumers**, with a **Vickers-style
   turret** that only engages non-humans, and a **watchtower** that needs an assigned gunner.
+- **Workplaces replace task micromanagement.** A survivor is assigned to a **building**, not to a
+  pile or a trip. The building gives them a repeatable loop (scavenge, draw water, farm, craft,
+  build, guard). Manual orders are temporary overrides that return the worker to their post.
+  See [ECONOMY.md](ECONOMY.md).
+- **The map gets bigger** and the props spread out; chunk streaming is a later phase.
+- **The camp has a material identity**: mud brick + salvaged scrap. Old-world ruins keep their own
+  concrete/glass language. See [ART_DIRECTION.md](ART_DIRECTION.md).
 
 The single-character loop is not thrown away. It becomes the "take control" option, and the leader
 is simply the first unit in the roster.
@@ -47,8 +58,19 @@ is simply the first unit in the roster.
 | Power network with poles and wires | Strong visual identity and a real constraint. It also gives the turret a reason to exist and makes night a system, not a colour grade. |
 | Turret that cannot identify humans | Excellent lore-driven rule. It splits defence cleanly: the turret handles ghouls, your people handle raiders. It also stops the turret from trivialising the game. |
 | Watchtower needs a gunner | Manpower becomes a resource. Towers are strong but cost a unit that could be scavenging. |
+| Workplaces instead of task orders | The correct colony-game abstraction. One decision per building removes the gather/haul busywork and lets the camp run while the player fights or builds. |
+| Scavenger Hut / Builder's Yard | These are the two jobs that most need automation: a hut that loops gather→haul, and a yard that finishes the construction queue. The builder's yard answers "where do builders go". |
+| Well Wheel, Farm, Workshop | A simple production triangle: water and food sustain the population, scrap becomes ammo. The wheel must be a **well wheel** (desert) unless a river/oasis is added. |
+| Workshop ammo from scrap | Ties combat to the economy and makes scavenging matter after the first build. Must replace, not duplicate, the armory purchase. |
+| Mud + scrap style | Mud is the human constant; scrap is the adaptation. It keeps the camp visually distinct from old-world ruins and is cheap to model procedurally. |
+| Floating building card | The building, not the unit, becomes the management surface: job slots, link, repair, recipe, HP, attention state. |
 
 ### Risks — design around them
+
+0. **Automation can play the game for you.** The guardrail is upkeep, raids, power, storage and the
+   relay objective, plus attention states that tell the player why a workplace stopped. If assigning
+   everyone and walking away wins, the economy is too generous; if the player must reassign every
+   ten seconds, the abstraction is wrong.
 
 1. **Two control schemes can fight each other.** Command mode must own the camera and taps; direct
    mode must own the stick and the action buttons. The switch has to be explicit (`TAKE CONTROL` /
@@ -66,9 +88,23 @@ is simply the first unit in the roster.
 6. **Too many dependencies at once.** Turret = power + ammo + targeting + burst FX. Ship power-only
    first; add ammo/heat as an upgrade.
 7. **Busywork.** Hauling must be short and readable. Small carry capacity, short trips, a repeating
-   gather order, and a visible "deposited" beat. Do not make the player micro-manage every trip.
+   gather order, and a visible "deposited" beat. Workplaces are the answer: the player assigns the
+   job once, not every trip.
 8. **The game still needs a finish line.** Systems alone do not make a game. Phase 6 defines a
    concrete objective and defeat condition.
+9. **Building cards vs unit orders.** If a unit is selected, tapping a building must not be
+   ambiguous. Recommendation: taps on buildings open the building card; contextual orders apply to
+   ground, enemies and resources only. Assignment, repair, manning, linking and recipes live in the
+   card. Validate this on a phone before expanding the card.
+10. **Wire dragging on touch.** A drag line needs a large hit area, a visible range, a snap target
+   highlight and an easy cancel. Do not make the player pixel-hunt a pole.
+11. **A bigger map multiplies pathfinding and draw costs.** Spread props and reduce density first;
+   chunk only when the single-mesh version is measurably at its limit. Expand the nav grid and camera
+   bounds with the map.
+12. **Two ammo economies.** Workshop production and the armory purchase must not both be primary.
+   Pick one; the other becomes an emergency option or goes away.
+13. **Where do builders come from?** The Builder's Yard is the proposed answer; without it, a site
+   with no free survivor waits (current auto-assign is a transitional behavior to remove).
 
 ### The one structural decision to make early
 
@@ -96,7 +132,7 @@ Recommended shape:
 | Joystick | hidden | visible |
 | Tap ground | order selected unit to move | — |
 | Tap target | contextual order | — |
-| Actions | `TAKE CONTROL`, build, roster | `FIRE`, `GATHER`, `BUILD`, `RELEASE` |
+| Actions | `TAKE CONTROL`, build, roster, building card | `FIRE`, `GATHER`, `BUILD`, `RELEASE` |
 | Selection | ring + roster card | unit card, no selection ring |
 
 The stick is **hidden in command mode** by default. Selecting a unit reveals a small action card
@@ -106,21 +142,53 @@ a unit.
 
 ### Contextual order matrix
 
-The tap resolves in this priority order: friendly unit → hostile → resource → building → ground.
+The tap resolves in this priority order: friendly unit → hostile → resource → **building** → ground.
+Buildings open their **building card** instead of guessing a context order. Assignment, repair,
+manning, linking and recipes live there, so the player is never surprised by a tap on a wall.
 
-| Target under the tap | Order |
+| Target under the tap | Result |
 | --- | --- |
 | Friendly unit | select it; tapping an already-selected unit opens its card |
 | Ghoul or raider | **attack** if armed; otherwise move away and report |
 | Scrap pile / water | **gather**, then auto-haul to the warehouse while the node lasts |
-| Warehouse | **deposit** carried resources |
-| Watchtower | **man** the tower (armed units only) |
-| Turret / solar / pole | **repair / connect** (engineer role only) |
-| Empty ground | **move** to the point |
-| Selected unit | open unit card (role, carry, release, take control) |
+| Building | **open the building card** (slots, link, repair, man, recipe, HP, power) |
+| Empty ground | **move** the selected unit to the point |
+| Selected unit | open the unit card (role, home workplace, carry, release, take control) |
 
 Long-press a unit opens its card. On desktop, right-click issues move/attack directly, and
 `Tab` cycles the roster.
+
+### Building card
+
+Tapping a structure opens a compact card anchored above it on screen:
+
+- name, HP, built state, power state and the attention reason (`NO WORKER`, `STORAGE FULL`,
+  `NO WATER`, `NO POWER`, `NO PATH`);
+- **job slots** (role + assigned survivor), with assign/release;
+- **ASSIGN**: tap an empty slot, then the nearest idle survivor or a roster portrait; dragging a
+  portrait is a later stretch;
+- **LINK**: enter wire mode; nearby nodes highlight; drag a wire from the building to a target (tap
+  is the fallback); show span, cost and a cancel;
+- **REPAIR** for a damaged structure, **MAN/RELEASE** for a tower, **RECIPE** for the workshop;
+- the card closes on a tap elsewhere or the X.
+
+A unit with a workplace has a `HOME` shown on its card. Manual orders (move/attack/gather) pause the
+work loop; when the order ends, the unit returns to its home. `RELEASE` clears the assignment.
+
+### Workplaces instead of task orders
+
+The player assigns a survivor to a building once and the building gives them a loop:
+
+- Builder's Yard → finish the construction queue;
+- Scavenger Hut → gather in a radius and haul to the warehouse;
+- Well Wheel → draw water while staffed;
+- Farm → grow food, consuming water;
+- Workshop → convert scrap to ammo/components with a selected recipe;
+- Watchtower → guard the tower.
+
+The detailed loops, slots, costs and attention states are in [ECONOMY.md](ECONOMY.md). The
+important control decision is that **buildings are managed through the card, not through a selected
+unit's contextual tap**. Unit orders remain for ground, enemies and resources.
 
 ### Camera and selection feedback
 
@@ -131,9 +199,11 @@ Long-press a unit opens its card. On desktop, right-click issues move/attack dir
 
 ### Roster
 
-A bottom strip of up to 6 portraits (name, role icon, HP/carry pips). Tapping a portrait selects the
-unit; tapping it twice centres the camera. The roster solves the "small character on a phone" problem
-and doubles as the army overview. In direct mode the strip stays visible but compact.
+A bottom strip of up to 6 portraits (name, role icon, home building, HP/carry pips). Tapping a
+portrait selects the unit; tapping it twice centres the camera. The roster solves the "small
+character on a phone" problem and doubles as the army overview. When a building slot is waiting for
+a worker, the roster can be used to fill it (tap the slot, then a portrait). In direct mode the strip
+stays visible but compact.
 
 ---
 
@@ -143,28 +213,34 @@ and doubles as the army overview. In direct mode the strip stays visible but com
 
 Each survivor is a `Unit` with:
 
-- **Role:** scavenger, guard, engineer, medic (start with scavenger/guard; add the rest in Phase 5).
+- **Home workplace:** a building they are assigned to, or `null` for a free unit.
+- **Role:** derived from the workplace — builder, scavenger, water carrier, farmer, artisan, gunner.
 - **Stats:** HP, speed, carry capacity, weapon, accuracy multiplier.
 - **Inventory:** `carry: { scrap, water, food, components }`, capacity in units.
-- **Job queue:** up to 3 orders; the brain runs the first valid one.
+- **Work loop:** the home building's repeating behavior; runs when the unit has no manual order.
+- **Manual order:** a temporary job (move/attack/gather/build/repair) that pauses the loop and returns
+  to the post when it ends.
+- **Attention:** the reason a loop cannot run (`NO NODES`, `STORAGE FULL`, `NO WATER`, `NO PATH`).
 - **Job types:** `idle`, `move`, `attack`, `gather`, `haul`, `deposit`, `man`, `build`, `repair`,
-  `flee`, `downed`.
+  `work`, `flee`, `downed`.
 - **Auto-defend:** an armed idle unit engages a hostile inside a short radius, then returns to idle.
-  This is the current camp-guard behaviour, generalised.
 
-Jobs are small state machines with `start`, `update(dt)`, `cancel`. The brain owns the queue; the
-commands layer only enqueues jobs. That keeps orders, AI and saving in one place.
+Jobs are small state machines with `start`, `update(dt)`, `cancel`. The brain owns the loop and the
+manual override; the commands layer only enqueues jobs. That keeps orders, AI and saving in one
+place. See [ECONOMY.md](ECONOMY.md) for the full workplace model.
 
 ### 4.2 Warehouse and the physical economy
 
-- New building: **Warehouse** (4×4, 24 scrap, capacity 200).
+- New building: **Warehouse** (4×4, 22 scrap, base stock 80, +120 per warehouse).
 - Storage is a faction stockpile bound to the warehouse(s). With no warehouse, the camp holds a
-  small field stock (50) at the campfire.
-- Gathering: unit walks to the node, harvests for ~1.8 s, takes up to 10 units, hauls to the nearest
-  warehouse, deposits, repeats while the node has yield.
+  small field stock at the campfire.
+- Resources: **scrap, water, food, components and ammo**. Scrap/water/food/components share the
+  store; ammo is held per calibre in the armory.
+- Gathering: unit walks to the node, harvests, takes up to 10 units, hauls to the nearest warehouse,
+  deposits, repeats while the node has yield. The Scavenger Hut automates this loop.
 - The warehouse visual grows crate stacks with fill (0–6 levels, instanced crates). Each resource has
   a small pile/barrel cluster.
-- HUD: `SCRAP 42/200`, `WATER 12/200`, with a warning when full. Full storage stops gathering and
+- HUD: `SCRAP 42/200`, `WATER`, `FOOD`, with a warning when full. Full storage stops gathering and
   tells the player to spend or build.
 - The player's own gathering deposits to the same stockpile.
 
@@ -180,16 +256,25 @@ commands layer only enqueues jobs. That keeps orders, AI and saving in one place
 
 - **Nodes:** solar panel (source), battery (storage), pole (relay), consumer (turret, lights,
   workshop, relay).
-- **Links:** a wire between two nodes within `maxSpan` (12 m). Poles relay; a consumer must be in a
-  connected component with a source.
-- **Placement:** placing a pole auto-links to the nearest unlinked node within span and charges
-  scrap per metre. Manual `LINK` mode: select a node, tap the target, wire is drawn and costed.
-- **Wires:** catenary curves (sag) in a warm dark colour, with a subtle powered glow.
-- **Simulation:** each tick, sum production (solar × daylight) and demand (turret idle/firing,
-  lights at night). Priority: defence > lights > workshop > charging. Deficit sheds lower priorities;
-  surplus charges batteries, then is wasted.
-- **HUD:** `POWER 8/12` and a battery bar; red deficit, amber battery, green surplus.
+- **Pole ports:** each pole has **4 connection ports**; a source/consumer has 2. A link occupies one
+  port. A wire is a graph edge, not a single daisy-chain.
+- **Links:** a wire between two nodes within `maxSpan` (14 m after the map expansion). Poles relay; a
+  consumer must be in a connected component with a source.
+- **Manual LINK first:** tap a power building → **LINK** in its card; nearby valid nodes highlight
+  with a range ring; drag (or tap) from the building to the target; show span and scrap cost; release
+  to connect, tap elsewhere to cancel. A wire must never silently fail: if the target is out of
+  range, has no free port, or there is not enough scrap, the line turns red and explains why.
+- **Auto-link fallback:** on completion a power building may auto-link to the nearest **free port**
+  within span and toast the cost. It is convenience, not the only path.
+- **Wires:** catenary curves (sag) in a warm dark colour, with a subtle powered glow. A powered wire
+  can be selected to jump to either endpoint.
+- **Simulation:** each tick, sum production (solar × daylight) and demand (turret, lights at night,
+  workshop). Priority: defence > water/farm > lights > workshop > charging. Deficit sheds lower
+  priorities; surplus charges batteries, then is wasted.
+- **HUD / card:** the power panel shows `POWER output/demand` and the battery; the building card
+  shows `POWERED / NO SOURCE / NO WIRE`, the connected ports and the consumer draw.
 - **Failure states:** a turret with no power traverses to a rest pose and its indicator goes dark.
+  The card explains which of power, wire, arc or target is missing.
 
 ### 4.5 Defences
 
@@ -200,38 +285,57 @@ commands layer only enqueues jobs. That keeps orders, AI and saving in one place
 - **Targeting rule:** only non-human creatures (ghouls, future beasts). It ignores raiders, camp folk
   and the player — the lore is that the scavenged fire-control can tell "not human" but not "friendly
   human".
-- 220° traverse arc set at placement, 18 m range, 8-round bursts at ~450 rpm, 6 damage per round,
-  1.5 s between bursts, 250-round belt, 4 s reload. Power draw 0.2 idle / 1.5 firing.
-- A red/green lamp shows power and engagement. Brass and muzzle FX reuse the existing systems.
+- **360° traverse standard.** The current invisible 220° arc is the most likely reason the turret
+  "does nothing": it is clamped to a fixed facing chosen at placement. A Vickers on a tripod can
+  traverse fully; use 360° and show a range ring. If a limited arc is reintroduced later, it must be
+  visible at placement with a rotate control.
+- 18 m range, 8-round bursts at ~450 rpm, 6 damage per round, 1.5 s between bursts, 250-round belt,
+  4 s reload. Power draw 1.2 while active.
+- Sight origin is raised to the gun height; low props should not blind it. It still needs a clear
+  line to the ghoul.
+- A red/green lamp shows power and engagement. The building card shows `POWER`, `AMMO`, `RANGE`,
+  `TARGETS: GHOULS ONLY` and the current target count, so "not working" is diagnosable. Brass and
+  muzzle FX reuse the existing systems.
+- **Lore:** it cannot identify humans. Raiders, camp folk and the player are never targets. If the
+  player expects it to shoot raiders, the card says why it will not.
 
 **Watchtower (changed)**
 
-- No automatic fire. An armed unit can be assigned: select the unit, tap the tower. The unit walks to
-  the base, then mans the platform.
+- No automatic fire. An armed unit is assigned through the **tower card's gunner slot** (or selected
+  unit → tap the tower as a shortcut). The unit walks to the base, then mans the platform.
 - While manned: +6 m weapon range, 40 % damage reduction, and the tower counts as the unit's position
   for targeting.
-- Unassign from the tower card; the unit climbs down. If the tower is destroyed later, the gunner is
+- Unassign from the tower card; the unit climbs down. If the tower is destroyed, the gunner is
   downed.
 - This makes human raids the player's problem and ghoul waves the turret's problem.
 
 ### 4.6 Raids and pressure
 
 - Raid composition shifts with the day: ghouls at night, raiders in the day, mixed later.
-- Raiders target the warehouse and power infrastructure, not just the player. Ghouls target units and
-  the campfire.
+- Raiders target the warehouse and power infrastructure, not just the player. **Ghouls attack only
+  living things** — survivors and the player — and never buildings. This is a hard rule; the turret
+  and the raiders already encode the human/non-human split.
 - A raid warning gives 20–30 s to assign the tower, power the turret and recall gatherers.
-- Defeat: all units down at once, or the campfire destroyed once building damage lands in Phase 5.
-  Leader death remains a respawn (the camp drags you back), so the run is not over on one mistake.
+- Defeat: all units down at once, or the campfire destroyed. Leader death remains a respawn (the camp
+  drags you back), so the run is not over on one mistake.
 
-### 4.7 Economy and progression (Phase 5)
+### 4.7 Workplaces and progression (Phase 5)
 
-- **Food** and **water** upkeep per unit per day. Unfed units lose speed and morale, then leave.
-- **Recruitment:** surplus food/water attracts a survivor every few days, up to a population cap
-  raised by houses.
-- **Workshop:** unlocks weapon upgrades (the existing armory tracks), turret ammo, wire spools.
-- **Components:** a rarer resource from ruins, needed for solar panels, batteries and the relay.
-- **Roles:** engineer (build/repair/connect), medic (heal), guard (patrol), scavenger (gather).
-- Tech tiers gate the power chain: panel → battery → turret → relay.
+The full design is in [ECONOMY.md](ECONOMY.md). Summary:
+
+- **Builder's Yard** — assigned builders finish the construction queue automatically.
+- **Scavenger Hut** — assigned scavengers loop gather → haul within a work radius.
+- **Well Wheel** — a staffed, hand-cranked well wheel produces water (the Rain Catcher remains a
+  passive early source).
+- **Farm** — staffed farmers produce food and consume water.
+- **Workshop** — assigned artisans convert scrap into pistol/rifle rounds, shells or components with
+  a selected recipe; the weapon upgrade bench lives here.
+- **Needs:** one food and one water per survivor per day; missing supplies slow them, then they
+  leave. Surplus and a free house slot attract a new survivor every few days.
+- **Roles** are derived from the workplace (builder, scavenger, water carrier, farmer, artisan,
+  gunner); reassigning changes the role. No class-selection screen.
+- The former armory "buy ammo" becomes a draw from the workshop stockpile (or a bad-rate emergency
+  purchase); there must not be two primary ammo economies.
 
 ### 4.8 Objective (Phase 6)
 
@@ -242,6 +346,37 @@ That gives the run a beginning, a middle and an end, and a reason to build the w
 Lose if the campfire is destroyed or every unit is down. Win by completing the relay and surviving
 the final assault.
 
+### 4.9 Map scale and unit navigation
+
+The current playable area is a ~100 m square with a dense prop scatter. That density is a major
+reason units catch on ruins. The next world pass:
+
+- **Expand the playable area** to roughly **2× the current radius** (target ~180–200 m across) while
+  keeping the same world seed. Move the camera pan limit, camp radius, nav grid, power span and
+  scatter masks with it.
+- **Spread the scatter:** reduce grass/shrub/rock density by 40–60 %, enforce a larger minimum
+  spacing between large props, and leave clear approach lanes around the camp and between landmarks.
+- **Ruins and landmarks** stay old-world and can be placed farther apart; the camp gets room to grow.
+- **Chunking is a later phase (Phase 7).** The terrain is one mesh today; expanding the single mesh
+  and the instanced scatter is acceptable for the next test. Do not promise streaming yet.
+- **Navigation improvements** accompany the map: clearance-aware grid cells, smoother paths,
+  lookahead, stuck detection and replanning, unit separation, and a `NO PATH` attention state. If a
+  unit cannot reach a workplace it waits at the post and reports, instead of wandering.
+- Add a debug path overlay for testing (line + waypoints), off by default.
+
+### 4.10 Art and lore identity
+
+Two visual languages, one rule: player-built structures are **mud brick + salvaged scrap**; old-world
+ruins keep concrete, glass, asphalt and signage. Solar panels, batteries and turrets are **salvaged
+technology** mounted on camp-made frames. The full guide is [ART_DIRECTION.md](ART_DIRECTION.md).
+
+- Mud/adobe walls, stone footings, scrap roofs, tarps, timber, tires, barrels, sandbags, hand-painted
+  signs and visible repairs.
+- No clean concrete/glass/neon on player buildings. Ruins may be any old-world shape.
+- Re-skin the warehouse first (it is the cleanest current building); new workplaces are modelled to
+  the guide from the start.
+- The top-down camera is the judge: silhouette, earth palette and one accent colour per building.
+
 ---
 
 ## 5. Architecture
@@ -249,36 +384,43 @@ the final assault.
 New modules, following the existing style (small, explicit, data-driven):
 
 ```
-src/units.js        Unit model, roster, harvesting/deposit, unit-level stats
-src/jobs.js         Job classes + queue runner
+src/workplaces.js   workplace defs, job slots, work loops, attention states
+src/stockpile.js    scrap/water/food/components/ammo, caps, deposit/withdraw
+src/needs.js        daily upkeep, morale, recruitment, population cap
+src/buildingcard.js floating building card, slot assignment, actions, screen anchoring
+src/wire.js         manual LINK mode, pole ports, drag line, range/validity feedback
+src/units.js        Unit model, roster, home workplace, roles, inventory
+src/jobs.js         Job primitives + work-loop runner + manual override
 src/commands.js     selection, contextual orders, command/direct mode
-src/nav.js          1 m navigation grid, A* + string-pulling, local avoidance
-src/power.js        power graph, solve, priorities, batteries
+src/nav.js          1 m grid, A* + smoothing, clearance, stuck recovery
+src/power.js        power graph, pole ports, solve, priorities, batteries
 src/daycycle.js     sun/moon, light + sky + solar curve
-src/storage.js      faction stockpile, warehouse binding, capacity
 src/emplacements.js turret + watchtower assignment and firing
 ```
 
 Changes to existing files:
 
 - `src/player.js` → split into `PossessionController` (movement/fire) + the leader `Unit`.
-- `src/npcs.js` → becomes the unit pool and brain host; keeps `forEachTarget` / `damage`.
-- `src/settlement.js` → new building defs (`warehouse`, `solar`, `pole`, `battery`, `turret`,
-  `workshop`); placement hooks for links; building HP later.
-- `src/input.js` → tap vs drag, `onTap`, `onLongPress`, joystick visibility.
-- `src/ui.js` / `index.html` → roster, unit card, command hints, power/storage chips, take/release.
-- `src/save.js` → **v3**: units (position, role, job, carry, hp), stockpile, warehouse, power links,
-  day time, building state. Keep the v1→v2→v3 reader.
-- `src/raiders.js` / `src/enemies.js` → target priorities (infrastructure, units), night modifiers.
+- `src/npcs.js` → the unit pool/brain host; home workplace, loop, manual override, attention.
+- `src/settlement.js` → building defs (`builder`, `scavenger`, `well`, `farm`, `workshop` + existing);
+  job slots, construction queue, HP, recipes, power ports.
+- `src/input.js` → tap vs drag, `onTap`, `onLongPress`, joystick visibility, link-drag mode.
+- `src/ui.js` / `index.html` → roster, unit card, **building card**, job slots, link mode, power/
+  storage chips, take/release.
+- `src/save.js` → **v5**: units’ home/role, workplaces/slots, construction queue, resources, needs,
+  day counter, recipes, power port links, building HP. Keep the v1→v5 reader.
+- `src/raiders.js` / `src/enemies.js` → target priorities (infrastructure, units); ghouls never
+  target buildings.
+- `src/props.js` / `src/terrain.js` → expanded world bounds, lower scatter density; chunking later.
 
 Data flow:
 
 ```
-tap → commands.pick() → order → unit.jobs.push(job)
-                         ↓
-                 unit.brain.update(dt) → nav / aim / animation
-                         ↓
-               storage / power / settlement update
+tap building → building card → assign slot → unit.home
+                                      ↓
+                          work loop (or manual override)
+                                      ↓
+                     nav / aim / animation → stockpile / power
 ```
 
 Keep the existing `TargetRegistry`, `Firearms`, `AimController`, FX, audio and wardrobe. Units reuse
@@ -373,22 +515,68 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
   152 warehouse HP; pole/tower destruction cleared 1 link/wire and downed the gunner; repair 136 →
   149 and climbing; raid banners RAIDERS/GHOULS; scheduled 13:45 raiders vs 22:25 ghouls).
 
-### Phase 5 — Economy and progression
+### Phase 4c — Building management and power UX — **next**
 
-- Food/water upkeep, recruitment, workshop, components, roles, tech tiers, turret ammo.
-- Gate: a self-sustaining camp of 5–6 units for several days, with a reason to build each new
-  building.
+- **Building card** anchored above the tapped structure: name, HP, built/power state, attention
+  reason, job slots, `ASSIGN`, `LINK`, `REPAIR`, `MAN/RELEASE`, `RECIPE`, close.
+- **Manual wire mode** with pole ports (4 per pole), range ring, drag-to-connect (tap fallback),
+  span cost, red invalid line with a reason, and a powered-wire glow. Auto-link becomes a fallback,
+  never the only path.
+- **Turret fixes:** 360° traverse (the invisible 220° arc is the likely "not working" cause), raised
+  sight line, range/target status on the card (`TARGETS: GHOULS ONLY`, power, ammo, targets in
+  range), and a clear powered/unpowered lamp. Keep the lore: it never targets humans.
+- **Building selection** is unambiguous: tapping a structure opens its card; contextual orders stay
+  for units, ground, enemies and resources.
+- Gate: connect a turret to a solar array by dragging a wire, watch it shoot ghouls from all sides,
+  disconnect the wire and see why it stops; assign/release a tower gunner from the card.
+- Not yet: workplace loops, needs, recipes (Phase 5).
+
+### Phase 4d — World scale and navigation
+
+- Expand the playable area to ~2× the current radius (target 180–200 m across); move the camera pan
+  limit, camp radius, nav grid and power span with it.
+- Reduce scatter density 40–60 % and enforce spacing so the camp and approaches are readable.
+- Nav improvements: clearance-aware cells, smoother paths, lookahead, stuck detection/replan, unit
+  separation, `NO PATH` attention state, debug path overlay.
+- Confirm and keep the hard rule: **ghouls attack only living things, never buildings**.
+- Old-world ruins stay old-world; player buildings stay mud + scrap (art guide).
+- Gate: a unit crosses the expanded camp and around a ruin cluster without sticking; no job runs
+  forever without a `NO PATH` report; the frame budget holds on the low preset.
+- Chunk streaming is deliberately Phase 7.
+
+### Phase 5 — Workplaces and economy
+
+Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
+
+- **5a — Builder's Yard + Scavenger Hut + assignment.** Job slots and work loops; the builder
+  finishes the construction queue; the scavenger loops gather→haul in a radius. Replace the current
+  auto-assign with the yard. Building card assignment + `HOME` on the unit card.
+- **5b — Well Wheel + Farm + needs.** Water and food production, daily upkeep, morale/leave,
+  stockpiles and HUD. The Rain Catcher remains the passive early source.
+- **5c — Workshop + ammo + recruitment/roles.** Scrap→ammo/components recipes, armory integration,
+  weapon upgrades at the workshop, population growth and roles derived from workplaces.
+- Gate: a camp of 5–6 survivors feeds itself and keeps the guns supplied for several days, with a
+  reason to build and staff each workplace.
 
 ### Phase 6 — The game loop
 
-- Relay objective, staged milestones, final assault, defeat conditions, save v3, onboarding.
+- Relay objective, staged milestones, final assault, defeat conditions, save migration, onboarding.
 - Gate: a new player can start, learn the loop, and either win or lose a run in 20–30 minutes.
 
-### Phase 7 — Realism and polish
+### Phase 7 — Streaming, chunks and performance
 
-- Work the `docs/REALISM.md` backlog: audio tails/occlusion, animation, materials, weather, wounds,
-  UI polish, device performance.
-- Gate: physical-device playtest at 30/60 fps with no control regressions.
+- Split the world into streamed chunks (terrain, props, nav, actors) when the expanded single-mesh
+  version is measurably at its limit; keep the deterministic seed and save compatibility.
+- LOD/batching/occlusion work, device-tier calibration.
+- Gate: the expanded map holds 30/60 fps on the target phone profile without a load hitch at chunk
+  boundaries.
+
+### Phase 8 — Art, realism and polish
+
+- Apply [ART_DIRECTION.md](ART_DIRECTION.md) to the existing buildings (warehouse first), audio
+  tails/occlusion, animation, materials, weather, wounds, UI polish, device performance.
+- Gate: physical-device playtest at 30/60 fps with no control regressions and a coherent camp
+  silhouette.
 
 ---
 
@@ -407,30 +595,47 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 
 ## 8. Open decisions
 
-1. **Possession scope in Phase 1:** any unit or leader only? Recommendation: any unit, because the
-   refactor is cheaper now.
-2. **Turret manning:** power only, or power + one gunner? Recommendation: power only in Phase 4;
-   add a gunner/ammo belt later if the turret trivialises nights.
-3. **Day length:** 6 minutes for the prototype, or a slower 10–12 minutes? Recommendation: 6 now,
-   tune after the relay objective exists.
-4. **Warehouse capacity:** one global pool or per-warehouse local pools with hauling between them?
-   Recommendation: one global pool bound to all warehouses; local pools are a later depth option.
-5. **Building damage:** do raiders destroy buildings in Phase 4 or Phase 5? Recommendation: Phase 5,
-   once the defence loop is stable.
-6. **Art direction at night:** warm campfire pools with deep blue ambient, or a flatter moonlit
-   grade? Recommendation: warm pools + blue ambient; it makes the turret lamp and wires read.
+1. **Water:** the **well wheel** (hand-cranked, no river needed) or add a river/oasis and a true
+   water wheel? Recommendation: well wheel now; a river wheel is a later map variant.
+2. **Builder assignment:** a **Builder's Yard** with builder slots, or a free builder role that any
+   site can use? Recommendation: the yard; it is the clearest answer to "where do builders go" and
+   gives construction a home. The current auto-assign is transitional and goes away.
+3. **Ammo economy:** workshop production replaces the armory purchase, or both coexist? Recommendation:
+   the workshop is primary; keep a bad-rate emergency purchase at most. Two primary sources will be
+   confusing.
+4. **Building interaction:** tapping a building opens its **card**, or keeps the selected-unit
+   contextual action? Recommendation: the card. Assignment, link, repair, man and recipe belong in
+   one place; contextual orders stay for ground/enemies/resources.
+5. **Turret arc:** 360° standard, or a limited arc with a visible placement preview and rotation?
+   Recommendation: 360° now; the invisible 220° arc is the likely cause of the current "not working"
+   report. Reintroduce limits only with an arc preview and a control.
+6. **Map size:** ~180 m or ~220 m across for the first expansion? Recommendation: 180–200 m, then
+   measure; chunk streaming is Phase 7.
+7. **Day length / upkeep:** one 6-minute cycle = one day, or two cycles? Recommendation: one cycle
+   first; a 12-minute day is easier to survive but slower to learn.
+8. **Stockpile:** one shared capacity for all resources, or per-resource caps? Recommendation: shared
+   first; per-resource caps only if the warehouse becomes a real constraint.
+9. **Work loops:** after a manual order, should a worker auto-return to its post, or wait for the
+   player? Recommendation: auto-return; the player can `RELEASE` to make them free.
+10. **Assignment UI:** tap slot → portrait, drag portrait → building, or both? Recommendation: tap
+    first (reliable on phone); drag is a stretch.
+11. **Confirmed rules:** the turret never targets humans; ghouls never attack buildings; raiders do.
+    These are lore, not toggles.
 
 ---
 
 ## 9. Immediate next slice
 
-Phases 1–4b are in. The next slice is **Phase 5 — economy and progression**:
+Phases 1–4b are in. The next slice is **Phase 4c — building management and power UX**:
 
-1. Food and water upkeep per survivor per day; unfed units lose speed/morale, then leave.
-2. Recruitment from surplus food/water; houses raise the population cap.
-3. A workshop that unlocks the existing weapon upgrades, turret belts and wire spools.
-4. Components from ruins; roles for engineer/scavenger/medic; repair becomes a role bonus.
-5. Then the relay objective and win/lose run in Phase 6.
+1. A floating **building card** anchored above the tapped structure, with HP, power, attention,
+   job slots and actions.
+2. **Manual wire mode** with pole ports, range ring and drag-to-connect; auto-link only as a
+   fallback. No silent wire failures.
+3. **Turret fixes:** 360° traverse, raised sight, card status (`TARGETS: GHOULS ONLY`, power, ammo,
+   targets in range), and a clear power/engagement lamp.
+4. Building taps open the card; contextual orders remain for units, ground, enemies and resources.
+5. Then Phase 4d (map + nav), then Phase 5 (workplaces/economy).
 
-The next visible milestone: **a camp of 5–6 survivors that feeds itself, recruits, and produces the
-components needed for the relay — while day raiders and night ghouls test the grid.**
+The next visible milestone: **tap a turret, drag a wire from it to a pole, watch it shoot ghouls
+from any direction, then disconnect the wire and read exactly why it stopped.**
