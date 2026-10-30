@@ -19,6 +19,7 @@ const BUILDING_HEIGHT = {
   scavenger: 2.0,
   well: 2.2,
   farm: 1.2,
+  relay: 5.4,
   chapel: 5.0,
 };
 

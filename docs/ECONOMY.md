@@ -1,9 +1,9 @@
 # Workplaces, jobs and the settlement economy
 
-**Status:** Phases **5a, 5b and 5c are implemented** (free builder role, Scavenger Hut, Well Wheel,
-Farm, Workshop, daily needs, food/water HUD, recruitment, saved roles and needs). **Morale** is still
-design for Phase 6/8. Numbers are provisional; we are still in the testing phase, so costs, rates
-and even the job names will move.
+**Status:** Phases **5a, 5b, 5c and 6 are implemented** (free builder role, Scavenger Hut, Well
+Wheel, Farm, Workshop, daily needs, food/water HUD, recruitment, saved roles and needs, relay
+project and final assault). **Morale** is still design for Phase 8. Numbers are provisional; we are
+still in the testing phase, so costs, rates and even the job names will move.
 
 This is the detailed design behind `docs/GAME_PLAN.md`. The short version: **assign a survivor to a
 building, not to a task.** The building gives them a repeatable job. Manual orders still exist, but
@@ -141,6 +141,19 @@ add a river/oasis, a true water wheel can be a second variant.
   purchase is **removed**; the armory shows stock and the weapon upgrade tracks. Player and survivor
   reloads both draw from the same pool, so guns can run dry.
 - `STORAGE FULL` (stock at cap), `NO SCRAP` and `NO WORKER` are reported on the card.
+
+### Relay project — the run objective
+
+- Cost: **30 scrap + 6 components**; radius 2.0; salvaged lattice mast, dish, batteries and a
+  sandbagged operator pit on a camp-made plinth.
+- Power consumer: 0.8, priority 6. It must be linked to the grid before activation.
+- The objective strip walks the camp through Workshop → 6 components → Relay → power → activate.
+- `ACTIVATE` starts a **90-second hold**. Raiders prioritise the relay and campfire; ghouls press
+  the player; waves arrive about every 22 s. The hold pauses if the relay loses power.
+- Win by holding with the relay alive; lose if the campfire is destroyed, the relay falls during
+  the assault, or every survivor leaves. The end screen reports day/survivors/kills and offers a new
+  run.
+- The relay is a **camp project**, not a workplace; components are the only rare-tech sink so far.
 
 ### Watchtower / turret
 

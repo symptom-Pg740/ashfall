@@ -10,13 +10,14 @@ This document is the working plan. `docs/ECONOMY.md` is the detailed workplace/e
 backlog. We are still in the **testing phase**: the economy numbers, building names and even the
 assignment model can change after playtests. Keep new systems data-driven and save-migrated.
 
-**Status:** Phases 1–5c first slices shipped (command/possession; warehouse and hauling; day/night
+**Status:** Phases 1–6 first slices shipped (command/possession; warehouse and hauling; day/night
 and power; Vickers turret + guard post gunner + nav grid; construction jobs; raids against the grid,
 building HP/damage/repair; floating building card, manual wiring and the 360° turret fix; expanded
 world with spread-out scatter and clearance-aware navigation; free builder role, Scavenger Hut,
 workplace assignment and saved roles; Well Wheel, Farm, daily needs and the food/water HUD;
-Workshop-only ammo/components and dawn recruitment). The next slice is **Phase 6 — the relay
-objective and a complete run**. See §6.
+Workshop-only ammo/components and dawn recruitment; relay objective, 90-second final assault and
+win/lose screens). The next slice is **Phase 7 — streaming/performance and the first full balance
+pass**. See §6.
 
 ---
 
@@ -628,10 +629,26 @@ Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
 - Gate: a camp of 5–6 survivors feeds itself and keeps the guns supplied for several days, with a
   reason to build and staff each workplace.
 
-### Phase 6 — The game loop
+### Phase 6 — The relay objective and a complete run — **implemented (first slice)**
 
-- Relay objective, staged milestones, final assault, defeat conditions, save migration, onboarding.
+- **Relay** building: 30 scrap + 6 components, radius 2.0, a power consumer (0.8, priority 6). A
+  salvaged lattice mast, dish, batteries and sandbagged operator pit on a camp-made plinth.
+- **Objective strip** always shows the next step: Workshop → craft 6 components → raise the relay →
+  power it → activate.
+- **Activation:** `ACTIVATE` in the relay card starts a **90-second hold**. Raiders prioritise the
+  relay and campfire; ghouls press the player; new waves arrive about every 22 s. The hold pauses if
+  the relay loses power; relink it from the card.
+- **Win:** hold with the relay alive. **Lose:** campfire destroyed, relay destroyed during the
+  assault, or every survivor leaves. The end screen reports day/survivors/kills and offers `NEW RUN`.
+- **Save:** run state (activated/assault/hold/wave/timer/over/won/reason) is in schema v6; a
+  mid-assault reload resumes the hold and objective, though individual hostiles are not saved.
+- Ambient ghoul and raider spawns pause during the assault.
 - Gate: a new player can start, learn the loop, and either win or lose a run in 20–30 minutes.
+  **Mechanics passed** (relay link/activate, 7-hostile opening wave, power-loss pause, relay/campfire
+  defeat, 90 s win and end-screen save/reload). **The full 20–30 minute pacing still needs a human
+  playtest**; numbers are provisional.
+- Not yet: alternate endings, scripted tutorial beats beyond the objective strip, saves that restore
+  the exact hostiles in a raid.
 
 ### Phase 7 — Streaming, chunks and performance
 
@@ -698,14 +715,15 @@ Still open:
 
 ## 9. Immediate next slice
 
-Phases 1–5c are in. The next slice is **Phase 6 — the relay objective and a complete run**:
+Phases 1–6 are in. The next slice is **Phase 7 — streaming, performance and balance**:
 
-1. A relay built from components, placed in or near the camp, with staged power/defence checks.
-2. A concrete objective chain and a final assault that tests the turret, guard post, workshop ammo
-   and the workplace economy together.
-3. Defeat conditions: all survivors lost, or the campfire/relay destroyed.
-4. Onboarding and a short run (20–30 minutes), then save migration and balance.
-5. Morale, wounds and weather remain the Phase 8/realism backlog.
+1. Measure the expanded 180 m map on the low/target device profiles; decide whether chunk streaming
+   is actually needed before adding it.
+2. Profile draw calls, terrain/prop density and the final assault's 5 raiders + ghoul waves.
+3. Balance pass: relay/build costs, component rates, hold duration, wave pressure, food/water
+   production and recruitment cadence against a real 20–30 minute run.
+4. Onboarding polish: first-run beats for the workshop recipe, relay power and activation.
+5. Then Phase 8 — art/realism (morale, wounds, weather, audio tails/occlusion).
 
-The next visible milestone: **a complete run that starts at the campfire, grows the workplaces,
-builds the relay, survives the final assault and ends in a win or a loss screen.**
+The next visible milestone: **a first-time player reaches the relay, survives the final assault and
+wins a run in 20–30 minutes — or loses and understands exactly why.**

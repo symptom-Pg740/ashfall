@@ -165,6 +165,19 @@ const state = {
   scrapCap: 80,
 };
 
+const RELAY_HOLD = 90;
+const run = {
+  activated: false,
+  assault: false,
+  hold: 0,
+  wave: 0,
+  waveTimer: 0,
+  over: false,
+  won: false,
+  reason: '',
+  powerWarned: false,
+};
+
 // Ammo reserve, per-weapon magazines and upgrade tiers live in the save state.
 const armory = new Armory(state);
 const audio = new AudioFx();
@@ -279,6 +292,8 @@ const buildingCard = new BuildingCard({
   state,
   getSelected: () => commander.selected,
   screenOf: (x, y, z) => commander.screenOf(x, y, z),
+  run,
+  onRelayActivate: (relay) => activateRelay(relay),
   onSave: () => saveGame(),
 });
 const wire = new WireTool({
@@ -347,6 +362,12 @@ raiders.attachCombat({ registry, firearms });
 raiders.settlement = settlement;
 settlement.onBuildingDestroyed = (building) => {
   power.removeBuilding(building);
+  if (building.type === 'campfire' && settlement.count('campfire') === 0) {
+    defeatRun('THE CAMPFIRE IS OUT');
+  }
+  if (building.type === 'relay' && run.assault && settlement.count('relay') === 0) {
+    defeatRun('THE RELAY WAS DESTROYED');
+  }
   if (buildingCard.building === building) buildingCard.close();
   for (const person of campFolk.people) {
     if (person.home === building) campFolk.releaseWorkplace(person, true);
@@ -540,6 +561,7 @@ window.__ashfall = {
   wire,
   pathDebug,
   nav,
+  run,
   settlement,
   buildings: BUILDINGS,
   player,
@@ -601,7 +623,7 @@ ui.on('started', () => {
   input.setEnabled(true);
   spawnAt = resumedGame ? Math.max(spawnAt, state.time + 8) : state.time + 45;
   spawnWarned = false;
-  ui.hint('TAP A SURVIVOR · THEN TAP A TARGET', 4200);
+  ui.hint('GOAL · BUILD A WORKSHOP · CRAFT 6 COMPONENTS · RAISE THE RELAY', 6500);
   ui.toast('THE WASTES ARE LISTENING');
   last = performance.now();
 });
@@ -737,7 +759,10 @@ function selectBuilding(idOrIndex) {
   ui.setSelectedBuilding(def.id);
   ui.showPlacement(true, def);
   ui.setPlaceStatus(settlement.canPlace, settlement.reason);
-  ui.hint(`${def.name} · ${def.cost} SCRAP · AIM ANYWHERE · A BUILDER WILL WALK TO THE SITE`, 3600);
+  ui.hint(
+    `${def.name} · ${def.cost} SCRAP${def.components ? ` · ${def.components} COMPONENTS` : ''} · AIM ANYWHERE`,
+    3600,
+  );
 }
 
 function cancelPlacement() {
@@ -752,12 +777,19 @@ function doPlace() {
     ui.toast(settlement.reason || 'INVALID SPOT', true);
     return;
   }
+  const def = settlement.selected;
+  const compCost = def?.components || 0;
+  if (compCost && state.components < compCost) {
+    ui.toast(`NEED ${compCost} COMPONENTS · CRAFT THEM IN THE WORKSHOP`, true);
+    return;
+  }
   const res = settlement.place(player);
   if (!res.ok) {
     ui.toast(res.reason, true);
     return;
   }
   state.scrap -= res.cost;
+  if (compCost) state.components -= compCost;
   const hasBuilder = campFolk.people.some((p) => !p.dead && p.role === 'builder');
   ui.toast(
     `${res.building.def.name} SITE${hasBuilder ? ' · BUILDER WILL ATTEND' : ' · SET A SURVIVOR TO BUILDER'}`,
@@ -983,6 +1015,16 @@ function saveGame() {
     units: campFolk.serialize(),
     scrap: scrapField.serialize(),
     power: power.serialize(),
+    run: {
+      activated: run.activated,
+      assault: run.assault,
+      hold: run.hold,
+      wave: run.wave,
+      waveTimer: run.waveTimer,
+      over: run.over,
+      won: run.won,
+      reason: run.reason,
+    },
     timers: {
       spawnAt,
       nextSpawnGap,
@@ -1033,6 +1075,24 @@ function loadGame() {
   campFolk.restore(save.units, (id) => settlement.buildings.find((b) => b.id === id) || null);
   ui.setRoster(commander.roster());
   power.restore(save.power);
+  if (save.run && typeof save.run === 'object') {
+    run.activated = !!save.run.activated;
+    run.assault = !!save.run.assault;
+    run.hold = num(save.run.hold, 0);
+    run.wave = num(save.run.wave, 0);
+    run.waveTimer = num(save.run.waveTimer, 22);
+    run.over = !!save.run.over;
+    run.won = !!save.run.won;
+    run.reason = typeof save.run.reason === 'string' ? save.run.reason : '';
+    if (run.over) {
+      ui.showRunEnd(
+        run.won,
+        run.won ? 'RELAY ONLINE' : 'CAMP LOST',
+        run.reason || (run.won ? 'THE WASTES ANSWER' : 'THE CAMP IS OVERRUN'),
+        { day: state.day, survivors: campFolk.people.filter((p) => p.active && !p.dead).length, kills: state.kills },
+      );
+    }
+  }
   scrapField.restore(save.scrap);
   if (save.timers) {
     spawnAt = num(save.timers.spawnAt, state.time + 45);
@@ -1281,6 +1341,134 @@ function startRaid(kind = 'raiders', count = 2, distance = 30) {
   return spawned;
 }
 
+function assaultRemaining() {
+  return raiders.activeCount + enemies.activeCount;
+}
+
+function activateRelay(relay) {
+  if (!relay || !relay.built || relay.destroyed) return false;
+  if (run.assault || run.over) return false;
+  if (!relay.powered) {
+    ui.toast('RELAY HAS NO POWER', true);
+    return false;
+  }
+  run.activated = true;
+  run.assault = true;
+  run.hold = RELAY_HOLD;
+  run.wave = 1;
+  run.waveTimer = 20;
+  run.powerWarned = false;
+  raidActive = false;
+  raiders.spawnWave(3, relay.x, relay.z, 28);
+  enemies.spawn(4, relay.x, relay.z, 24);
+  ui.setRaid(assaultRemaining(), 'assault');
+  ui.hint('RELAY ONLINE · HOLD FOR 90 SECONDS', 4200);
+  ui.toast('RELAY ACTIVATED');
+  saveGame();
+  return true;
+}
+
+function updateFinalAssault(dt) {
+  const relay = settlement.buildings.find((b) => b.type === 'relay' && b.built && !b.destroyed);
+  if (!relay) {
+    defeatRun('THE RELAY WAS DESTROYED');
+    return;
+  }
+  if (relay.powered) {
+    run.hold = Math.max(0, run.hold - dt);
+    run.powerWarned = false;
+  } else if (!run.powerWarned) {
+    run.powerWarned = true;
+    ui.hint('RELAY UNPOWERED · RECONNECT THE GRID', 3200);
+  }
+  run.waveTimer -= dt;
+  if (run.waveTimer <= 0 && run.hold > 10) {
+    run.wave++;
+    run.waveTimer = 22;
+    const raiderCount = Math.min(2, 5 - raiders.activeCount);
+    if (raiderCount > 0) raiders.spawnWave(raiderCount, relay.x, relay.z, 26);
+    enemies.spawn(2 + Math.min(4, Math.floor(run.wave / 2)), relay.x, relay.z, 26);
+    ui.hint(`WAVE ${run.wave} · HOLD THE RELAY`, 2400);
+  }
+  ui.setRaid(assaultRemaining(), 'assault');
+  if (run.hold <= 0) endRun(true, 'RELAY ONLINE', 'THE WASTES ANSWER · THE CAMP HOLDS');
+}
+
+function endRun(win, title, reason = '') {
+  if (run.over) return;
+  run.over = true;
+  run.won = !!win;
+  run.assault = false;
+  run.reason = reason;
+  ui.setRaid(0, 'assault');
+  ui.hideHint();
+  ui.showRunEnd(win, title, reason, {
+    day: state.day,
+    survivors: campFolk.people.filter((p) => p.active && !p.dead).length,
+    kills: state.kills,
+  });
+  updateObjective();
+  input.setEnabled(false);
+  saveGame();
+}
+
+function defeatRun(reason) {
+  if (run.over || run.won) return;
+  endRun(false, 'CAMP LOST', reason);
+}
+
+function updateObjective() {
+  const relay = settlement.buildings.find((b) => b.type === 'relay' && !b.destroyed);
+  const relayDef = BUILDINGS.find((b) => b.id === 'relay');
+  const need = relayDef?.components || 6;
+  const workshop = settlement.count('workshop') > 0;
+  let step = '';
+  let detail = '';
+  let progress = 0;
+  let tone = '';
+
+  if (run.over) {
+    step = run.won ? 'RELAY ONLINE' : 'CAMP LOST';
+    detail = run.reason || (run.won ? 'THE WASTES ANSWER' : 'THE CAMP IS OVERRUN');
+    progress = run.won ? 1 : 0;
+    tone = run.won ? 'done' : '';
+  } else if (run.assault) {
+    step = 'HOLD THE RELAY';
+    const powered = !!relay?.powered;
+    detail = powered
+      ? `${Math.ceil(run.hold)}S · WAVE ${run.wave} · ${assaultRemaining()} HOSTILES`
+      : `${Math.ceil(run.hold)}S · POWER LOST · RELINK THE RELAY`;
+    progress = 1 - run.hold / RELAY_HOLD;
+    tone = 'active';
+  } else if (!workshop) {
+    step = 'BUILD A WORKSHOP';
+    detail = 'It turns scrap into ammo and components.';
+  } else if (!relay) {
+    if (state.components < need) {
+      step = 'CRAFT COMPONENTS';
+      detail = `${state.components}/${need} · WORKSHOP → NEXT RECIPE`;
+      progress = Math.min(1, state.components / need);
+    } else {
+      step = 'RAISE THE RELAY';
+      detail = `${relayDef?.cost || 30} SCRAP · ${need} COMPONENTS READY`;
+      progress = 1;
+    }
+  } else if (!relay.built) {
+    step = 'FINISH THE RELAY';
+    detail = `${Math.round((relay.buildProgress || 0) * 100)}% BUILT`;
+    progress = relay.buildProgress || 0;
+  } else if (!relay.powered) {
+    step = 'POWER THE RELAY';
+    detail = 'LINK it to the solar array from its card.';
+    progress = 1;
+  } else {
+    step = 'ACTIVATE THE RELAY';
+    detail = 'Open its card and hold the camp for 90 seconds.';
+    progress = 1;
+  }
+  ui.setObjective({ step, detail, progress, tone });
+}
+
 function dawnTick(day) {
   let fed = 0;
   let watered = 0;
@@ -1325,6 +1513,10 @@ function dawnTick(day) {
       ui.toast(`${recruit.name} JOINED THE CAMP`);
     }
   }
+  if (campFolk.people.filter((p) => p.active && !p.left).length === 0) {
+    defeatRun('THE CAMP IS EMPTY');
+    return;
+  }
   ui.updateHUD(state);
   ui.setRoster(commander.roster());
   const short = fed < living || watered < living;
@@ -1336,6 +1528,7 @@ function dawnTick(day) {
 }
 
 function simulate(dt) {
+  if (run.over) return;
   state.time += dt;
   const day = 1 + Math.floor(state.time / 360);
   if (day > state.day) {
@@ -1386,12 +1579,12 @@ function simulate(dt) {
     state.health = Math.min(state.maxHealth, state.health + 0.7 * dt);
   }
 
-  // spawn pressure
-  if (!spawnWarned && state.time > spawnAt - 8) {
+  // spawn pressure pauses during the final assault
+  if (!run.assault && !spawnWarned && state.time > spawnAt - 8) {
     spawnWarned = true;
     ui.hint('MOVEMENT IN THE DUST — GHOULS INBOUND', 3200);
   }
-  if (state.time > spawnAt) {
+  if (!run.assault && state.time > spawnAt) {
     if (enemies.activeCount < enemies.maxActive) {
       const night = dayCycle.daylight < 0.3;
       const n = (1 + Math.floor(state.time / 110)) * (night ? 2 : 1);
@@ -1404,7 +1597,7 @@ function simulate(dt) {
   }
 
   // raider pressure: a small squad every minute or so
-  if (state.time > nextRaid) {
+  if (!run.assault && state.time > nextRaid) {
     const n = 1 + Math.floor(state.time / 150);
     const night = dayCycle.daylight < 0.3;
     const kind = night ? 'ghouls' : 'raiders';
@@ -1426,6 +1619,8 @@ function simulate(dt) {
       saveGame();
     }
   }
+
+  if (run.assault) updateFinalAssault(dt);
 
   // scavenge proximity
   nearScrap = scrapField.nearest(player.x, player.z, 2.7);
@@ -1505,6 +1700,7 @@ function loop(now) {
   ui.setCompass(yaw.current, !cameraFollow);
 
   ui.updateHUD(state);
+  updateObjective();
 
   renderer.render(scene, activeCamera);
   perf.frame(rawMs);
@@ -1537,6 +1733,7 @@ ui.setToggle('paths', showPaths);
 ui.setSeed(WORLD_SEED);
 input.camera = activeCamera;
 ui.updateHUD(state);
+updateObjective();
 ui.setQuality(coarse ? 'balanced' : 'high');
 
 if (new URLSearchParams(window.location.search).has('fresh')) clearSave(false);

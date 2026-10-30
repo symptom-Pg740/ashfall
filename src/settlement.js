@@ -638,6 +638,69 @@ function workshop() {
   return bakeBaseAO(merge(p), 0.55, 0.3);
 }
 
+function relayMast() {
+  const stone = '#b6a184';
+  const mud = '#c9a878';
+  const mudDark = '#a98a61';
+  const wood = '#6b4a2e';
+  const woodDark = '#4e3522';
+  const metal = '#8a8f8b';
+  const metalDark = '#555b59';
+  const rust = '#8a4f35';
+  const tarp = '#7c6447';
+  const dark = '#2f2821';
+  const p = [baseDisc(2.0)];
+
+  p.push(box(3.6, 0.16, 3.6, stone, 0, 0.08, 0));
+  p.push(box(3.2, 0.12, 3.2, '#5f4a35', 0, 0.18, 0));
+
+  // Four leaning legs, cross-braced like a scavenged lattice.
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      p.push(cyl(0.06, 0.1, 3.4, 4, metalDark, sx * 0.72, 1.9, sz * 0.72, sz * 0.17, 0, -sx * 0.17));
+    }
+  }
+  for (const y of [1.0, 2.0, 3.0]) {
+    const half = 0.85 - y * 0.12;
+    p.push(box(half * 2, 0.06, 0.06, metal, 0, y, -half));
+    p.push(box(half * 2, 0.06, 0.06, metal, 0, y, half));
+    p.push(box(0.06, 0.06, half * 2, metal, -half, y, 0));
+    p.push(box(0.06, 0.06, half * 2, metal, half, y, 0));
+  }
+
+  // Platform, mast and dish.
+  p.push(box(1.5, 0.1, 1.5, wood, 0, 3.55, 0));
+  p.push(cyl(0.09, 0.12, 1.6, 6, metalDark, 0, 4.35, 0));
+  p.push(cyl(0.8, 0.62, 0.16, 12, metal, 0, 4.55, 0, 0.85, 0, 0));
+  p.push(cyl(0.62, 0.46, 0.06, 12, '#35617a', 0, 4.62, 0.02, 0.85, 0, 0));
+  p.push(box(0.06, 0.05, 1.3, metal, 0, 4.7, 0.35, -0.35, 0, 0));
+  p.push(box(0.7, 0.05, 0.05, metal, 0, 5.2, 0));
+  p.push(box(0.05, 0.7, 0.05, metal, 0, 5.2, 0));
+  p.push(box(0.16, 0.16, 0.16, '#ffb35e', 0.2, 5.4, 0));
+
+  // Cables down to a radio cabinet and battery bank at the base.
+  p.push(box(0.025, 2.4, 0.025, dark, 0.55, 2.3, 0.35, 0, 0, 0.18));
+  p.push(box(0.8, 1.0, 0.55, woodDark, -0.9, 0.75, 0.7));
+  p.push(box(0.6, 0.4, 0.06, '#3d4237', -0.9, 1.0, 0.99));
+  p.push(box(0.55, 0.5, 0.45, metalDark, 0.95, 0.45, 0.7));
+  p.push(box(0.5, 0.08, 0.4, rust, 0.95, 0.73, 0.7));
+  p.push(box(0.5, 0.35, 0.4, '#6d563f', -0.8, 0.35, -0.9, 0, 0.2, 0));
+  p.push(box(0.45, 0.3, 0.35, '#85663f', -0.4, 0.28, -1.0, 0, -0.2, 0));
+  p.push(cyl(0.26, 0.3, 0.62, 8, rust, 0.95, 0.33, -0.85));
+
+  // Sandbag ring and a tarp shelter for the operator.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    p.push(box(0.42, 0.2, 0.32, i % 2 ? '#a3875e' : '#806a4a', Math.cos(a) * 1.4, 0.28, Math.sin(a) * 1.4, 0, -a, 0));
+  }
+  p.push(box(1.3, 0.05, 1.1, tarp, 0.75, 1.45, -0.75, 0.12, 0, 0));
+  for (const sx of [0.2, 1.25]) {
+    p.push(cyl(0.04, 0.05, 1.45, 4, woodDark, sx, 0.72, -1.18));
+  }
+
+  return bakeBaseAO(merge(p), 0.5, 0.3);
+}
+
 export const BUILDINGS = [
   {
     id: 'barricade',
@@ -715,6 +778,16 @@ export const BUILDINGS = [
     geometry: null,
   },
   {
+    id: 'relay',
+    name: 'RELAY',
+    cost: 30,
+    components: 6,
+    radius: 2.0,
+    desc: 'Call home. Hold it.',
+    power: { kind: 'consumer', demand: 0.8, priority: 6, attach: 2.8 },
+    geometry: null,
+  },
+  {
     id: 'solar',
     name: 'SOLAR ARRAY',
     cost: 14,
@@ -787,6 +860,7 @@ const GEO_BUILDERS = {
   well: wellWheel,
   farm: farmPlot,
   workshop,
+  relay: relayMast,
   solar: solarArray,
   pole: powerPole,
   battery: batteryBank,
@@ -1195,7 +1269,7 @@ export class Settlement {
     }
 
     const hpWidth = Math.max(1.6, def.radius * 1.5);
-    const hpY = def.id === 'pole' ? 4.2 : def.id === 'tower' ? 2.4 : def.id === 'light' ? 3.8 : Math.max(4.0, def.radius * 0.7 + 3.2);
+    const hpY = def.id === 'pole' ? 4.2 : def.id === 'tower' ? 2.4 : def.id === 'light' ? 3.8 : def.id === 'relay' ? 6.0 : Math.max(4.0, def.radius * 0.7 + 3.2);
     const hpBg = new THREE.Mesh(
       new THREE.BoxGeometry(hpWidth, 0.1, 0.3),
       new THREE.MeshBasicMaterial({ color: 0x2b2117, transparent: true, opacity: 0.82, depthWrite: false, depthTest: false }),

@@ -92,6 +92,13 @@
         <span class="vitals-label">VITALS</span>
       </div>
 
+      <div id="objective" class="objective" aria-label="Relay objective">
+        <span class="obj-kicker">RELAY PROTOCOL</span>
+        <b id="obj-step">BUILD A WORKSHOP</b>
+        <small id="obj-detail">It turns scrap into ammo and components.</small>
+        <div class="obj-bar"><i id="obj-bar-fill"></i></div>
+      </div>
+
       <div
         id="compass"
         class="compass"
@@ -309,6 +316,17 @@
       <div id="flash"></div>
     </div>
 
+      <section id="end-screen" class="end-screen hidden" aria-label="Run result">
+        <div class="end-kicker" id="end-kicker">RELAY PROTOCOL</div>
+        <strong id="end-title">RELAY ONLINE</strong>
+        <span id="end-sub">THE WASTES ANSWER</span>
+        <div class="end-stats">
+          <div><b id="end-day">1</b><small>DAY</small></div>
+          <div><b id="end-survivors">3</b><small>SURVIVORS</small></div>
+          <div><b id="end-kills">0</b><small>PUT DOWN</small></div>
+        </div>
+        <button id="end-new-run" class="start-btn" type="button">NEW RUN</button>
+      </section>
     <!-- start screen -->
     <div id="start-screen" class="start-screen">
       <div class="start-grain"></div>
@@ -318,6 +336,7 @@
         <div class="start-sub">SETTLEMENT PROTOCOL // MOBILE-FIRST PROTOTYPE</div>
         <p class="start-copy">
           Scavenge the dust. Raise a camp. Keep the ghouls outside the firelight.
+          Build the relay, power it, and hold the camp long enough to call home.
           Every mesh, texture and gust of ash is generated at runtime.
         </p>
         <button id="start-btn" class="start-btn">ENTER THE WASTELAND</button>

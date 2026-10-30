@@ -91,6 +91,18 @@ export class UI {
       gridPower: document.getElementById('grid-power'),
       gridBarFill: document.getElementById('grid-bar-fill'),
       gridNote: document.getElementById('grid-note'),
+      objective: document.getElementById('objective'),
+      objStep: document.getElementById('obj-step'),
+      objDetail: document.getElementById('obj-detail'),
+      objBarFill: document.getElementById('obj-bar-fill'),
+      endScreen: document.getElementById('end-screen'),
+      endKicker: document.getElementById('end-kicker'),
+      endTitle: document.getElementById('end-title'),
+      endSub: document.getElementById('end-sub'),
+      endDay: document.getElementById('end-day'),
+      endSurvivors: document.getElementById('end-survivors'),
+      endKills: document.getElementById('end-kills'),
+      endNewRun: document.getElementById('end-new-run'),
       buildingCard: document.getElementById('building-card'),
       bcardName: document.getElementById('bcard-name'),
       bcardState: document.getElementById('bcard-state'),
@@ -162,8 +174,11 @@ export class UI {
       card.className = 'build-card';
       card.dataset.type = def.id;
       card.dataset.cost = String(def.cost);
+      card.dataset.components = String(def.components || 0);
+      const parts = [`${def.cost} ⬡`];
+      if (def.components) parts.push(`${def.components} ⚙`);
       card.innerHTML = `
-        <span class="bc-top"><span class="bc-name">${def.name}</span><span class="bc-cost">${def.cost} ⬡</span></span>
+        <span class="bc-top"><span class="bc-name">${def.name}</span><span class="bc-cost">${parts.join(' · ')}</span></span>
         <span class="bc-desc">${def.desc}</span>
         <span class="bc-key">${i + 1}</span>
       `;
@@ -183,6 +198,11 @@ export class UI {
     this.el.startBtn.addEventListener('pointerdown', start);
     this.el.startBtn.addEventListener('click', start);
     this.el.newRun.addEventListener('click', (e) => {
+      e.preventDefault();
+      clearSave();
+      window.location.reload();
+    });
+    this.el.endNewRun?.addEventListener('click', (e) => {
       e.preventDefault();
       clearSave();
       window.location.reload();
@@ -383,6 +403,35 @@ export class UI {
     this.raidResultTimer = setTimeout(() => el.classList.add('hidden'), win ? 2800 : 2400);
   }
 
+  setObjective(view) {
+    if (!this.el.objective || !view) return;
+    const key = `${view.step}|${view.detail}|${Math.round((view.progress || 0) * 100)}|${view.tone || ''}`;
+    if (key === this._objectiveKey) return;
+    this._objectiveKey = key;
+    this.el.objStep.textContent = view.step;
+    this.el.objDetail.textContent = view.detail || '';
+    this.el.objBarFill.style.width = `${Math.max(0, Math.min(100, (view.progress || 0) * 100))}%`;
+    this.el.objective.classList.toggle('active', view.tone === 'active');
+    this.el.objective.classList.toggle('done', view.tone === 'done');
+  }
+
+  showRunEnd(win, title, sub, stats = {}) {
+    if (!this.el.endScreen) return;
+    this.el.endScreen.classList.remove('hidden');
+    this.el.endScreen.classList.toggle('lose', !win);
+    this.el.endTitle.textContent = title;
+    this.el.endSub.textContent = sub;
+    this.el.endKicker.textContent = win ? 'RELAY PROTOCOL · COMPLETE' : 'RELAY PROTOCOL · FAILED';
+    this.el.endDay.textContent = String(stats.day ?? 1);
+    this.el.endSurvivors.textContent = String(stats.survivors ?? 0);
+    this.el.endKills.textContent = String(stats.kills ?? 0);
+    this.el.death?.classList.add('hidden');
+  }
+
+  hideRunEnd() {
+    this.el.endScreen?.classList.add('hidden');
+  }
+
   setClock(info) {
     if (!this.el.gridClock || !info) return;
     const key = `${info.clock}|${info.day}|${info.night}`;
@@ -452,6 +501,7 @@ export class UI {
     const card = this.el.buildingCard;
     if (!card || !view) return;
     this.buildingCardOpen = true;
+    document.body.classList.add('card-open');
     card.classList.remove('hidden');
     card.classList.toggle('site', view.progress != null);
     card.classList.toggle('bad', !!view.noteBad);
@@ -545,6 +595,7 @@ export class UI {
 
   hideBuildingCard() {
     this.buildingCardOpen = false;
+    document.body.classList.remove('card-open');
     this.el.buildingCard?.classList.add('hidden');
   }
 
@@ -626,7 +677,10 @@ export class UI {
     this.lastRaid = key;
     this.el.raidBanner.classList.toggle('hidden', count <= 0);
     if (count > 0 && this.el.raidCount) this.el.raidCount.textContent = String(count);
-    if (this.el.raidKind) this.el.raidKind.textContent = kind === 'ghouls' ? 'GHOULS' : 'RAIDERS';
+    if (this.el.raidKind) {
+      this.el.raidKind.textContent =
+        kind === 'ghouls' ? 'GHOULS' : kind === 'assault' ? 'FINAL ASSAULT' : 'RAIDERS';
+    }
   }
 
   hitMarker(kill = false) {
@@ -921,7 +975,11 @@ export class UI {
       this.el.scrap.textContent = cap ? `${state.scrap}/${cap}` : String(state.scrap);
       this.el.buildScrap.textContent = `${state.scrap} scrap available`;
       this.el.buildList.querySelectorAll('.build-card').forEach((card) => {
-        card.classList.toggle('cant', Number(card.dataset.cost) > state.scrap);
+        const comps = Number(card.dataset.components) || 0;
+        card.classList.toggle(
+          'cant',
+          Number(card.dataset.cost) > state.scrap || comps > (state.components || 0),
+        );
       });
     }
     const waterCap = state.waterCap || state.scrapCap || 0;

@@ -11,13 +11,15 @@ import { RECIPES, recipeCap, recipeStock, nextRecipe } from './recipes.js';
  * for units, enemies, resources and movement, so the player is never surprised by a wall.
  */
 export class BuildingCard {
-  constructor({ ui, settlement, power, campFolk, scrapField, state, getSelected, screenOf, onSave }) {
+  constructor({ ui, settlement, power, campFolk, scrapField, state, run, getSelected, screenOf, onRelayActivate, onSave }) {
     this.ui = ui;
     this.settlement = settlement;
     this.power = power;
     this.campFolk = campFolk;
     this.scrapField = scrapField;
     this.state = state;
+    this.run = run || null;
+    this.onRelayActivate = onRelayActivate || (() => {});
     this.getSelected = getSelected || (() => null);
     this.screenOf = screenOf;
     this.onSave = onSave || (() => {});
@@ -97,6 +99,7 @@ export class BuildingCard {
       light: 3.6,
       pole: 3.5,
       turret: 2.2,
+      relay: 5.7,
     };
     return table[b.type] ?? Math.max(2.2, b.radius * 0.7 + 1.2);
   }
@@ -250,6 +253,26 @@ export class BuildingCard {
                 ? `CRAFTING ${recipe.label}`
                 : `GATHERING WITHIN ${job.radius}M`;
       }
+    } else if (def.id === 'relay') {
+      const assault = !!this.run?.assault;
+      const over = !!this.run?.over;
+      rows.push({ label: 'STATUS', value: over ? (this.run.won ? 'ONLINE' : 'LOST') : assault ? 'ONLINE' : b.powered ? 'READY' : 'NO POWER' });
+      if (assault) {
+        rows.push({ label: 'HOLD', value: `${Math.ceil(this.run.hold || 0)}S` });
+        rows.push({ label: 'WAVE', value: String(this.run.wave || 1) });
+      }
+      if (over) {
+        note = this.run.won ? 'THE RELAY IS ONLINE · THE CAMP HOLDS' : 'THE RELAY IS DARK';
+        noteBad = !this.run.won;
+      } else if (assault) {
+        note = b.powered ? 'HOLD THE RELAY · KEEP IT POWERED' : 'POWER LOST · RECONNECT THE GRID';
+        noteBad = !b.powered;
+      } else if (!b.powered) {
+        note = 'NO POWER · LINK IT TO A SOLAR ARRAY';
+        noteBad = true;
+      } else {
+        note = 'READY · ACTIVATE TO CALL HOME AND HOLD 90 SECONDS';
+      }
     } else if (def.id === 'turret') {
       const targets = b._targets || 0;
       rows.push({ label: 'TARGETS', value: 'GHOULS ONLY' });
@@ -295,6 +318,9 @@ export class BuildingCard {
       if (def.id === 'workshop') {
         actions.push({ id: 'recipe', label: 'NEXT RECIPE', kind: 'ghost' });
       }
+      if (def.id === 'relay' && b.powered && !this.run?.assault && !this.run?.over) {
+        actions.push({ id: 'activate', label: 'ACTIVATE', kind: 'primary' });
+      }
       if (b.hp < b.maxHp) {
         actions.push({ id: 'repair', label: 'REPAIR', kind: 'ghost' });
       }
@@ -307,6 +333,16 @@ export class BuildingCard {
         ? 'CONSTRUCTION SITE'
         : b.hp < b.maxHp
           ? 'DAMAGED'
+          : def.id === 'relay'
+            ? this.run?.over
+              ? this.run.won
+                ? 'ONLINE'
+                : 'LOST'
+              : this.run?.assault
+                ? 'ONLINE'
+                : b.powered
+                  ? 'READY'
+                  : 'NO POWER'
           : job
             ? !workers.length
               ? 'NO WORKER'
@@ -398,6 +434,11 @@ export class BuildingCard {
   action(id) {
     const b = this.building;
     if (!b || !this.commander) return;
+    if (id === 'activate' && b.def.id === 'relay') {
+      this.onRelayActivate(b);
+      this.refresh(true);
+      return;
+    }
     if (id === 'recipe' && b.def.id === 'workshop') {
       b.recipe = nextRecipe(b.recipe || 'pistol');
       this.ui.toast(`RECIPE · ${RECIPES[b.recipe].label}`);

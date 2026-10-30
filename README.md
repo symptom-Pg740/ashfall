@@ -57,6 +57,7 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Set / clear the builder role | survivor card → `MAKE BUILDER` / `RELEASE BUILDER` | same |
 | Build a site | site card → `BUILD` | same |
 | Cycle a workshop recipe | workshop card → `NEXT RECIPE` | same |
+| Activate the relay | relay card → `ACTIVATE` (after power) | same |
 | Man the guard post | post card → `ASSIGN` | same |
 | Release the guard post | post card → `RELEASE` | same |
 | Repair a structure | damaged building's card → `REPAIR` | same |
@@ -209,6 +210,14 @@ The graph keeps the last ~45 seconds.
   stock; `NEXT RECIPE` cycles it. A **house** raises the survivor cap by one (base 3, max 6). At
   dawn, a camp with at least **2 spare food and water per survivor** and a free slot recruits a new
   survivor every **2–3 days**; recruits arrive as free scavengers.
+- **Relay protocol and a complete run (Phase 6)** — the permanent objective strip walks the camp
+  through **Workshop → components → Relay → power → activate**. The relay costs **30 scrap + 6
+  components**, is a power consumer, and must be linked to the grid. `ACTIVATE` starts a **90-second
+  final assault**: raiders focus the relay and campfire while ghoul waves press the player; the hold
+  pauses if the relay loses power, and new waves arrive every ~22 s. Win by holding with the relay
+  alive; lose if the campfire is destroyed, the relay falls during the assault, or every survivor
+  leaves. The end screen reports day, survivors and kills with a `NEW RUN` button. Run state is saved
+  and resumes mid-assault; ambient spawns pause during the final.
 - **Raids, damage and repair (Phase 4b)** — raids now alternate by time of day: **raiders by day,
   ghouls by night**, with the banner showing which. Raiders are on a mission: they walk to the nearest
   **warehouse or power building**, shoot it, and only break off for a unit within 14 m. Structures
@@ -283,7 +292,7 @@ The graph keeps the last ~45 seconds.
 - **Pinch or the mouse wheel zooms 0.8–2.2×.**
 
 - **Settlement structures** — barricade, campfire, rain catcher, adobe house, warehouse, scavenger
-  hut, well wheel, farm, workshop, solar array, power pole, battery bank, yard light, Vickers
+  hut, well wheel, farm, workshop, relay, solar array, power pole, battery bank, yard light, Vickers
   turret, guard post and chapel. Generated geometry, ghost placement, costs, production, jobs, healing and the
   power grid. The Adobe House is assembled from a modular kit (facade bays, roof, parapet, porch,
   rooftop clutter) and gets a seeded variant per placement; the rest stay hand-authored parametric
@@ -417,13 +426,14 @@ language.
   old-world ruins; salvaged tech on camp-made mounts.
 - **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
 
-**Phases 1–5c are in:** buildings are placed anywhere in the camp and built by units; the floating
+**Phases 1–6 are in:** buildings are placed anywhere in the camp and built by units; the floating
 building card, manual wire dragging with pole ports and the 360° turret fix are shipped; raids
 alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid;
 the world is a 180 m disc with spread-out scatter and clearance-aware navigation that reports
 `NO PATH`; the builder role, Scavenger Hut, Well Wheel, Farm, Workshop, daily needs, ammo crafting,
-recruitment and saved roles are live. The next slice is **Phase 6** — the relay objective and a
-complete win/lose run.
+recruitment and saved roles are live; and the relay objective now gives the run a 90-second final
+assault and a win/lose screen. The next slice is **Phase 7** — streaming/performance and a balance
+pass.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgotten work.
@@ -455,7 +465,11 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
   terrain vertices and more instances; adaptive resolution is the current safety valve.
 - Circle collisions over a 1 m A* grid. Dense wreckage can still wedge a unit briefly, but it now
   replans and reports `NO PATH` instead of grinding forever.
-- Needs tick at dawn only; there is no continuous hunger drain or morale system yet (Phase 6/8).
+- Needs tick at dawn only; there is no continuous hunger drain or morale system yet (Phase 8).
+- The full 20–30 minute run has not been playtested end-to-end; the final assault and relay costs are
+  provisional. Save/load resumes the hold timer but not the individual hostiles already spawned.
+- There is one objective/ending (relay online) and one defeat family (campfire, relay during the
+  assault, or all survivors leaving); no alternate endings yet.
 - Recruitment needs a house and 2 spare days of food/water; there is no recruitment UI beyond the
   dawn notice, and no way to dismiss a survivor.
 - Workshop recipes run while staffed; there is no production queue or per-artisan assignment.

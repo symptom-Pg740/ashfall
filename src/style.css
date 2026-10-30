@@ -2269,3 +2269,179 @@ body.build-open .building-card {
 .wardrobe-row.static .buy {
   color: var(--dim);
 }
+
+/* ---------- relay objective ---------- */
+
+.objective {
+  position: absolute;
+  top: calc(56px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(360px, 90vw);
+  padding: 5px 10px 7px;
+  pointer-events: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  z-index: 12;
+}
+
+.obj-kicker {
+  display: block;
+  font-size: 6px;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+}
+
+#obj-step {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  line-height: 1.2;
+  color: var(--amber-hot);
+}
+
+#obj-detail {
+  display: block;
+  margin-top: 2px;
+  min-height: 9px;
+  font-size: 6.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.obj-bar {
+  height: 2px;
+  margin-top: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.obj-bar i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #b45c38, #f0a95e);
+  transition: width 220ms linear;
+}
+
+.objective.active {
+  border-color: var(--amber-hot);
+}
+
+.objective.active #obj-step {
+  color: #ffd9a0;
+}
+
+.objective.done {
+  border-color: #7fbf6a;
+}
+
+.objective.done #obj-step {
+  color: #b6ca8b;
+}
+
+/* Hints sit below the objective strip. */
+.hint {
+  top: calc(118px + var(--safe-t));
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .objective {
+    top: calc(50px + var(--safe-t));
+    width: min(330px, 62vw);
+    padding: 4px 8px 5px;
+  }
+  #obj-step {
+    font-size: 9px;
+  }
+  .hint {
+    top: calc(104px + var(--safe-t));
+  }
+}
+
+/* ---------- run result ---------- */
+
+.end-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  pointer-events: auto;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(40, 30, 18, 0.72), rgba(8, 6, 4, 0.96) 70%),
+    rgba(8, 6, 4, 0.9);
+}
+
+.end-kicker {
+  font-size: 8px;
+  letter-spacing: 0.32em;
+  color: var(--dim);
+}
+
+.end-screen strong {
+  font-size: clamp(28px, 7vw, 54px);
+  letter-spacing: 0.14em;
+  color: var(--amber-hot);
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+}
+
+.end-screen.lose strong {
+  color: #e2705a;
+}
+
+#end-sub {
+  max-width: 520px;
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+
+.end-stats {
+  display: flex;
+  gap: 22px;
+  margin: 10px 0 4px;
+  padding: 8px 18px;
+  border-top: 1px solid rgba(138, 107, 66, 0.4);
+  border-bottom: 1px solid rgba(138, 107, 66, 0.4);
+}
+
+.end-stats div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.end-stats b {
+  font-size: 18px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.end-stats small {
+  font-size: 6px;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+
+.end-screen .start-btn {
+  margin-top: 8px;
+  min-width: 210px;
+}
+
+body.card-open .objective {
+  display: none;
+}
+
+body:not(.playing) .objective {
+  display: none;
+}

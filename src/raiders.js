@@ -5,7 +5,7 @@ import { heightAt, PLAY_RADIUS } from './terrain.js';
 import { deriveSeed, makeRng, damp } from './rng.js';
 import { shortestAngle } from './actors.js';
 
-const POOL = 3;
+const POOL = 5;
 
 /**
  * Hostile rifle raiders. They spawn at the edge of the camp, close to rifle range, auto-aim and
@@ -250,10 +250,11 @@ export class Raiders {
       if (!b.built || b.destroyed) continue;
       const d = Math.hypot(b.x - pos.x, b.z - pos.z);
       let priority = 4;
-      if (b.type === 'warehouse') priority = 30;
+      if (b.type === 'relay') priority = 55;
+      else if (b.type === 'campfire') priority = 42;
+      else if (b.type === 'warehouse') priority = 30;
       else if (b.def?.power) priority = 26;
       else if (b.type === 'turret' || b.type === 'tower') priority = 22;
-      else if (b.type === 'campfire') priority = 12;
       const score = d - priority;
       if (score < bestScore) {
         bestScore = score;
