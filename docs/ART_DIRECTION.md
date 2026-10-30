@@ -86,7 +86,8 @@ Every new camp building should include at least:
 
 Suggested additions:
 
-- **Builder's Yard** — mud walls, open timber frame, plank stack, tool rack, chalk plan on a board.
+- **Builder props** — builders are a role, not a building: use a tool rack, plank stack and chalk
+  plan as camp props or inside the Workshop.
 - **Scavenger Hut** — low mud hut, scrap lean-to, hand cart, hanging cans, sorted piles.
 - **Well Wheel** — stone/mud well ring, timber axle, scavenged wheel rim, trough, wet patch.
 - **Farm** — mud-brick plot, scrap irrigation channels, scarecrow, sacks, hoe, dry stalks.

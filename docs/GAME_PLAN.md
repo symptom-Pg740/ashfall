@@ -59,7 +59,7 @@ is simply the first unit in the roster.
 | Turret that cannot identify humans | Excellent lore-driven rule. It splits defence cleanly: the turret handles ghouls, your people handle raiders. It also stops the turret from trivialising the game. |
 | Watchtower needs a gunner | Manpower becomes a resource. Towers are strong but cost a unit that could be scavenging. |
 | Workplaces instead of task orders | The correct colony-game abstraction. One decision per building removes the gather/haul busywork and lets the camp run while the player fights or builds. |
-| Scavenger Hut / Builder's Yard | These are the two jobs that most need automation: a hut that loops gather→haul, and a yard that finishes the construction queue. The builder's yard answers "where do builders go". |
+| Scavenger Hut / free builder role | These are the two jobs that most need automation: a hut that loops gather→haul, and a builder role that answers the construction queue. The role avoids a building that exists only to hold one worker. |
 | Well Wheel, Farm, Workshop | A simple production triangle: water and food sustain the population, scrap becomes ammo. The wheel must be a **well wheel** (desert) unless a river/oasis is added. |
 | Workshop ammo from scrap | Ties combat to the economy and makes scavenging matter after the first build. Must replace, not duplicate, the armory purchase. |
 | Mud + scrap style | Mud is the human constant; scrap is the adaptation. It keeps the camp visually distinct from old-world ruins and is cheap to model procedurally. |
@@ -103,8 +103,9 @@ is simply the first unit in the roster.
    bounds with the map.
 12. **Two ammo economies.** Workshop production and the armory purchase must not both be primary.
    Pick one; the other becomes an emergency option or goes away.
-13. **Where do builders come from?** The Builder's Yard is the proposed answer; without it, a site
-   with no free survivor waits (current auto-assign is a transitional behavior to remove).
+13. **Where do builders come from?** A **free builder role** on a survivor. Builders auto-answer the
+   construction queue and can be sent to a specific site; no dedicated building. The current random
+   auto-assign is transitional and goes away.
 
 ### The one structural decision to make early
 
@@ -179,7 +180,7 @@ work loop; when the order ends, the unit returns to its home. `RELEASE` clears t
 
 The player assigns a survivor to a building once and the building gives them a loop:
 
-- Builder's Yard → finish the construction queue;
+- Builder role (free) → finish the construction queue;
 - Scavenger Hut → gather in a radius and haul to the warehouse;
 - Well Wheel → draw water while staffed;
 - Farm → grow food, consuming water;
@@ -214,7 +215,8 @@ stays visible but compact.
 Each survivor is a `Unit` with:
 
 - **Home workplace:** a building they are assigned to, or `null` for a free unit.
-- **Role:** derived from the workplace — builder, scavenger, water carrier, farmer, artisan, gunner.
+- **Role:** builder is a free role; the others are derived from the workplace — scavenger, water
+  carrier, farmer, artisan, gunner.
 - **Stats:** HP, speed, carry capacity, weapon, accuracy multiplier.
 - **Inventory:** `carry: { scrap, water, food, components }`, capacity in units.
 - **Work loop:** the home building's repeating behavior; runs when the unit has no manual order.
@@ -323,7 +325,8 @@ place. See [ECONOMY.md](ECONOMY.md) for the full workplace model.
 
 The full design is in [ECONOMY.md](ECONOMY.md). Summary:
 
-- **Builder's Yard** — assigned builders finish the construction queue automatically.
+- **Builder role** — a survivor set to builder finishes the construction queue automatically; no
+  building required.
 - **Scavenger Hut** — assigned scavengers loop gather → haul within a work radius.
 - **Well Wheel** — a staffed, hand-cranked well wheel produces water (the Rain Catcher remains a
   passive early source).
@@ -332,8 +335,8 @@ The full design is in [ECONOMY.md](ECONOMY.md). Summary:
   a selected recipe; the weapon upgrade bench lives here.
 - **Needs:** one food and one water per survivor per day; missing supplies slow them, then they
   leave. Surplus and a free house slot attract a new survivor every few days.
-- **Roles** are derived from the workplace (builder, scavenger, water carrier, farmer, artisan,
-  gunner); reassigning changes the role. No class-selection screen.
+- **Roles:** builder is a free role; the rest are derived from the workplace (scavenger, water
+  carrier, farmer, artisan, gunner); reassigning changes the role. No class-selection screen.
 - The former armory "buy ammo" becomes a draw from the workshop stockpile (or a bad-rate emergency
   purchase); there must not be two primary ammo economies.
 
@@ -402,8 +405,8 @@ Changes to existing files:
 
 - `src/player.js` → split into `PossessionController` (movement/fire) + the leader `Unit`.
 - `src/npcs.js` → the unit pool/brain host; home workplace, loop, manual override, attention.
-- `src/settlement.js` → building defs (`builder`, `scavenger`, `well`, `farm`, `workshop` + existing);
-  job slots, construction queue, HP, recipes, power ports.
+- `src/settlement.js` → building defs (`scavenger`, `well`, `farm`, `workshop` + existing); job
+  slots, construction queue, HP, recipes, power ports. Builder is a unit role, not a building.
 - `src/input.js` → tap vs drag, `onTap`, `onLongPress`, joystick visibility, link-drag mode.
 - `src/ui.js` / `index.html` → roster, unit card, **building card**, job slots, link mode, power/
   storage chips, take/release.
@@ -548,13 +551,15 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 
 Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
 
-- **5a — Builder's Yard + Scavenger Hut + assignment.** Job slots and work loops; the builder
-  finishes the construction queue; the scavenger loops gather→haul in a radius. Replace the current
-  auto-assign with the yard. Building card assignment + `HOME` on the unit card.
+- **5a — Free builder role + Scavenger Hut + assignment.** Job slots and work loops; a survivor set
+  to builder answers the construction queue; the scavenger loops gather→haul in a radius. Replace the
+  current random auto-assign with the builder role. Building card assignment + `HOME` on the unit
+  card.
 - **5b — Well Wheel + Farm + needs.** Water and food production, daily upkeep, morale/leave,
   stockpiles and HUD. The Rain Catcher remains the passive early source.
-- **5c — Workshop + ammo + recruitment/roles.** Scrap→ammo/components recipes, armory integration,
-  weapon upgrades at the workshop, population growth and roles derived from workplaces.
+- **5c — Workshop + ammo + recruitment/roles.** Scrap→ammo/components recipes; the workshop is the
+  **only** ammo source, and the armory displays the stock (no scrap purchase), weapon upgrades at the
+  workshop, population growth and roles derived from workplaces.
 - Gate: a camp of 5–6 survivors feeds itself and keeps the guns supplied for several days, with a
   reason to build and staff each workplace.
 
@@ -593,19 +598,21 @@ Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
 
 ---
 
-## 8. Open decisions
+## 8. Decisions and open questions
 
-1. **Water:** the **well wheel** (hand-cranked, no river needed) or add a river/oasis and a true
-   water wheel? Recommendation: well wheel now; a river wheel is a later map variant.
-2. **Builder assignment:** a **Builder's Yard** with builder slots, or a free builder role that any
-   site can use? Recommendation: the yard; it is the clearest answer to "where do builders go" and
-   gives construction a home. The current auto-assign is transitional and goes away.
-3. **Ammo economy:** workshop production replaces the armory purchase, or both coexist? Recommendation:
-   the workshop is primary; keep a bad-rate emergency purchase at most. Two primary sources will be
-   confusing.
-4. **Building interaction:** tapping a building opens its **card**, or keeps the selected-unit
-   contextual action? Recommendation: the card. Assignment, link, repair, man and recipe belong in
-   one place; contextual orders stay for ground/enemies/resources.
+Resolved in this pass:
+
+1. **Water:** the **well wheel** — hand-cranked, no river needed. The Rain Catcher stays as the
+   passive early source; a river/oasis wheel is a later map variant.
+2. **Builders:** a **free builder role**, not a Builder's Yard. A builder auto-answers the construction
+   queue and can be sent to a specific site; the current random auto-assign is transitional.
+3. **Ammo:** **workshop only.** The armory scrap purchase is removed; the workshop recipe is the only
+   source and the armory shows the stock. Running dry is a real failure state.
+4. **Building interaction:** tapping a building opens its **card**; contextual orders stay for
+   ground/enemies/resources. Settled.
+
+Still open:
+
 5. **Turret arc:** 360° standard, or a limited arc with a visible placement preview and rotation?
    Recommendation: 360° now; the invisible 220° arc is the likely cause of the current "not working"
    report. Reintroduce limits only with an arc preview and a control.

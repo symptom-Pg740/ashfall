@@ -39,7 +39,8 @@ building, then watch it work.*
 Each survivor gets:
 
 - `home` — the workplace building they are assigned to, or `null` for a free unit.
-- `role` — derived from the workplace: builder, scavenger, water carrier, farmer, artisan, gunner.
+- `role` — builder is a free role; the others are derived from the workplace: scavenger, water
+  carrier, farmer, artisan, gunner.
 - `loop` — the workplace's repeating behavior (see below).
 - `manual` — a temporary order. While a manual job is active, the loop pauses. When it finishes (or
   is cancelled), the unit returns to its post.
@@ -71,18 +72,24 @@ free. If a worker dies, the slot frees automatically.
 
 All costs are provisional and should be tuned against the 6-minute day.
 
-### Builder's Yard — where builders belong
+### Builder role — no yard required
 
-The missing piece from the current build flow. Instead of auto-assigning a random survivor to every
-new site, the player assigns a **builder** to the Builder's Yard. The builder automatically walks to
-the **construction queue** (oldest first, or a priority set by the player), builds it, and moves to
-the next. No builder = sites wait. This is the answer to "where do builders go".
+Builder is a **free unit role**, not a building. Set a survivor's role to **BUILDER** from the unit
+card/roster; they leave their workplace and become a free builder. Builders automatically take the
+next construction site (oldest first by default), walk there, build it, and move to the next. No
+builder = sites wait. The player can also send a builder to a specific site to jump the queue, and
+any unit can still be manually ordered to build a site.
 
-- Cost: 18 scrap; radius 2.2; mud-brick workshop with a scrap-timber frame.
-- Slots: 2 builders.
-- Loop: pick the nearest unbuilt site (or the oldest), path there, build at 1.0× speed; repeat.
-- If no site: repair the most damaged built structure in the camp (toggle: **BUILD / REPAIR**).
-- The player places sites anywhere in the camp; the builder handles the walking.
+- No building cost; no slot; the builder is a unit.
+- The player can keep 1–2 builders; a builder has no `home` workplace.
+- Loop: next unbuilt site → path → build at 1.0× speed; if no site, repair the most damaged structure
+  if the global **BUILD / REPAIR** toggle is set to repair.
+- The player places sites anywhere in the camp; builders handle the walking.
+- Switching a builder back to a workplace role releases the construction queue.
+- The current random auto-assign is removed; only builder-role units auto-answer the queue.
+
+This is the answer to "where do builders go": they are a role, not a station. It keeps the camp
+layout free and avoids a building that exists only to hold one worker.
 
 ### Scavenger Hut — automated scrap
 
@@ -180,7 +187,7 @@ add a river/oasis, a true water wheel can be a second variant.
 
 Roles are **derived from the workplace**, not a class chosen at birth:
 
-- builder: builds/repairs faster at a Builder's Yard;
+- builder: a free role; answers the construction queue and repairs;
 - scavenger: gathers faster and has a larger carry;
 - water carrier: Well Wheel output;
 - farmer: Farm output;
@@ -208,6 +215,7 @@ Automation must be honest about why it stopped. Each workplace has a status show
 | `NO WATER` | farm has no water | assign a well/fix supply |
 | `NO POWER` | turret/workshop unpowered | link a source |
 | `NO PATH` | worker cannot reach the post/target | check the map, clear the route |
+| `NO BUILDER` | a site has no builder-role unit free | set a survivor to builder |
 | `DAMAGED` | below 40% HP | repair |
 
 A worker with no valid task waits at the post; it does not wander across the map. This is important:
@@ -217,9 +225,11 @@ the current wander behavior is what makes the camp feel random.
 
 ## 8. Starting loadout and first ten minutes
 
-1. Start with **3 survivors**: a builder, a scavenger and a guard; 26 scrap, 4 water, 4 food.
+1. Start with **3 survivors**: one already set to **BUILDER**, one scavenger and one guard;
+   26 scrap, 4 water, 4 food.
 2. Place a **Scavenger Hut** and assign the scavenger; scrap starts arriving automatically.
-3. Place a **Builder's Yard** and assign the builder; it finishes the hut (and any other sites).
+3. Place the site for whatever comes next; the builder-role survivor picks it up automatically and
+   finishes it. No yard to build first.
 4. Build a **Well Wheel** and assign the third survivor (or rotate the guard); water stabilises.
 5. Build a **Farm**; assign a farmer; food stabilises.
 6. Build a **Workshop**; set rifle/pistol rounds; the ammo economy starts.
@@ -233,7 +243,7 @@ The player's job is placement, staffing, recipes and defence — not walking eve
 
 | Thing | Value |
 | --- | --- |
-| Builder's Yard | 18 scrap, 2 slots, build speed 1.0 |
+| Builder role | free; 1.0× build speed; auto construction queue |
 | Scavenger Hut | 16 scrap, 2 slots, radius 26 m |
 | Well Wheel | 20 scrap, 1 slot, 1 water / 4 s |
 | Farm | 24 scrap, 2 slots, 1 food / 7 s per farmer, 1 water / 20 s |
@@ -260,7 +270,8 @@ Changes:
 - `CampFolk` units gain `home`, `role`, `loop`, `manual`, `attention`; the existing jobs become the
   loops' primitives (move/gather/haul/build/repair/man).
 - `Settlement` buildings gain `jobs`, `workers`, `attention`, `recipe`; the construction queue.
-- `Settlement.place` no longer auto-assigns; a Builder's Yard builder picks up the site.
+- `Settlement.place` no longer auto-assigns; a **builder-role** unit picks up the site. The unit card
+  can set/clear the builder role.
 - `Armory` ammo purchases draw from the workshop stockpile; the workshop recipe is the primary source.
 - Save schema: workplaces, assignments, resources, needs, recipe, day counter; migrate v4 → v5.
 - The **building card** replaces building contextual orders for assignment/repair/man/wire; unit
@@ -268,13 +279,23 @@ Changes:
 
 ---
 
-## 11. Open decisions
+## 11. Resolved / open decisions
 
-1. **Water wheel vs well wheel:** adopt the well wheel (no river needed) or add a river/oasis and a
-   true water wheel.
-2. **Builder's Yard vs a builder role on any site:** the yard is proposed; a free builder role is the
-   alternative.
-3. **Ammo:** workshop production replaces armory purchases, or both coexist with a worse manual rate.
-4. **Stockpile:** one shared capacity or per-resource caps.
-5. **Day length:** one 6-minute cycle as a day, or two cycles (12 minutes).
-6. **Assignment UI:** tap-slot then portrait, drag portrait, or both.
+Resolved for the next slice:
+
+1. **Water:** the **well wheel** — hand-cranked, no river required. The Rain Catcher remains the
+   passive early source; a river/oasis wheel is a later map variant.
+2. **Builders:** a **free builder role**, not a Builder's Yard. Builders auto-answer the construction
+   queue; the player can also send one to a specific site.
+3. **Ammo:** **workshop only.** The armory purchase is removed; the workshop recipe is the only
+   source, and the armory panel shows the stock. Guns can run dry, which is the point.
+4. **Turret arc:** 360° traverse for the fix; a limited arc only with a visible placement preview.
+5. **Building interaction:** tapping a building opens its **card**; contextual orders stay for
+   ground/enemies/resources.
+
+Still open:
+
+1. **Stockpile:** one shared capacity or per-resource caps.
+2. **Day length:** one 6-minute cycle as a day, or two cycles (12 minutes).
+3. **Assignment UI:** tap-slot then portrait, drag portrait, or both.
+4. **Map size:** ~180 m or ~220 m across for the first expansion.

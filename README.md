@@ -353,8 +353,8 @@ language.
 - **[docs/GAME_PLAN.md](docs/GAME_PLAN.md)** — the full plan: control model, building cards,
   workplaces, warehouse/economy, day/night, electricity, Vickers turret, watchtower assignment,
   progression, map scale and the relay objective. It includes the phased build order and gates.
-- **[docs/ECONOMY.md](docs/ECONOMY.md)** — the workplace/job design: Builder's Yard, Scavenger Hut,
-  Well Wheel, Farm, Workshop, needs, ammo, recruitment and attention states.
+- **[docs/ECONOMY.md](docs/ECONOMY.md)** — the workplace/job design: free builder role, Scavenger Hut,
+  Well Wheel, Farm, Workshop (the only ammo source), needs, recruitment and attention states.
 - **[docs/ART_DIRECTION.md](docs/ART_DIRECTION.md)** — mud + scrap for the camp; concrete/glass for
   old-world ruins; salvaged tech on camp-made mounts.
 - **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
