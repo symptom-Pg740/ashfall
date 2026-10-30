@@ -15,6 +15,7 @@ import { CampFolk } from './npcs.js';
 import { Raiders } from './raiders.js';
 import { Commander } from './commander.js';
 import { Armory } from './armory.js';
+import { RECIPES, COMPONENT_CAP, recipeCap, recipeStock } from './recipes.js';
 import { AudioFx } from './audio.js';
 import { DayCycle } from './daycycle.js';
 import { PowerNetwork } from './power.js';
@@ -132,7 +133,8 @@ const player = new Player(scene);
 const enemies = new Enemies(scene, deriveSeed('enemies'));
 const charStyle = new URLSearchParams(window.location.search).get('chars');
 const npcStyle = charStyle === 'blocky' ? 'blocky' : charStyle === 'smooth' ? 'smooth' : 'skinned';
-const campFolk = new CampFolk(scene, 3, {
+const campFolk = new CampFolk(scene, 6, {
+  activeCount: 3,
   style: npcStyle,
   scrapField,
   obstacles: wasteland.obstacles,
@@ -150,9 +152,11 @@ const state = {
   scrap: 26,
   water: 4,
   food: 4,
+  components: 0,
   waterCap: 80,
   foodCap: 80,
   day: 1,
+  nextRecruit: 0,
   kills: 0,
   health: 100,
   maxHealth: 100,
@@ -211,7 +215,7 @@ registry.add({
   forEachTarget(cb) {
     for (let i = 0; i < campFolk.people.length; i++) {
       const person = campFolk.people[i];
-      if (person.dead || person.possessed) continue;
+      if (!person.active || person.dead || person.possessed) continue;
       const t = campTargets[i];
       const pos = person.rig.group.position;
       t.x = pos.x;
@@ -388,6 +392,46 @@ campFolk.takeWater = (n = 1) => {
   if (state.water < n) return false;
   state.water -= n;
   return true;
+};
+campFolk.canCraft = (id) => {
+  const recipe = RECIPES[id];
+  if (!recipe) return { ok: false, reason: 'NO RECIPE' };
+  if (state.scrap < recipe.scrap) return { ok: false, reason: 'NO SCRAP' };
+  const stock = recipeStock(state, recipe);
+  if (stock + recipe.amount > recipeCap(recipe)) return { ok: false, reason: 'STORAGE FULL' };
+  return { ok: true };
+};
+campFolk.doCraft = (id) => {
+  const recipe = RECIPES[id];
+  if (!recipe) return false;
+  const check = campFolk.canCraft(id);
+  if (!check.ok) return false;
+  state.scrap -= recipe.scrap;
+  if (recipe.ammo) {
+    state.ammo[recipe.ammo] = (state.ammo[recipe.ammo] || 0) + recipe.amount;
+  } else {
+    state.components = Math.min(COMPONENT_CAP, (state.components || 0) + recipe.amount);
+  }
+  return true;
+};
+campFolk.onCraft = () => {
+  ui.updateHUD(state);
+  ui.setAmmo(player.ammoState());
+  if (ui.wardrobeOpen) refreshWardrobe();
+  saveGame();
+};
+campFolk.reloadUnit = (person) => {
+  if (!person?.weapon) return 0;
+  const c = armory.caliber(person.weapon.baseId || person.weapon.id);
+  if (!c) return person.weapon.magazine;
+  const need = Math.max(0, person.weapon.magazine - person.mag);
+  const take = Math.min(need, state.ammo[c] || 0);
+  if (take <= 0) return 0;
+  state.ammo[c] -= take;
+  person.mag += take;
+  ui.setAmmo(player.ammoState());
+  ui.updateHUD(state);
+  return person.mag;
 };
 campFolk.onWaterProduced = (n = 1) => {
   state.water = Math.min(state.waterCap || 80, state.water + n);
@@ -609,19 +653,6 @@ ui.on('wardrobeCycle', (slot, dir) => {
   ui.setWeapon(player.armed, player.weapon?.name);
   ui.setAmmo(player.ammoState());
   ui.toast(`${slot.toUpperCase()} · ${itemLabel(slot, id)}`);
-  saveGame();
-});
-
-ui.on('armoryAmmo', () => {
-  const added = armory.buyAmmo(player.weaponId);
-  if (!added) {
-    ui.toast(armory.reserve(player.weaponId) > 0 ? 'POUCH ALREADY FULL' : 'NOT ENOUGH SCRAP', true);
-    return;
-  }
-  ui.toast(`+${added} ${player.weapon.name} AMMO`);
-  ui.updateHUD(state);
-  ui.setAmmo(player.ammoState());
-  refreshWardrobe();
   saveGame();
 });
 
@@ -929,13 +960,15 @@ function saveGame() {
   // the write instead of saving the leader on the wrong tile; release/down saves immediately.
   if (player.possessedUnit) return;
   writeSave({
-    v: 5,
+    v: 6,
     seed: WORLD_SEED,
     savedAt: Date.now(),
     state: {
       scrap: state.scrap,
       water: state.water,
       food: state.food,
+      components: state.components,
+      nextRecruit: state.nextRecruit,
       kills: state.kills,
       health: state.health,
       maxHealth: state.maxHealth,
@@ -968,6 +1001,8 @@ function loadGame() {
   state.scrap = num(s.scrap, 26);
   state.water = num(s.water, 4);
   state.food = num(s.food, 4);
+  state.components = num(s.components, 0);
+  state.nextRecruit = num(s.nextRecruit, 0);
   state.kills = num(s.kills, 0);
   state.health = num(s.health, 100);
   state.maxHealth = Math.max(100, num(s.maxHealth, 100));
@@ -996,6 +1031,7 @@ function loadGame() {
 
   settlement.restore(save.buildings);
   campFolk.restore(save.units, (id) => settlement.buildings.find((b) => b.id === id) || null);
+  ui.setRoster(commander.roster());
   power.restore(save.power);
   scrapField.restore(save.scrap);
   if (save.timers) {
@@ -1249,7 +1285,7 @@ function dawnTick(day) {
   let fed = 0;
   let watered = 0;
   for (const p of campFolk.people) {
-    if (p.dead) continue;
+    if (!p.active || p.dead) continue;
     if (state.water > 0) {
       state.water--;
       p.thirst = 0;
@@ -1268,12 +1304,32 @@ function dawnTick(day) {
     p.speed = (p.baseSpeed || p.speed) * (unfed ? 0.8 : 1);
     if (p.thirst >= 2 || p.hunger >= 2) campFolk.leaveCamp(p, 'LEFT CAMP');
   }
-  const alive = campFolk.people.filter((p) => !p.dead).length;
+  let living = campFolk.people.filter((p) => p.active && !p.dead).length;
+  const cap = Math.min(6, 3 + settlement.count('house'));
+  let recruited = null;
+  if (
+    living < cap &&
+    state.water >= living + 2 &&
+    state.food >= living + 2 &&
+    day >= (state.nextRecruit || 0)
+  ) {
+    const spot =
+      settlement.nearestOfType('house', player.x, player.z) ||
+      settlement.nearestOfType('campfire', player.x, player.z) ||
+      { x: player.x, z: player.z, radius: 2 };
+    const recruit = campFolk.recruit(spot.x + (spot.radius || 2), spot.z + 1);
+    if (recruit) {
+      recruited = recruit;
+      living++;
+      state.nextRecruit = day + 2 + Math.floor(Math.random() * 2);
+      ui.toast(`${recruit.name} JOINED THE CAMP`);
+    }
+  }
   ui.updateHUD(state);
   ui.setRoster(commander.roster());
-  const short = fed < alive || watered < alive;
+  const short = fed < living || watered < living;
   ui.hint(
-    `DAY ${day} · ${alive} SURVIVOR${alive === 1 ? '' : 'S'} · FOOD ${state.food} · WATER ${state.water}${short ? ' · SHORT SUPPLIES' : ''}`,
+    `DAY ${day} · ${living}/${cap} SURVIVORS · FOOD ${state.food} · WATER ${state.water}${recruited ? ` · ${recruited.name} JOINED` : ''}${short ? ' · SHORT SUPPLIES' : ''}`,
     5200,
   );
   saveGame();

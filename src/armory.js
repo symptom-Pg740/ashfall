@@ -11,10 +11,11 @@ import { WEAPONS } from './weapons.js';
  * adding a variant or a new track is a data edit, not a code path.
  */
 
+/** Calibre pools are filled only by the workshop; the armory merely draws from them. */
 export const CALIBERS = {
-  rifle: { id: 'rifle', label: 'RIFLE ROUNDS', pack: 6, cost: 5, max: 48 },
-  pistol: { id: 'pistol', label: 'PISTOL ROUNDS', pack: 12, cost: 4, max: 144 },
-  shell: { id: 'shell', label: 'SHELLS', pack: 4, cost: 6, max: 32 },
+  rifle: { id: 'rifle', label: 'RIFLE ROUNDS', max: 48 },
+  pistol: { id: 'pistol', label: 'PISTOL ROUNDS', max: 144 },
+  shell: { id: 'shell', label: 'SHELLS', max: 32 },
 };
 
 export const STARTER_AMMO = { rifle: 8, pistol: 36, shell: 6 };
@@ -151,20 +152,6 @@ export class Armory {
     return this.reserve(weaponId) > 0;
   }
 
-  /** Buy one pack for the weapon's caliber. Returns the amount added, or 0. */
-  buyAmmo(weaponId) {
-    const c = this.caliber(weaponId);
-    const def = c ? CALIBERS[c] : null;
-    if (!def) return 0;
-    const current = this.reserve(weaponId);
-    if (current >= def.max) return 0;
-    if (this.state.scrap < def.cost) return 0;
-    const add = Math.min(def.pack, def.max - current);
-    this.state.scrap -= def.cost;
-    this.state.ammo[c] = current + add;
-    return add;
-  }
-
   tier(weaponId, trackId) {
     return tierOf(this.state.upgrades, weaponId, trackId);
   }
@@ -209,16 +196,7 @@ export class Armory {
       mag: this.magOf(weaponId),
       magazine: base.magazine,
       reserve: this.reserve(weaponId),
-      ammo: pack
-        ? {
-            label: pack.label,
-            pack: pack.pack,
-            cost: pack.cost,
-            max: pack.max,
-            full: this.reserve(weaponId) >= pack.max,
-            affordable: this.state.scrap >= pack.cost,
-          }
-        : null,
+      ammo: pack ? { label: pack.label, max: pack.max } : null,
       tracks: TRACKS.map((t) => {
         const tier = this.tier(weaponId, t.id);
         return {

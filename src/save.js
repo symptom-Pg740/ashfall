@@ -7,8 +7,9 @@ export const SAVE_KEY = 'ashfall-save-v1';
  *  3 — adds `power` links, building ids and battery charge
  *  4 — adds construction sites (`built`, `buildProgress`)
  *  5 — adds survivor roles, workplace assignments, survivor positions and needs; also stores food
+ *  6 — adds active/recruited survivors, workshop recipes, components and the next recruit day
  */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 let suppressed = false;
 
@@ -19,7 +20,7 @@ export function readSave() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || !Number.isFinite(data.seed)) return null;
-    if (![1, 2, 3, 4, SAVE_VERSION].includes(data.v)) return null;
+    if (![1, 2, 3, 4, 5, SAVE_VERSION].includes(data.v)) return null;
     // v1 runs simply have no armory block; `loadGame` fills the starter ammo.
     data.v = SAVE_VERSION;
     return data;

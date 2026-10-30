@@ -1,8 +1,8 @@
 # Workplaces, jobs and the settlement economy
 
-**Status:** Phases **5a and 5b are implemented** (free builder role, Scavenger Hut, Well Wheel,
-Farm, daily needs, food/water HUD, saved roles and needs). **5c** (Workshop, ammo, recruitment,
-morale) is still design. Numbers are provisional; we are still in the testing phase, so costs, rates
+**Status:** Phases **5a, 5b and 5c are implemented** (free builder role, Scavenger Hut, Well Wheel,
+Farm, Workshop, daily needs, food/water HUD, recruitment, saved roles and needs). **Morale** is still
+design for Phase 6/8. Numbers are provisional; we are still in the testing phase, so costs, rates
 and even the job names will move.
 
 This is the detailed design behind `docs/GAME_PLAN.md`. The short version: **assign a survivor to a
@@ -127,20 +127,20 @@ add a river/oasis, a true water wheel can be a second variant.
 - Consumes **1 water / 20 s** while working; no water = `NO WATER`, production stops.
 - Food is stored in the warehouse; survivors eat from it at dawn (see needs).
 
-### Workshop — ammo and components
+### Workshop — ammo and components — **implemented in 5c**
 
-- Cost: 26 scrap; radius 2.4; a mud-and-scrap shed with a workbench, press and tool wall.
+- Cost: 26 scrap; radius 2.4; a mud-and-scrap shed with a workbench, press, tool wall, crates, vent
+  and hand-painted range card.
 - Slots: 2 artisans.
-- The player selects a **recipe** in the building card:
-  - pistol rounds: 4 scrap → 12 rounds, 8 s;
+- The player cycles the **recipe** with `NEXT RECIPE` in the building card:
+  - pistol rounds: 4 scrap → 12 rounds, 8 s per artisan;
   - rifle rounds: 6 scrap → 6 rounds, 8 s;
   - shells: 5 scrap → 4 shells, 8 s;
-  - components: 8 scrap → 1 component, 12 s.
-- The artisan consumes scrap from the warehouse and adds to the matching stockpile. Ammo is drawn
-  from the stockpile by the armory; the current "buy ammo with scrap" button becomes an emergency
-  purchase at a bad rate, or is removed once the workshop is reliable.
-- The same workshop hosts the **weapon upgrade** bench; the existing armory tracks move here so the
-  player has one place for guns and one for production.
+  - components: 8 scrap → 1 component, 12 s; cap 40.
+- The artisan consumes scrap from the warehouse and adds to the matching ammo pool. The armory
+  purchase is **removed**; the armory shows stock and the weapon upgrade tracks. Player and survivor
+  reloads both draw from the same pool, so guns can run dry.
+- `STORAGE FULL` (stock at cap), `NO SCRAP` and `NO WORKER` are reported on the card.
 
 ### Watchtower / turret
 
@@ -181,7 +181,9 @@ add a river/oasis, a true water wheel can be a second variant.
 - Each living survivor consumes **1 food + 1 water at dawn**. **Implemented.**
 - If either is missing: speed −20%; after **2 consecutive unfed dawns** the survivor leaves (removed
   from the roster, hidden, saved as left). No instant death. **Implemented.**
-- Surplus food/water and a free house slot attracting a new survivor every **2–3 days** is 5c.
+- Surplus food/water and a free house slot attract a new survivor every **2–3 days**.
+  **Implemented in 5c:** a house raises the cap by one (base 3, max 6); two spare days of food and
+  water are required; the recruit arrives as a free scavenger.
 - The player starts with **3 survivors**, **4 water and 4 food**; the first decisions are a Scavenger
   Hut and a well/farm.
 - Recruitment is a reward for a working economy, not a random gift.
@@ -196,8 +198,8 @@ Roles are **derived from the workplace**, not a class chosen at birth:
 - scavenger: gathers faster and has a larger carry;
 - water carrier: Well Wheel output;
 - farmer: Farm output;
-- artisan: Workshop speed/recipe unlocks;
-- gunner: Watchtower accuracy/range.
+- artisan: Workshop recipe production;
+- gunner: Guard post accuracy/range.
 
 Reassigning a worker changes their role. This keeps the roster flexible and avoids a class UI. Later,
 a survivor can gain a small **specialty** after working a role for several days.
@@ -252,7 +254,7 @@ The player's job is placement, staffing, recipes and defence — not walking eve
 | Scavenger Hut | 16 scrap, 2 slots, radius 26 m |
 | Well Wheel | 20 scrap, 1 slot, 1 water / 4 s |
 | Farm | 24 scrap, 2 slots, 1 food / 7 s per farmer, 1 water / 20 s |
-| Workshop | 26 scrap, 2 slots, 8–12 s per recipe |
+| Workshop | 26 scrap, 2 slots, 8–12 s per recipe, only ammo source |
 | Survivor upkeep | 1 food + 1 water / day |
 | Hunger/leave | −20% speed; leaves after 2 unfed days |
 | Warehouse | base 80, +120 per warehouse (existing) |
@@ -278,9 +280,8 @@ Changes:
 - `Settlement.place` no longer auto-assigns; a **builder-role** unit picks up the site. The unit card
   can set/clear the builder role. Implemented in 5a.
 - `Armory` ammo purchases draw from the workshop stockpile; the workshop recipe is the primary source.
-- Save schema: **v5** adds survivor roles, workplace assignments, positions, hunger/thirst and the
-  left state (shipped in 5a/5b). Recipes, recruitment and a stored day counter still need 5c; the
-  day is currently derived from `state.time`.
+- Save schema: **v6** adds active/recruited survivors, workshop recipes, components and the next
+  recruit day on top of v5 roles/assignments/needs. The day is still derived from `state.time`.
 - The **building card** replaces building contextual orders for assignment/repair/man/wire; unit
   orders remain for move/attack/gather.
 

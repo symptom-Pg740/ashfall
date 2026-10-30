@@ -10,12 +10,13 @@ This document is the working plan. `docs/ECONOMY.md` is the detailed workplace/e
 backlog. We are still in the **testing phase**: the economy numbers, building names and even the
 assignment model can change after playtests. Keep new systems data-driven and save-migrated.
 
-**Status:** Phases 1–5b first slices shipped (command/possession; warehouse and hauling; day/night
+**Status:** Phases 1–5c first slices shipped (command/possession; warehouse and hauling; day/night
 and power; Vickers turret + guard post gunner + nav grid; construction jobs; raids against the grid,
 building HP/damage/repair; floating building card, manual wiring and the 360° turret fix; expanded
 world with spread-out scatter and clearance-aware navigation; free builder role, Scavenger Hut,
-workplace assignment and saved roles; Well Wheel, Farm, daily needs and the food/water HUD). The next
-slice is **Phase 5c — Workshop, ammo and recruitment**. See §6.
+workplace assignment and saved roles; Well Wheel, Farm, daily needs and the food/water HUD;
+Workshop-only ammo/components and dawn recruitment). The next slice is **Phase 6 — the relay
+objective and a complete run**. See §6.
 
 ---
 
@@ -340,14 +341,17 @@ The full design is in [ECONOMY.md](ECONOMY.md). Summary:
 - **Farm** — staffed farmers produce food and consume water. **Implemented in 5b** (2 slots,
   1 food / 7 s per farmer, 1 water / 20 s).
 - **Workshop** — assigned artisans convert scrap into pistol/rifle rounds, shells or components with
-  a selected recipe; the weapon upgrade bench lives here. **Next in 5c.**
+  a selected recipe; workshop-only ammo and production are **implemented in 5c**. The upgrade bench
+  remains in the armory panel.
 - **Needs:** one food and one water per survivor per day; missing supplies slow them by 20% and two
   consecutive unfed dawns make them leave. **Implemented in 5b** (dawn tick, `hunger`/`thirst`,
-  dawn report, HUD caps). Surplus and a free house slot attracting a new survivor is 5c.
+  dawn report, HUD caps).
+- **Recruitment:** a house raises the cap by one (base 3, max 6); with 2 spare days of food and
+  water, a new survivor joins every 2–3 days. **Implemented in 5c.**
 - **Roles:** builder is a free role; the rest are derived from the workplace (scavenger, water
   carrier, farmer, artisan, gunner); reassigning changes the role. No class-selection screen.
-- The former armory "buy ammo" becomes a draw from the workshop stockpile (or a bad-rate emergency
-  purchase); there must not be two primary ammo economies.
+- The former armory "buy ammo" is gone. The workshop is the only source; the armory shows stock and
+  the upgrade tracks, and survivor reloads draw from the same per-calibre pool.
 
 ### 4.8 Objective (Phase 6)
 
@@ -425,8 +429,9 @@ Changes to existing files:
 - `src/input.js` → tap vs drag, `onTap`, `onLongPress`, joystick visibility, link-drag mode.
 - `src/ui.js` / `index.html` → roster, unit card, **building card**, job slots, link mode, power/
   storage chips, take/release.
-- `src/save.js` → **v5**: units’ home/role, workplaces/slots, construction queue, resources, needs,
-  day counter, recipes, power port links, building HP. Keep the v1→v5 reader.
+- `src/save.js` → **v6**: active/recruited survivors, home/role, needs, workshop recipes,
+  components, next recruit day, construction state, resources (including food), power links and
+  building HP. Keep the v1→v6 reader.
 - `src/raiders.js` / `src/enemies.js` → target priorities (infrastructure, units); ghouls never
   target buildings.
 - `src/props.js` / `src/terrain.js` → expanded world bounds, lower scatter density; chunking later.
@@ -608,9 +613,18 @@ Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
   10→7 water/food for 3 survivors; two unfed dawns left all three, hid them and freed the slots;
   v5 save/reload kept roles, homes, hunger/thirst and the left state; HUD reads `water/cap` and
   `food/cap`).
-- **5c — Workshop + ammo + recruitment/roles.** Scrap→ammo/components recipes; the workshop is the
-  **only** ammo source, and the armory displays the stock (no scrap purchase), weapon upgrades at the
-  workshop, population growth and roles derived from workplaces.
+- **5c — Workshop + ammo + recruitment/roles — implemented (first slice).**
+  Two artisan slots; recipes for pistol rounds (4 scrap → 12, 8 s), rifle rounds (6 → 6, 8 s),
+  shells (5 → 4, 8 s) and components (8 → 1, 12 s). The workshop is the **only** ammo source: the
+  armory purchase is gone and the panel shows stock and upgrade tracks. Player and survivor reloads
+  draw from the same per-calibre pool, so guns run dry. Houses raise the survivor cap by one (base
+  3, max 6); a camp with 2 spare food/water per survivor recruits every 2–3 days, arriving as a free
+  scavenger. **Gate:** set a recipe, staff the workshop and watch rounds arrive while scrap drops;
+  switch to components; reach an ammo cap and read `STORAGE FULL`; remove all scrap and read
+  `NO SCRAP`; build a house with surplus stores and recruit at dawn; reload with the recipe, active
+  roster and next-recruit day intact. **Passed** (pistol 36→60 in 20 s; components 3→5; scrap
+  100→68; `NO SCRAP`/`STORAGE FULL`/`NO WORKER` states; 4th survivor joined at 4/4 with 7 food and
+  water; save v6 restored recipe, ODA active and `nextRecruit`; armory ammo row is read-only).
 - Gate: a camp of 5–6 survivors feeds itself and keeps the guns supplied for several days, with a
   reason to build and staff each workplace.
 
@@ -684,14 +698,14 @@ Still open:
 
 ## 9. Immediate next slice
 
-Phases 1–5b are in. The next slice is **Phase 5c — Workshop, ammo and recruitment**:
+Phases 1–5c are in. The next slice is **Phase 6 — the relay objective and a complete run**:
 
-1. **Workshop** with two artisan slots and recipes: pistol rounds, rifle rounds, shells, components.
-2. **Workshop-only ammo:** remove the armory scrap purchase; guns draw from the workshop stock and
-   can run dry. Weapon upgrades move to the workshop/armory card.
-3. **Recruitment:** surplus food/water and a free house slot attract a survivor every 2–3 days, up to
-   a population cap; roles follow the workplace.
-4. **Morale** around raids and hunger, then **Phase 6** (the relay objective and a complete run).
+1. A relay built from components, placed in or near the camp, with staged power/defence checks.
+2. A concrete objective chain and a final assault that tests the turret, guard post, workshop ammo
+   and the workplace economy together.
+3. Defeat conditions: all survivors lost, or the campfire/relay destroyed.
+4. Onboarding and a short run (20–30 minutes), then save migration and balance.
+5. Morale, wounds and weather remain the Phase 8/realism backlog.
 
-The next visible milestone: **set a workshop recipe, watch scrap become rounds, and recruit a new
-survivor because the camp has food to spare.**
+The next visible milestone: **a complete run that starts at the campfire, grows the workplaces,
+builds the relay, survives the final assault and ends in a win or a loss screen.**

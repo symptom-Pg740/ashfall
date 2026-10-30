@@ -4,6 +4,7 @@ import { AimController } from './aim.js';
 import { WEAPONS } from './weapons.js';
 import { heightAt } from './terrain.js';
 import { makeRng, deriveSeed, damp } from './rng.js';
+import { RECIPES } from './recipes.js';
 
 const NAMES = ['MARA', 'SILAS', 'REN', 'ODA', 'JUNO', 'KADE'];
 
@@ -32,11 +33,16 @@ export class CampFolk {
     this.isFoodFull = null;
     this.isWaterEmpty = null;
     this.takeWater = null;
+    this.canCraft = null;
+    this.doCraft = null;
+    this.onCraft = null;
+    this.reloadUnit = null;
     this.scrapField = options.scrapField || null;
     this.dropPoint = options.dropPoint || null;
     this.obstacles = options.obstacles || [];
     this.nav = options.nav || null;
     const style = options.style || 'skinned';
+    const activeCount = options.activeCount ?? Math.min(3, count);
     for (let i = 0; i < count; i++) {
       const seed = deriveSeed(`npc:${i}`);
       const archetype = ['lean', 'stocky', 'tall'][i % 3];
@@ -84,11 +90,17 @@ export class CampFolk {
 
       const weapon = armed ? WEAPONS.pistol : null;
       const builder = style === 'skinned' && i === 2;
+      const active = i < activeCount;
+      if (!active) {
+        rig.group.visible = false;
+        if (farTier) farTier.visible = false;
+      }
       const speed = rng.range(1.9, 2.5);
       this.people.push({
         name: NAMES[i % NAMES.length],
         rig,
         farTier,
+        active: i < activeCount,
         isFar: false,
         rng,
         anchor: { x, z },
@@ -181,13 +193,13 @@ export class CampFolk {
 
   workersOf(building) {
     if (!building) return [];
-    return this.people.filter((p) => p.home === building && !p.dead);
+    return this.people.filter((p) => p.active && p.home === building && !p.dead);
   }
 
   /** Put a survivor on a building's job slot. Clears any builder role and manual job. */
   assignWorkplace(person, building) {
     const job = building?.def?.job;
-    if (!person || person.dead || !job || !building.built || building.destroyed) return false;
+    if (!person || !person.active || person.dead || !job || !building.built || building.destroyed) return false;
     if (person.home !== building && this.workersOf(building).length >= job.slots) return false;
     if (person.manning) this.releaseTower(person);
     person.home = building;
@@ -236,7 +248,7 @@ export class CampFolk {
 
   /** Make a survivor a free builder, or return them to guard/scavenger duty. */
   setBuilder(person, on) {
-    if (!person || person.dead) return false;
+    if (!person || !person.active || person.dead) return false;
     if (on) {
       if (person.home) this.releaseWorkplace(person, true);
       if (person.manning) this.releaseTower(person);
@@ -262,7 +274,7 @@ export class CampFolk {
 
   /** Unit-card role button: release a post, release the builder role, or become a builder. */
   toggleRole(person) {
-    if (!person || person.dead) return false;
+    if (!person || !person.active || person.dead) return false;
     if (person.home) return this.releaseWorkplace(person);
     if (person.role === 'builder') return this.setBuilder(person, false);
     return this.setBuilder(person, true);
@@ -311,6 +323,7 @@ export class CampFolk {
     if (job.role === 'scavenger') this.scavengerLoop(person, b, job, time);
     else if (job.role === 'water') this.wellLoop(person, b, job, dt);
     else if (job.role === 'farmer') this.farmLoop(person, b, job, dt);
+    else if (job.role === 'artisan') this.workshopLoop(person, b, job, dt);
   }
 
   /** Stand at the wheel and draw water. Production pauses away from the post or when full. */
@@ -378,6 +391,94 @@ export class CampFolk {
       person.workTimer -= 7;
       this.onFoodProduced?.(1, building);
     }
+  }
+
+  /** An artisan runs the workshop's selected recipe, drawing scrap from the warehouse. */
+  workshopLoop(person, building, job, dt) {
+    const recipe = RECIPES[building.recipe || 'pistol'];
+    if (!recipe) {
+      person.attention = 'NO RECIPE';
+      person.workTimer = 0;
+      return;
+    }
+    const check = this.canCraft?.(recipe.id);
+    if (!check || !check.ok) {
+      person.attention = check?.reason || 'NO RECIPE';
+      person.workTimer = 0;
+      return;
+    }
+    const post = job.post || { x: 0, z: 2.75 };
+    const pos = person.rig.group.position;
+    const d = Math.hypot(building.x + post.x - pos.x, building.z + post.z - pos.z);
+    if (d > building.radius + 1.5) {
+      if (person.attention === 'NO PATH') return;
+      person.attention = null;
+      person.target = { x: building.x + post.x, z: building.z + post.z };
+      person.workTimer = 0;
+      this.issueJob(person, { type: 'move', x: building.x + post.x, z: building.z + post.z });
+      return;
+    }
+    person.attention = null;
+    person.target = { x: building.x + post.x, z: building.z + post.z };
+    person.timer = 3;
+    person.workTimer += dt;
+    if (person.workTimer >= recipe.time) {
+      if (this.doCraft?.(recipe.id)) {
+        person.workTimer -= recipe.time;
+        this.onCraft?.(recipe, building);
+      } else {
+        person.workTimer = 0;
+        person.attention = 'NO SCRAP';
+      }
+    }
+  }
+
+  /** Reload from the shared ammo pool. Returns the new magazine size (0 if dry). */
+  reloadPerson(person) {
+    if (!person?.weapon) return 0;
+    if (!this.reloadUnit) {
+      person.mag = person.weapon.magazine;
+      return person.mag;
+    }
+    const mag = this.reloadUnit(person);
+    if (mag > 0) return mag;
+    person.reloadTimer = 0.75;
+    return 0;
+  }
+
+  /** Bring one of the reserved survivors into the camp. */
+  recruit(x, z) {
+    const p = this.people.find((q) => !q.active);
+    if (!p) return null;
+    p.active = true;
+    p.dead = false;
+    p.left = false;
+    p.hp = p.maxHp;
+    p.role = 'scavenger';
+    p.home = null;
+    p.job = null;
+    p.attention = null;
+    p.carry = 0;
+    p.hunger = 0;
+    p.thirst = 0;
+    p.speed = p.baseSpeed;
+    p.anchor = { x, z };
+    p.spawnAnchor = { x, z };
+    p.target = { x, z };
+    p.timer = 1;
+    p.path = null;
+    p.pathIndex = 0;
+    p.pathKey = '';
+    p.pathTimer = 0;
+    p.rig.group.position.set(x, heightAt(x, z), z);
+    p.heading = p.rng() * Math.PI * 2;
+    p.rig.group.rotation.y = p.heading;
+    p.rig.group.visible = true;
+    p.rig.mesh.visible = true;
+    p.isFar = false;
+    if (p.farTier) p.farTier.visible = false;
+    p.aim?.setLock(null);
+    return p;
   }
 
   /** A survivor with two unfed days walks out of the camp. */
@@ -506,7 +607,7 @@ export class CampFolk {
 
   damage(index, amount) {
     const p = this.people[index];
-    if (!p || p.dead) return false;
+    if (!p || !p.active || p.dead) return false;
     p.hp -= p.manning ? amount * 0.6 : amount;
     if (p.hp <= 0) {
       this.down(p);
@@ -826,7 +927,7 @@ export class CampFolk {
     p.recoil = damp(p.recoil, 0, 12, dt);
     if (p.reloadTimer > 0) {
       p.reloadTimer = Math.max(0, p.reloadTimer - dt);
-      if (p.reloadTimer === 0) p.mag = p.weapon.magazine;
+      if (p.reloadTimer === 0) this.reloadPerson(p);
     }
 
     let combatTarget = null;
@@ -869,6 +970,7 @@ export class CampFolk {
 
   update(dt, time, player, buildings = []) {
     for (const p of this.people) {
+      if (!p.active) continue;
       if (p.possessed) continue;
       if (p.manning) {
         this.updateManning(p, dt);
@@ -925,7 +1027,7 @@ export class CampFolk {
         p.recoil = damp(p.recoil, 0, 12, dt);
         if (p.reloadTimer > 0) {
           p.reloadTimer = Math.max(0, p.reloadTimer - dt);
-          if (p.reloadTimer === 0) p.mag = p.weapon.magazine;
+          if (p.reloadTimer === 0) this.reloadPerson(p);
         }
       }
 
@@ -1143,6 +1245,7 @@ export class CampFolk {
   serialize() {
     return this.people.map((p) => ({
       role: p.role,
+      active: !!p.active,
       home: p.home?.id ?? null,
       hp: Math.max(0, Math.round(p.hp)),
       dead: !!p.dead,
@@ -1161,6 +1264,7 @@ export class CampFolk {
       const s = data[i];
       if (!s) continue;
       const home = Number.isFinite(s.home) ? findBuilding?.(s.home) : null;
+      p.active = s.active !== false;
       p.home = home && home.built ? home : null;
       p.role = s.role === 'builder' ? 'builder' : (home?.def?.job?.label || home?.def?.job?.role)?.toLowerCase() || s.role || p.role;
       p.hp = Number.isFinite(s.hp) ? Math.max(1, Math.min(p.maxHp, s.hp)) : p.maxHp;
@@ -1189,8 +1293,8 @@ export class CampFolk {
         p.anchor = { x, z };
       }
       p.target = { ...p.anchor };
-      p.rig.group.visible = !p.dead;
-      p.rig.mesh.visible = !p.dead;
+      p.rig.group.visible = p.active && !p.dead;
+      p.rig.mesh.visible = p.active && !p.dead;
       if (p.farTier) p.farTier.visible = false;
       p.isFar = false;
     }
@@ -1202,11 +1306,11 @@ export class CampFolk {
     const r = 0.62;
     for (let i = 0; i < people.length; i++) {
       const a = people[i];
-      if (a.dead) continue;
+      if (!a.active || a.dead) continue;
       const pa = a.rig.group.position;
       for (let j = i + 1; j < people.length; j++) {
         const b = people[j];
-        if (b.dead) continue;
+        if (!b.active || b.dead) continue;
         const pb = b.rig.group.position;
         const dx = pb.x - pa.x;
         const dz = pb.z - pa.z;

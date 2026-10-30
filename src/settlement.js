@@ -586,6 +586,58 @@ function farmPlot() {
   return bakeBaseAO(merge(p), 0.55, 0.3);
 }
 
+function workshop() {
+  const mud = '#c9a878';
+  const mudDark = '#a98a61';
+  const stone = '#b6a184';
+  const wood = '#6b4a2e';
+  const woodDark = '#4e3522';
+  const rust = '#8a4f35';
+  const metal = '#777a78';
+  const tarp = '#7c6447';
+  const dark = '#2f2821';
+  const p = [baseDisc(2.35)];
+
+  p.push(box(3.4, 0.16, 2.9, stone, 0, 0.08, 0));
+  // Mud box with an open front bay.
+  p.push(box(3.2, 2.0, 0.2, mud, 0, 1.0, -1.2));
+  p.push(box(0.2, 2.0, 2.4, mudDark, -1.5, 1.0, 0));
+  p.push(box(0.2, 2.0, 2.4, mud, 1.5, 1.0, 0));
+  p.push(box(0.7, 1.7, 0.18, mudDark, -1.05, 0.85, 1.18));
+  p.push(box(0.7, 1.7, 0.18, mudDark, 1.05, 0.85, 1.18));
+  p.push(box(3.5, 0.1, 3.0, rust, 0, 2.12, 0, 0.04, 0, 0));
+  for (let i = -2; i <= 2; i++) p.push(box(0.1, 0.12, 3.0, woodDark, i * 0.62, 2.02, 0));
+
+  // Bench, vice, press and tool wall.
+  p.push(box(2.3, 0.14, 0.65, wood, 0.2, 0.96, 1.35));
+  for (const sx of [-0.8, 1.1]) p.push(box(0.1, 0.9, 0.1, woodDark, sx, 0.45, 1.35));
+  p.push(box(0.45, 0.22, 0.3, metal, -0.55, 1.1, 1.35, 0, 0.2, 0));
+  p.push(cyl(0.045, 0.06, 0.35, 6, metal, -0.55, 1.35, 1.35));
+  p.push(box(0.12, 0.9, 0.45, metal, 0.95, 1.5, 0.92));
+  p.push(box(0.08, 0.12, 0.3, metal, 0.95, 1.58, 1.2));
+  p.push(box(1.4, 0.08, 0.5, wood, -0.4, 1.62, -1.05));
+  for (let i = 0; i < 5; i++) p.push(box(0.05, 0.3, 0.05, i % 2 ? metal : woodDark, -0.95 + i * 0.25, 1.8, -1.0));
+
+  // Ammo crates, a powder keg and scrap stock.
+  p.push(box(0.55, 0.38, 0.42, '#6d563f', 1.05, 0.35, 1.0, 0, 0.2, 0));
+  p.push(box(0.42, 0.3, 0.36, '#85663f', 1.15, 0.72, 1.0, 0, -0.15, 0));
+  p.push(cyl(0.28, 0.32, 0.55, 8, rust, 1.05, 0.32, -0.2));
+  p.push(cyl(0.29, 0.29, 0.04, 8, '#5d3a28', 1.05, 0.6, -0.2));
+  p.push(box(0.55, 0.2, 0.4, metal, -1.05, 0.25, 1.45, 0, 0.3, 0));
+  p.push(box(0.4, 0.14, 0.3, rust, -0.7, 0.2, 1.35, 0, -0.2, 0));
+
+  // Chalk sign and a vent pipe.
+  p.push(cyl(0.04, 0.05, 1.3, 4, woodDark, 0.2, 1.55, 1.6));
+  p.push(box(0.7, 0.4, 0.05, '#d8c8a8', 0.2, 2.15, 1.62, 0, 0.05, 0));
+  p.push(box(0.4, 0.04, 0.02, '#5d4631', 0.2, 2.2, 1.66, 0, 0.05, 0));
+  p.push(box(0.3, 0.04, 0.02, '#5d4631', 0.2, 2.1, 1.66, 0, 0.05, 0));
+  p.push(cyl(0.09, 0.11, 1.0, 6, metal, -1.1, 2.35, -0.7));
+  p.push(box(1.0, 0.04, 0.7, tarp, -0.65, 2.3, 1.2, 0.15, 0, 0));
+
+  p.push(box(1.0, 0.08, 0.3, stone, 0, 0.04, 1.52));
+  return bakeBaseAO(merge(p), 0.55, 0.3);
+}
+
 export const BUILDINGS = [
   {
     id: 'barricade',
@@ -615,7 +667,7 @@ export const BUILDINGS = [
     name: 'ADOBE HOUSE',
     cost: 18,
     radius: 3.45,
-    desc: '+1 scrap / 9s.',
+    desc: '+1 scrap / 9s · +1 survivor.',
     geometry: null,
   },
   {
@@ -651,6 +703,15 @@ export const BUILDINGS = [
     radius: 3.0,
     desc: 'Assign farmers. Uses water.',
     job: { role: 'farmer', label: 'FARMER', slots: 2, radius: 3.2, post: { x: 0, z: 3.3 }, output: '1 FOOD / 7S', waterUse: '1 / 20S' },
+    geometry: null,
+  },
+  {
+    id: 'workshop',
+    name: 'WORKSHOP',
+    cost: 26,
+    radius: 2.4,
+    desc: 'Scrap into ammo.',
+    job: { role: 'artisan', label: 'ARTISAN', slots: 2, radius: 2.4, post: { x: 0, z: 2.75 } },
     geometry: null,
   },
   {
@@ -725,6 +786,7 @@ const GEO_BUILDERS = {
   scavenger: scavengerHut,
   well: wellWheel,
   farm: farmPlot,
+  workshop,
   solar: solarArray,
   pole: powerPole,
   battery: batteryBank,
@@ -1009,6 +1071,7 @@ export class Settlement {
       cooldown: Math.random() * 0.5,
       phase: Math.random() * 6.28,
       manned: null,
+      recipe: def.id === 'workshop' ? 'pistol' : null,
       flame: null,
       glow: null,
     };
@@ -1264,6 +1327,7 @@ export class Settlement {
         );
         building.charge = Number.isFinite(item.charge) ? item.charge : 0;
         if (Number.isFinite(item.hp)) building.hp = Math.max(0, Math.min(building.maxHp, item.hp));
+        if (def.id === 'workshop') building.recipe = item.recipe || 'pistol';
       }
     }
     this.syncStorage();
@@ -1280,6 +1344,7 @@ export class Settlement {
         built: b.built !== false,
         buildProgress: b.buildProgress ?? 1,
         hp: b.hp,
+        recipe: b.recipe || null,
       })),
       prodTimer: this.prodTimer,
       houseTimer: this.houseTimer,

@@ -1,3 +1,5 @@
+import { RECIPES, recipeCap, recipeStock, nextRecipe } from './recipes.js';
+
 /**
  * The floating building card.
  *
@@ -139,6 +141,10 @@ export class BuildingCard {
 
     const job = def.job || null;
     const workers = job && built ? this.campFolk.workersOf(b) : [];
+    const recipe = def.id === 'workshop' ? RECIPES[b.recipe || 'pistol'] : null;
+    const craftCheck = recipe ? this.campFolk.canCraft?.(recipe.id) : null;
+    const craftStock = recipe ? recipeStock(this.state, recipe) : 0;
+    const craftCap = recipe ? recipeCap(recipe) : 0;
     const scrapFull = this.state.scrap >= (this.state.scrapCap || 80);
     const waterFull = this.state.water >= (this.state.waterCap || 80);
     const foodFull = this.state.food >= (this.state.foodCap || 80);
@@ -195,12 +201,24 @@ export class BuildingCard {
         rows.push({ label: 'WATER USE', value: job.waterUse });
         rows.push({ label: 'WATER', value: `${this.state.water} / ${this.state.waterCap || 0}` });
         rows.push({ label: 'FOOD', value: `${this.state.food} / ${this.state.foodCap || 0}` });
+      } else if (def.id === 'workshop' && recipe) {
+        rows.push({ label: 'RECIPE', value: recipe.label });
+        rows.push({ label: 'OUTPUT', value: `${recipe.amount} ${recipe.unit}` });
+        rows.push({ label: 'COST', value: `${recipe.scrap} SCRAP` });
+        rows.push({ label: 'STOCK', value: `${craftStock} / ${craftCap}` });
       }
       rows.push({ label: 'WORKERS', value: `${workers.length} / ${job.slots}` });
       const attention = workers.find((p) => p.attention)?.attention;
-      const full = def.id === 'well' ? waterFull : def.id === 'farm' ? foodFull : scrapFull;
+      const full =
+        def.id === 'well'
+          ? waterFull
+          : def.id === 'farm'
+            ? foodFull
+            : def.id === 'workshop'
+              ? false
+              : scrapFull;
       if (!workers.length) {
-        note = `NO WORKER · ASSIGN A ${job.label}`;
+        note = `NO WORKER · ASSIGN ${job.role === 'artisan' ? 'AN' : 'A'} ${job.label}`;
         noteBad = true;
       } else if (full) {
         note = def.id === 'well' ? 'WATER STORE FULL' : def.id === 'farm' ? 'FOOD STORE FULL' : 'STORAGE FULL · SPEND SCRAP BEFORE HAULING';
@@ -214,8 +232,23 @@ export class BuildingCard {
       } else if (def.id === 'scavenger' && piles === 0) {
         note = `NO SCRAP PILES WITHIN ${job.radius}M`;
         noteBad = true;
+      } else if (def.id === 'workshop' && craftCheck && !craftCheck.ok) {
+        note =
+          craftCheck.reason === 'NO SCRAP'
+            ? 'NO SCRAP · SEND SCAVENGERS'
+            : craftCheck.reason === 'STORAGE FULL'
+              ? 'STOCK FULL · USE AMMO OR SWITCH RECIPE'
+              : craftCheck.reason;
+        noteBad = true;
       } else {
-        note = def.id === 'well' ? 'DRAWING WATER' : def.id === 'farm' ? 'TENDING THE PLOT' : `GATHERING WITHIN ${job.radius}M`;
+        note =
+          def.id === 'well'
+            ? 'DRAWING WATER'
+            : def.id === 'farm'
+              ? 'TENDING THE PLOT'
+              : def.id === 'workshop' && recipe
+                ? `CRAFTING ${recipe.label}`
+                : `GATHERING WITHIN ${job.radius}M`;
       }
     } else if (def.id === 'turret') {
       const targets = b._targets || 0;
@@ -259,6 +292,9 @@ export class BuildingCard {
       if (def.id === 'tower') {
         actions.push({ id: 'man', label: gunner ? 'RELEASE' : 'ASSIGN', kind: gunner ? 'ghost' : 'primary' });
       }
+      if (def.id === 'workshop') {
+        actions.push({ id: 'recipe', label: 'NEXT RECIPE', kind: 'ghost' });
+      }
       if (b.hp < b.maxHp) {
         actions.push({ id: 'repair', label: 'REPAIR', kind: 'ghost' });
       }
@@ -284,6 +320,10 @@ export class BuildingCard {
                     : noWater
                       ? 'NO WATER'
                       : workers.find((p) => p.attention)?.attention || 'WORKING'
+                  : def.id === 'workshop'
+                    ? !craftCheck || craftCheck.ok
+                      ? workers.find((p) => p.attention)?.attention || 'WORKING'
+                      : craftCheck.reason
                   : scrapFull
                     ? 'STORAGE FULL'
                     : workers.find((p) => p.attention)?.attention || 'WORKING'
@@ -358,6 +398,13 @@ export class BuildingCard {
   action(id) {
     const b = this.building;
     if (!b || !this.commander) return;
+    if (id === 'recipe' && b.def.id === 'workshop') {
+      b.recipe = nextRecipe(b.recipe || 'pistol');
+      this.ui.toast(`RECIPE · ${RECIPES[b.recipe].label}`);
+      this.refresh(true);
+      this.onSave();
+      return;
+    }
     if (id === 'link') {
       if (this.wire?.start(b)) this.close();
       return;

@@ -2260,3 +2260,12 @@ body.build-open .building-card {
     font-size: 7px;
   }
 }
+
+/* Read-only stock rows in the armory. */
+.wardrobe-row.static {
+  cursor: default;
+}
+
+.wardrobe-row.static .buy {
+  color: var(--dim);
+}

@@ -56,6 +56,7 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Release a workplace slot | tap the filled slot | same |
 | Set / clear the builder role | survivor card → `MAKE BUILDER` / `RELEASE BUILDER` | same |
 | Build a site | site card → `BUILD` | same |
+| Cycle a workshop recipe | workshop card → `NEXT RECIPE` | same |
 | Man the guard post | post card → `ASSIGN` | same |
 | Release the guard post | post card → `RELEASE` | same |
 | Repair a structure | damaged building's card → `REPAIR` | same |
@@ -107,7 +108,8 @@ reliable way to select a unit when the camp is crowded.
 4. A **Rain Catcher** (12) adds **+1 water / 6 s** passively. Build a **Well Wheel** (20) and assign
    a water carrier for **+1 water / 4 s**, and a **Farm** (24) with farmers for **+1 food / 7 s**
    (each farmer uses **1 water / 20 s**). The camp eats and drinks at dawn.
-   An **Adobe House** (18) sends out scavengers for **+1 scrap / 9 s**.
+   An **Adobe House** (18) sends out scavengers for **+1 scrap / 9 s** and raises the survivor cap by
+   one.
 5. Build a **Vickers** (26) and power it: it shreds ghouls but cannot identify humans, so raiders
    walk past it. Build a **Guard post** (20) and assign an armed survivor to it for the human raids.
 6. Ghouls arrive after a grace period, drop **2 scrap**, and get denser over time. Death costs 20% of
@@ -166,7 +168,7 @@ The graph keeps the last ~45 seconds.
   albedo + normal set; houses use plaster detail and baked base AO.
 - **Continue a run** — seed + player state + equipment + buildings + scrap + ammo/magazines + weapon
   upgrades + production timers + power links + construction sites + survivor roles/workplaces are
-  auto-saved to localStorage (schema `v: 5`; runs from `v: 1`–`v: 4` migrate in place). Reload shows
+  auto-saved to localStorage (schema `v: 6`; runs from `v: 1`–`v: 5` migrate in place). Reload shows
   **CONTINUE**; **NEW RUN** clears the save, and PERF has **RESET SAVE**.
 - **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
   ring and contextual orders: tap an enemy to engage, a scrap pile to gather/haul, or the ground to
@@ -199,6 +201,14 @@ The graph keeps the last ~45 seconds.
   and two consecutive unfed dawns make them **leave camp**. The HUD shows `water/cap` and
   `food/cap`, and a dawn line reports survivors and stores. The Rain Catcher remains the passive
   early source. Water and food are stored in the same warehouse capacity as scrap.
+- **Workshop, ammo and recruitment (Phase 5c)** — the **Workshop** has two artisan slots and cycles
+  recipes from its card: pistol rounds, rifle rounds, shells or components. It draws scrap from the
+  shared store and fills the same per-calibre ammo pools the armory uses; the armory no longer sells
+  ammo, it only shows stock and the upgrade tracks. Player and survivor reloads both draw from the
+  shared pool, so guns can run dry. The HUD/workshop card shows the selected recipe, output, cost and
+  stock; `NEXT RECIPE` cycles it. A **house** raises the survivor cap by one (base 3, max 6). At
+  dawn, a camp with at least **2 spare food and water per survivor** and a free slot recruits a new
+  survivor every **2–3 days**; recruits arrive as free scavengers.
 - **Raids, damage and repair (Phase 4b)** — raids now alternate by time of day: **raiders by day,
   ghouls by night**, with the banner showing which. Raiders are on a mission: they walk to the nearest
   **warehouse or power building**, shoot it, and only break off for a unit within 14 m. Structures
@@ -264,15 +274,17 @@ The graph keeps the last ~45 seconds.
   blade/club. There are no automatic player weapons yet.
 - **Ammo and upgrades** — a finite reserve per caliber (rifle rounds, pistol rounds, shells) is
   carried in the save; every gun keeps the magazine you left in it, and reloading draws from the
-  reserve. The **ARMORY** section of the outfit panel spends scrap on ammo packs and on four
-  per-weapon tracks (**damage, rate, reload, spread**, 2–3 tiers each). Tracks are data-driven
-  multipliers over the base weapon spec, so variants and new weapons are config, not code.
+  shared reserve. The **workshop is the only ammo source**: it converts scrap into rounds, shells or
+  components, and the **ARMORY** section of the outfit panel now shows stock and the four per-weapon
+  upgrade tracks (**damage, rate, reload, spread**, 2–3 tiers each) without a buy button. Survivors
+  also reload from the shared pool, so an unstaffed workshop can leave the guard dry. Tracks are
+  data-driven multipliers over the base weapon spec, so variants and weapons are config, not code.
   `?armory=1` opens the panel for testing.
 - **Pinch or the mouse wheel zooms 0.8–2.2×.**
 
 - **Settlement structures** — barricade, campfire, rain catcher, adobe house, warehouse, scavenger
-  hut, well wheel, farm, solar array, power pole, battery bank, yard light, Vickers turret, guard
-  post and chapel. Generated geometry, ghost placement, costs, production, jobs, healing and the
+  hut, well wheel, farm, workshop, solar array, power pole, battery bank, yard light, Vickers
+  turret, guard post and chapel. Generated geometry, ghost placement, costs, production, jobs, healing and the
   power grid. The Adobe House is assembled from a modular kit (facade bays, roof, parapet, porch,
   rooftop clutter) and gets a seeded variant per placement; the rest stay hand-authored parametric
   shells built from the mud/scrap kit.
@@ -405,13 +417,13 @@ language.
   old-world ruins; salvaged tech on camp-made mounts.
 - **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
 
-**Phases 1–5b are in:** buildings are placed anywhere in the camp and built by units; the floating
+**Phases 1–5c are in:** buildings are placed anywhere in the camp and built by units; the floating
 building card, manual wire dragging with pole ports and the 360° turret fix are shipped; raids
 alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid;
 the world is a 180 m disc with spread-out scatter and clearance-aware navigation that reports
-`NO PATH`; the builder role, Scavenger Hut, Well Wheel, Farm, daily needs and saved roles are live.
-The next slice is **Phase 5c** — Workshop-only ammo/components, recruitment and roles derived from
-workplaces.
+`NO PATH`; the builder role, Scavenger Hut, Well Wheel, Farm, Workshop, daily needs, ammo crafting,
+recruitment and saved roles are live. The next slice is **Phase 6** — the relay objective and a
+complete win/lose run.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgotten work.
@@ -424,8 +436,8 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
 - Command mode, the warehouse, the power chain and defences are first slices. Manual LINK mode is in;
   auto-link on completion is only a fallback. There is no occlusion, and turret belts reload
   themselves.
-- The turret card reports power, belt, targets and line of sight, but the turret still has no
-  assigned gunner or ammo economy; it reloads its own 250-round belt.
+- The turret card reports power, belt, targets and line of sight, but the turret still reloads its
+  own 250-round belt; it does not draw from the workshop like a survivor's gun.
 - Survivor roles, needs, positions and workplace assignments are saved. Guard-post manning, turret
   belts, the selected building and active wire mode are not; reload leaves posts idle.
 - Building HP is saved and repair works, but repair is free and there is no engineer role yet.
@@ -436,15 +448,17 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
 - Construction cannot be cancelled or refunded yet, and a wire cannot be removed (destroying an
   endpoint still removes its wires).
 - A site with no free builder waits; the free builder role picks up the queue automatically, but
-  there is no reorder/priority for multiple sites beyond oldest-first. The Scavenger Hut, Well Wheel
-  and Farm are live; the Workshop is Phase 5c, and there is no recruitment or morale system yet.
+  there is no reorder/priority for multiple sites beyond oldest-first. The Scavenger Hut, Well Wheel,
+  Farm and Workshop are live; morale is still Phase 6/8.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question. The expanded world adds
   terrain vertices and more instances; adaptive resolution is the current safety valve.
 - Circle collisions over a 1 m A* grid. Dense wreckage can still wedge a unit briefly, but it now
   replans and reports `NO PATH` instead of grinding forever.
-- Needs tick at dawn only; there is no continuous hunger drain, morale system or recruitment yet
-  (Phase 5c).
+- Needs tick at dawn only; there is no continuous hunger drain or morale system yet (Phase 6/8).
+- Recruitment needs a house and 2 spare days of food/water; there is no recruitment UI beyond the
+  dawn notice, and no way to dismiss a survivor.
+- Workshop recipes run while staffed; there is no production queue or per-artisan assignment.
 - No building removal or rotation; weapon upgrades exist but there is no settlement tech tree.
 - Ghouls, hostile rifle raiders and the camp guard only; pistol, pipe rifle and sawn-off.
 - Procedural low-poly art, not production art. Six recorded gunshot layers are the only assets.

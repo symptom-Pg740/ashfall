@@ -662,7 +662,7 @@ export class UI {
     this.buildArmory(armory, armory?.scrap ?? 0);
   }
 
-  /** Ammo reserve and per-weapon upgrade tracks; both spend scrap. */
+  /** Ammo stock (filled at the workshop) and per-weapon upgrade tracks. */
   buildArmory(view, scrap = 0) {
     if (!this.el.armory) return;
     this.el.armory.classList.toggle('hidden', !view);
@@ -673,23 +673,16 @@ export class UI {
     if (this.el.armoryAmmo) {
       this.el.armoryAmmo.innerHTML = '';
       if (view.ammo) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = 'wardrobe-row ammo-row';
-        row.disabled = view.ammo.full || !view.ammo.affordable;
+        const row = document.createElement('div');
+        row.className = 'wardrobe-row ammo-row static';
         const label = document.createElement('small');
         label.textContent = view.ammo.label;
         const value = document.createElement('b');
         value.textContent = `${view.reserve} / ${view.ammo.max}`;
-        const cost = document.createElement('span');
-        cost.className = 'buy';
-        cost.textContent = view.ammo.full ? 'FULL' : `+${view.ammo.pack} · ${view.ammo.cost}`;
-        row.append(label, value, cost);
-        row.addEventListener('pointerdown', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.cb.armoryAmmo?.();
-        });
+        const source = document.createElement('span');
+        source.className = 'buy';
+        source.textContent = 'WORKSHOP';
+        row.append(label, value, source);
         this.el.armoryAmmo.appendChild(row);
       }
     }

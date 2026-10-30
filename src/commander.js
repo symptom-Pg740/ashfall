@@ -100,7 +100,7 @@ export class Commander {
   }
 
   units() {
-    return [this.leaderUnit, ...this.campFolk.people];
+    return [this.leaderUnit, ...this.campFolk.people.filter((p) => p.active)];
   }
 
   keyOf(unit) {
