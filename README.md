@@ -52,6 +52,9 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Order | with a unit selected, tap enemy / scrap / ground | click the target |
 | Take / release control | `TAKE CONTROL` / `RELEASE` | same buttons |
 | Open a structure card | tap any building | click the building |
+| Assign a workplace slot | tap the hut's `SCAVENGER · ASSIGN` slot with a survivor selected | same |
+| Release a workplace slot | tap the filled slot | same |
+| Set / clear the builder role | survivor card → `MAKE BUILDER` / `RELEASE BUILDER` | same |
 | Build a site | site card → `BUILD` | same |
 | Man the watchtower | tower card → `ASSIGN` | same |
 | Release the tower | tower card → `RELEASE` | same |
@@ -160,9 +163,9 @@ The graph keeps the last ~45 seconds.
   slope, moisture and roads; grass and shrubs sway in a vertex shader. Rocks use a cracked-rock
   albedo + normal set; houses use plaster detail and baked base AO.
 - **Continue a run** — seed + player state + equipment + buildings + scrap + ammo/magazines + weapon
-  upgrades + production timers + power links + construction sites are auto-saved to localStorage
-  (schema `v: 4`; runs from `v: 1`–`v: 3` migrate in place). Reload shows **CONTINUE**; **NEW RUN**
-  clears the save, and PERF has **RESET SAVE**.
+  upgrades + production timers + power links + construction sites + survivor roles/workplaces are
+  auto-saved to localStorage (schema `v: 5`; runs from `v: 1`–`v: 4` migrate in place). Reload shows
+  **CONTINUE**; **NEW RUN** clears the save, and PERF has **RESET SAVE**.
 - **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
   ring and contextual orders: tap an enemy to engage, a scrap pile to gather/haul, or the ground to
   move. `TAKE CONTROL` possesses any survivor (joystick, camera follow, that unit's weapon and HP);
@@ -172,12 +175,21 @@ The graph keeps the last ~45 seconds.
   and wait at the door when it is full. The HUD shows `stored/capacity`, and the build costs are the
   sink.
 - **Construction jobs** — a placed structure is a **site**, not an instant building: a pad, scaffold
-  and progress bar. Tapping the site opens its **building card**, which shows the progress and lets
-  you press **BUILD** (the nearest free survivor is still auto-assigned on placement as a
-  transition). The builder walks there with the nav grid and finishes it over time. The real model
-  only appears and becomes active on completion; storage, power, production, healing and defence
-  ignore unfinished sites. Placement is **anywhere in the camp** — pan the camera first, then choose
-  a structure; it is no longer tied to the player's position.
+  and progress bar. A survivor with the free **builder** role takes the oldest unclaimed site and
+  finishes it; no random auto-assign happens on placement. Tapping the site opens its **building
+  card**, which shows the progress and lets you press **BUILD** to override the queue and send a
+  specific survivor. The builder walks there with the nav grid and finishes it over time. The real
+  model only appears and becomes active on completion; storage, power, production, healing and
+  defence ignore unfinished sites. Placement is **anywhere in the camp** — pan the camera first,
+  then choose a structure; it is no longer tied to the player's position.
+- **Workplaces and the free builder role (Phase 5a)** — a survivor's role is set from the unit card:
+  `MAKE BUILDER` turns them into a free builder who automatically takes the oldest construction site
+  (no more random auto-assign on placement), and `RELEASE BUILDER` / `RELEASE POST` returns them to
+  guard/scavenger duty. The **Scavenger Hut** has two job slots: tap a slot, then the selected/nearest
+  survivor, and they loop nearest scrap pile → harvest → haul to the warehouse, then pick the next
+  pile within 26 m. They wait and report `NO NODES` or `STORAGE FULL` instead of wandering. Manual
+  orders pause the loop; when the order ends the worker returns to their post. Roles and assignments
+  are saved with the run.
 - **Raids, damage and repair (Phase 4b)** — raids now alternate by time of day: **raiders by day,
   ghouls by night**, with the banner showing which. Raiders are on a mission: they walk to the nearest
   **warehouse or power building**, shoot it, and only break off for a unit within 14 m. Structures
@@ -379,11 +391,12 @@ language.
   old-world ruins; salvaged tech on camp-made mounts.
 - **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
 
-**Phases 1–4d are in:** buildings are placed anywhere in the camp and built by units; the floating
+**Phases 1–5a are in:** buildings are placed anywhere in the camp and built by units; the floating
 building card, manual wire dragging with pole ports and the 360° turret fix are shipped; raids
 alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid;
-the world is now a 180 m disc with spread-out scatter and clearance-aware navigation that reports
-`NO PATH`. The next slice is **Phase 5** — workplaces, needs and the workshop ammo economy.
+the world is a 180 m disc with spread-out scatter and clearance-aware navigation that reports
+`NO PATH`; and the first workplaces are live (free builder role, Scavenger Hut, assignment, saved
+roles). The next slice is **Phase 5b** — Well Wheel, Farm, daily water/food upkeep and morale.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgotten work.
@@ -398,8 +411,8 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
   themselves.
 - The turret card reports power, belt, targets and line of sight, but the turret still has no
   assigned gunner or ammo economy; it reloads its own 250-round belt.
-- Tower manning, turret belts, the selected building and active wire mode are not saved; reload
-  leaves towers idle, and construction sites keep their progress but need a new builder.
+- Survivor roles and workplace assignments are saved. Tower manning, turret belts, the selected
+  building and active wire mode are not; reload leaves towers idle.
 - Building HP is saved and repair works, but repair is free and there is no engineer role yet.
 - Ghouls target living things only and never damage buildings; mixed raider/ghoul assaults are not
   implemented.
@@ -407,8 +420,9 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
   large detours cost a short A* search. The debug overlay and `NO PATH` report make this visible.
 - Construction cannot be cancelled or refunded yet, and a wire cannot be removed (destroying an
   endpoint still removes its wires).
-- A site with no free survivor waits; there is no job queue or auto-reassign after a reload. The
-  auto-assign on placement is transitional until the free builder role (Phase 5).
+- A site with no free builder waits; the free builder role picks up the queue automatically, but
+  there is no reorder/priority for multiple sites beyond oldest-first. The Scavenger Hut is the only
+  workplace so far (Well Wheel, Farm and Workshop are Phase 5b/5c).
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question. The expanded world adds
   terrain vertices and more instances; adaptive resolution is the current safety valve.

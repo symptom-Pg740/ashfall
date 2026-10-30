@@ -9,11 +9,12 @@
  * for units, enemies, resources and movement, so the player is never surprised by a wall.
  */
 export class BuildingCard {
-  constructor({ ui, settlement, power, campFolk, state, getSelected, screenOf, onSave }) {
+  constructor({ ui, settlement, power, campFolk, scrapField, state, getSelected, screenOf, onSave }) {
     this.ui = ui;
     this.settlement = settlement;
     this.power = power;
     this.campFolk = campFolk;
+    this.scrapField = scrapField;
     this.state = state;
     this.getSelected = getSelected || (() => null);
     this.screenOf = screenOf;
@@ -136,6 +137,22 @@ export class BuildingCard {
     const repairer = people.find((p) => p.job?.type === 'repair') || null;
     const gunner = b.manned || null;
 
+    const job = def.job || null;
+    const workers = job && built ? this.campFolk.workersOf(b) : [];
+    const storageFull = this.state.scrap >= (this.state.scrapCap || 80);
+    const slots = [];
+    let piles = 0;
+    if (job && built) {
+      for (let i = 0; i < job.slots; i++) {
+        slots.push({ index: i, role: job.label, name: workers[i]?.name || null });
+      }
+      if (def.id === 'scavenger' && this.scrapField) {
+        for (const node of this.scrapField.nodes) {
+          if (node.active && Math.hypot(node.x - b.x, node.z - b.z) <= job.radius) piles++;
+        }
+      }
+    }
+
     let powerText = null;
     let ports = 0;
     let maxPorts = 0;
@@ -163,6 +180,26 @@ export class BuildingCard {
         ? `${builder.name} IS BUILDING THIS SITE`
         : 'NO BUILDER ASSIGNED · SET A SURVIVOR TO BUILDER OR PRESS BUILD';
       noteBad = !builder;
+    } else if (job) {
+      rows.push({ label: 'AREA', value: `${job.radius}M` });
+      if (def.id === 'scavenger') rows.push({ label: 'PILES', value: `${piles} IN AREA` });
+      rows.push({ label: 'WORKERS', value: `${workers.length} / ${job.slots}` });
+      const attention = workers.find((p) => p.attention)?.attention;
+      if (!workers.length) {
+        note = `NO WORKER · ASSIGN A ${job.label} TO RUN THIS HUT`;
+        noteBad = true;
+      } else if (storageFull) {
+        note = 'STORAGE FULL · SPEND SCRAP BEFORE HAULING';
+        noteBad = true;
+      } else if (attention) {
+        note = attention;
+        noteBad = true;
+      } else if (def.id === 'scavenger' && piles === 0) {
+        note = `NO SCRAP PILES WITHIN ${job.radius}M`;
+        noteBad = true;
+      } else {
+        note = `GATHERING WITHIN ${job.radius}M`;
+      }
     } else if (def.id === 'turret') {
       const targets = b._targets || 0;
       rows.push({ label: 'TARGETS', value: 'GHOULS ONLY' });
@@ -213,17 +250,82 @@ export class BuildingCard {
     return {
       kind: def.id,
       name: def.name,
-      state: !built ? 'CONSTRUCTION SITE' : b.hp < b.maxHp ? 'DAMAGED' : 'BUILT',
+      state: !built
+        ? 'CONSTRUCTION SITE'
+        : b.hp < b.maxHp
+          ? 'DAMAGED'
+          : job
+            ? !workers.length
+              ? 'NO WORKER'
+              : storageFull
+                ? 'STORAGE FULL'
+                : workers.find((p) => p.attention)?.attention || 'WORKING'
+            : 'BUILT',
       hp: Math.max(0, Math.round(b.hp)),
       maxHp: Math.round(b.maxHp),
       hpPct: Math.max(0, Math.min(100, (b.hp / b.maxHp) * 100)),
       progress: built ? null : pct,
       power: powerText,
+      slots,
       rows,
       note,
       noteBad,
       actions,
     };
+  }
+
+  /** Tap a job slot: assign the selected/nearest survivor, or release the worker in it. */
+  slot(index) {
+    const b = this.building;
+    if (!b || !b.def?.job || !b.built) return;
+    if (index < 0 || index >= b.def.job.slots) return;
+    const workers = this.campFolk.workersOf(b);
+    if (workers[index]) {
+      const worker = workers[index];
+      this.campFolk.releaseWorkplace(worker);
+      this.ui.toast(`${worker.name} RELEASED`);
+      this.refresh(true);
+      this.onSave();
+      return;
+    }
+    const unit = this.pickWorker();
+    if (!unit) {
+      this.ui.toast('NO FREE SURVIVOR', true);
+      return;
+    }
+    if (!this.campFolk.assignWorkplace(unit, b)) {
+      this.ui.toast(`${b.def.name} IS FULL`, true);
+      return;
+    }
+    this.ui.toast(`${unit.name} → ${b.def.name}`);
+    this.refresh(true);
+    this.onSave();
+  }
+
+  /** Selected survivor first, then the nearest unemployed survivor. */
+  pickWorker() {
+    const sel = this.getSelected();
+    if (sel && !sel.isLeader && !sel.dead && !sel.possessed && !sel.manning) return sel;
+    let best = null;
+    let bestD = Infinity;
+    for (const p of this.campFolk.people) {
+      if (p.dead || p.possessed || p.manning || p.home || p.job) continue;
+      if (p.role === 'builder') continue;
+      const d = Math.hypot(
+        p.rig.group.position.x - this.building.x,
+        p.rig.group.position.z - this.building.z,
+      );
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    if (best) return best;
+    for (const p of this.campFolk.people) {
+      if (p.dead || p.possessed || p.manning || p.home || p.job) continue;
+      return p;
+    }
+    return null;
   }
 
   action(id) {

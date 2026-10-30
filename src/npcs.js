@@ -20,6 +20,11 @@ export class CampFolk {
     this.onScrap = null;
     this.onBuildComplete = null;
     this.onBuildingRepaired = null;
+    this.onWorkAssigned = null;
+    this.onWorkReleased = null;
+    this.onRoleChanged = null;
+    this.onBuilderAssigned = null;
+    this.isStorageFull = null;
     this.scrapField = options.scrapField || null;
     this.dropPoint = options.dropPoint || null;
     this.obstacles = options.obstacles || [];
@@ -71,19 +76,22 @@ export class CampFolk {
       }
 
       const weapon = armed ? WEAPONS.pistol : null;
+      const builder = style === 'skinned' && i === 2;
       this.people.push({
         name: NAMES[i % NAMES.length],
         rig,
         farTier,
         isFar: false,
         rng,
-        home: { x, z },
+        anchor: { x, z },
+        spawnAnchor: { x, z },
         target: { x, z },
+        home: null,
         timer: rng.range(0.5, 3),
         speed: rng.range(1.9, 2.5),
         heading: rig.group.rotation.y,
         phase: rng() * 6.28,
-        role: armed ? 'guard' : 'scavenger',
+        role: builder ? 'builder' : armed ? 'guard' : 'scavenger',
         armed,
         weapon,
         job: null,
@@ -153,6 +161,176 @@ export class CampFolk {
     person.aim?.setLock(null);
   }
 
+  // -------------------------------------------------------------------------
+  // workplaces and the free builder role
+  // -------------------------------------------------------------------------
+
+  workersOf(building) {
+    if (!building) return [];
+    return this.people.filter((p) => p.home === building && !p.dead);
+  }
+
+  /** Put a survivor on a building's job slot. Clears any builder role and manual job. */
+  assignWorkplace(person, building) {
+    const job = building?.def?.job;
+    if (!person || person.dead || !job || !building.built || building.destroyed) return false;
+    if (person.home !== building && this.workersOf(building).length >= job.slots) return false;
+    if (person.manning) this.releaseTower(person);
+    person.home = building;
+    person.role = job.role;
+    person.job = null;
+    person.carry = 0;
+    person.attention = null;
+    person.path = null;
+    person.pathIndex = 0;
+    person.pathKey = '';
+    person.pathTimer = 0;
+    person.pathFail = 0;
+    person.anchor = { x: building.x + 1.5, z: building.z + 1.5 };
+    person.target = { ...person.anchor };
+    person.timer = 0.5;
+    person.aim?.setLock(null);
+    this.onWorkAssigned?.(person, building);
+    return true;
+  }
+
+  /** Clear a workplace assignment; the survivor keeps any builder role only if they had one. */
+  releaseWorkplace(person, quiet = false) {
+    if (!person?.home) return false;
+    const building = person.home;
+    person.home = null;
+    person.job = null;
+    person.carry = 0;
+    person.attention = null;
+    person.path = null;
+    person.pathIndex = 0;
+    person.pathKey = '';
+    person.pathTimer = 0;
+    person.pathFail = 0;
+    if (person.role !== 'builder') person.role = person.armed ? 'guard' : 'scavenger';
+    person.anchor = { ...person.spawnAnchor };
+    person.target = { ...person.anchor };
+    person.aim?.setLock(null);
+    if (!quiet) this.onWorkReleased?.(person, building);
+    return true;
+  }
+
+  /** Make a survivor a free builder, or return them to guard/scavenger duty. */
+  setBuilder(person, on) {
+    if (!person || person.dead) return false;
+    if (on) {
+      if (person.home) this.releaseWorkplace(person, true);
+      if (person.manning) this.releaseTower(person);
+      person.job = null;
+      person.carry = 0;
+      person.attention = null;
+      person.path = null;
+      person.pathIndex = 0;
+      person.pathKey = '';
+      person.pathTimer = 0;
+      person.role = 'builder';
+      person.target = { ...person.anchor };
+      person.aim?.setLock(null);
+      this.onRoleChanged?.(person, 'builder');
+    } else {
+      if (person.role !== 'builder') return false;
+      person.role = person.armed ? 'guard' : 'scavenger';
+      person.attention = null;
+      this.onRoleChanged?.(person, person.role);
+    }
+    return true;
+  }
+
+  /** Unit-card role button: release a post, release the builder role, or become a builder. */
+  toggleRole(person) {
+    if (!person || person.dead) return false;
+    if (person.home) return this.releaseWorkplace(person);
+    if (person.role === 'builder') return this.setBuilder(person, false);
+    return this.setBuilder(person, true);
+  }
+
+  /** The nearest active, unclaimed scrap pile within a workplace's work radius. */
+  nearestNode(building, radius, person = null) {
+    if (!this.scrapField || !building) return -1;
+    let best = -1;
+    let bestD = radius * radius;
+    const nodes = this.scrapField.nodes;
+    const now = performance.now();
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!n.active) continue;
+      if (n.blockedUntil && now < n.blockedUntil) continue;
+      const owner = n.claimedBy;
+      if (owner && owner !== person && !owner.dead && owner.job?.type === 'gather' && owner.job.node === i) {
+        continue;
+      }
+      const dx = n.x - building.x;
+      const dz = n.z - building.z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** Ran once per update while the survivor has no manual job. */
+  runWorkLoop(person, time, buildings = []) {
+    if (person.dead) return;
+    if (person.role === 'builder') {
+      this.builderLoop(person, buildings);
+      return;
+    }
+    const b = person.home;
+    if (!b) return;
+    const job = b.def?.job;
+    if (!b.built || b.destroyed || !job) {
+      this.releaseWorkplace(person, true);
+      return;
+    }
+    if (job.role === 'scavenger') this.scavengerLoop(person, b, job, time);
+  }
+
+  scavengerLoop(person, building, job, time) {
+    if (this.isStorageFull?.()) {
+      person.attention = 'STORAGE FULL';
+      return;
+    }
+    const node = this.nearestNode(building, job.radius, person);
+    if (node < 0) {
+      person.attention = 'NO NODES';
+      return;
+    }
+    person.attention = null;
+    const pile = this.scrapField?.nodes[node];
+    if (pile) pile.claimedBy = person;
+    this.issueJob(person, { type: 'gather', node, phase: 'toNode', timer: 0, work: true });
+  }
+
+  /** Free builders take the oldest unclaimed construction site, then the next. */
+  builderLoop(person, buildings = []) {
+    let site = null;
+    const now = performance.now();
+    for (const b of buildings) {
+      if (!b || b.built || b.destroyed) continue;
+      if (b.workBlockedUntil && now < b.workBlockedUntil) continue;
+      const claimed = this.people.some(
+        (q) => !q.dead && q.job?.type === 'build' && q.job.building === b,
+      );
+      if (!claimed) {
+        site = b;
+        break;
+      }
+    }
+    if (!site) {
+      return;
+    }
+    person.attention = null;
+    this.issueJob(person, { type: 'build', building: site });
+    this.onBuilderAssigned?.(person, site);
+  }
+
   /** A job could not be reached: stop, report on the unit card, and do not beeline into scenery. */
   failJob(person, reason = 'NO PATH') {
     if (!person) return false;
@@ -168,6 +346,13 @@ export class CampFolk {
     person.attention = reason;
     person.holdTimer = 3;
     person.aim?.setLock(null);
+    // Do not immediately re-issue the same unreachable target every frame.
+    if (job?.type === 'build' && job.building) {
+      job.building.workBlockedUntil = performance.now() + 15000;
+    } else if (job?.type === 'gather') {
+      const node = this.scrapField?.nodes[job.node];
+      if (node) node.blockedUntil = performance.now() + 10000;
+    }
     this.onNoPath?.(person, job, reason);
     return true;
   }
@@ -180,6 +365,8 @@ export class CampFolk {
     person.carry = 0;
     person.job = null;
     person.attention = null;
+    person.home = null;
+    if (person.role !== 'builder') person.role = person.armed ? 'guard' : 'scavenger';
     if (person.manning) {
       person.manning.manned = null;
       person.manning = null;
@@ -601,7 +788,7 @@ export class CampFolk {
           p.attention = null;
           p.carry = 0;
           p.aim?.setLock(null);
-          pos.set(p.home.x, heightAt(p.home.x, p.home.z), p.home.z);
+          pos.set(p.anchor.x, heightAt(p.anchor.x, p.anchor.z), p.anchor.z);
           p.rig.group.visible = true;
           p.rig.mesh.visible = true;
           if (p.farTier) p.farTier.visible = false;
@@ -617,6 +804,10 @@ export class CampFolk {
         }
         continue;
       }
+
+      // Workplaces run only when there is no manual job. A manual order is the override; when it
+      // finishes, this loop resumes automatically.
+      if (!p.job) this.runWorkLoop(p, time, buildings);
 
       if (p.armed) {
         p.cooldown = Math.max(0, p.cooldown - dt);
@@ -750,8 +941,8 @@ export class CampFolk {
             for (let tries = 0; tries < 10; tries++) {
               const a = p.rng() * Math.PI * 2;
               const r = p.rng() * 3.2;
-              const tx = p.home.x + Math.cos(a) * r;
-              const tz = p.home.z + Math.sin(a) * r;
+              const tx = p.anchor.x + Math.cos(a) * r;
+              const tz = p.anchor.z + Math.sin(a) * r;
               let blocked = false;
               for (const b of buildings) {
                 if (Math.hypot(b.x - tx, b.z - tz) < b.radius + 0.6) {
@@ -835,6 +1026,56 @@ export class CampFolk {
     }
 
     this.separateUnits();
+  }
+
+  /** Workplace assignments and roles for the save. */
+  serialize() {
+    return this.people.map((p) => ({
+      role: p.role,
+      home: p.home?.id ?? null,
+      hp: Math.max(0, Math.round(p.hp)),
+      dead: !!p.dead,
+      x: p.rig.group.position.x,
+      z: p.rig.group.position.z,
+    }));
+  }
+
+  restore(data, findBuilding) {
+    if (!Array.isArray(data)) return;
+    for (let i = 0; i < this.people.length && i < data.length; i++) {
+      const p = this.people[i];
+      const s = data[i];
+      if (!s) continue;
+      const home = Number.isFinite(s.home) ? findBuilding?.(s.home) : null;
+      p.home = home && home.built ? home : null;
+      p.role = s.role === 'builder' ? 'builder' : home?.def?.job?.role || s.role || p.role;
+      p.hp = Number.isFinite(s.hp) ? Math.max(1, Math.min(p.maxHp, s.hp)) : p.maxHp;
+      p.dead = !!s.dead;
+      p.respawnTimer = p.dead ? 20 : 0;
+      if (p.dead) p.home = null;
+      p.job = null;
+      p.attention = null;
+      p.carry = 0;
+      p.path = null;
+      p.pathIndex = 0;
+      p.pathKey = '';
+      p.pathTimer = 0;
+      p.aim?.setLock(null);
+      p.aim && (p.aim.target = null);
+      const x = Number.isFinite(s.x) ? s.x : p.spawnAnchor.x;
+      const z = Number.isFinite(s.z) ? s.z : p.spawnAnchor.z;
+      p.rig.group.position.set(x, heightAt(x, z), z);
+      if (p.home) {
+        p.anchor = { x: p.home.x + 1.5, z: p.home.z + 1.5 };
+      } else {
+        p.anchor = { x, z };
+      }
+      p.target = { ...p.anchor };
+      p.rig.group.visible = !p.dead;
+      p.rig.mesh.visible = !p.dead;
+      if (p.farTier) p.farTier.visible = false;
+      p.isFar = false;
+    }
   }
 
   /** Keep camp folk out of each other's capsules; cheap at this population. */

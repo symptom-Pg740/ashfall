@@ -10,11 +10,12 @@ This document is the working plan. `docs/ECONOMY.md` is the detailed workplace/e
 backlog. We are still in the **testing phase**: the economy numbers, building names and even the
 assignment model can change after playtests. Keep new systems data-driven and save-migrated.
 
-**Status:** Phases 1–4d first slices shipped (command/possession; warehouse and hauling; day/night
+**Status:** Phases 1–5a first slices shipped (command/possession; warehouse and hauling; day/night
 and power; Vickers turret + watchtower gunner + nav grid; construction jobs; raids against the grid,
 building HP/damage/repair; floating building card, manual wiring and the 360° turret fix; expanded
-world with spread-out scatter and clearance-aware navigation). The next slice is **Phase 5 —
-workplaces and economy**. See §6.
+world with spread-out scatter and clearance-aware navigation; free builder role, Scavenger Hut,
+workplace assignment and saved roles). The next slice is **Phase 5b — Well Wheel, Farm and needs**.
+See §6.
 
 ---
 
@@ -105,8 +106,8 @@ is simply the first unit in the roster.
 12. **Two ammo economies.** Workshop production and the armory purchase must not both be primary.
    Pick one; the other becomes an emergency option or goes away.
 13. **Where do builders come from?** A **free builder role** on a survivor. Builders auto-answer the
-   construction queue and can be sent to a specific site; no dedicated building. The current random
-   auto-assign is transitional and goes away.
+   construction queue and can be sent to a specific site; no dedicated building. The random
+   auto-assign is removed (5a).
 
 ### The one structural decision to make early
 
@@ -328,8 +329,9 @@ place. See [ECONOMY.md](ECONOMY.md) for the full workplace model.
 The full design is in [ECONOMY.md](ECONOMY.md). Summary:
 
 - **Builder role** — a survivor set to builder finishes the construction queue automatically; no
-  building required.
-- **Scavenger Hut** — assigned scavengers loop gather → haul within a work radius.
+  building required. **Implemented in 5a.**
+- **Scavenger Hut** — assigned scavengers loop gather → haul within a work radius. **Implemented in
+  5a** (two slots, 26 m, `NO NODES` / `STORAGE FULL`).
 - **Well Wheel** — a staffed, hand-cranked well wheel produces water (the Rain Catcher remains a
   passive early source).
 - **Farm** — staffed farmers produce food and consume water.
@@ -576,10 +578,18 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 
 Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
 
-- **5a — Free builder role + Scavenger Hut + assignment.** Job slots and work loops; a survivor set
-  to builder answers the construction queue; the scavenger loops gather→haul in a radius. Replace the
-  current random auto-assign with the builder role. Building card assignment + `HOME` on the unit
-  card.
+- **5a — Free builder role + Scavenger Hut + assignment — implemented (first slice).**
+  Job slots and work loops; a survivor set to builder answers the construction queue; the scavenger
+  loops gather→haul in a 26 m radius. The random auto-assign on placement is gone. The building card
+  has clickable slots; the unit card shows `HOME` and `MAKE BUILDER` / `RELEASE BUILDER` /
+  `RELEASE POST`. Manual orders pause the loop and the worker returns when the order ends. Roles,
+  home assignments and survivor positions are saved in schema v5.
+  **Gate:** a builder finishes a freshly placed hut with no orders; two scavengers work distinct
+  piles to storage cap and report `STORAGE FULL`; a manual move returns the worker to the hut
+  afterwards; a reload restores the builder role and both slots. **Passed** (builder claimed on the
+  first tick and completed; two slots picked distinct nodes; scrap 26→80 then `STORAGE FULL`;
+  manual move resumed gathering after 70 frames; v5 save/reload restored REN as builder and SILAS on
+  the hut; unreachable sites are skipped for 15 s instead of looping `NO PATH`).
 - **5b — Well Wheel + Farm + needs.** Water and food production, daily upkeep, morale/leave,
   stockpiles and HUD. The Rain Catcher remains the passive early source.
 - **5c — Workshop + ammo + recruitment/roles.** Scrap→ammo/components recipes; the workshop is the
@@ -630,7 +640,7 @@ Resolved in this pass:
 1. **Water:** the **well wheel** — hand-cranked, no river needed. The Rain Catcher stays as the
    passive early source; a river/oasis wheel is a later map variant.
 2. **Builders:** a **free builder role**, not a Builder's Yard. A builder auto-answers the construction
-   queue and can be sent to a specific site; the current random auto-assign is transitional.
+   queue and can be sent to a specific site; implemented in 5a, with no random auto-assign.
 3. **Ammo:** **workshop only.** The armory scrap purchase is removed; the workshop recipe is the only
    source and the armory shows the stock. Running dry is a real failure state.
 4. **Building interaction:** tapping a building opens its **card**; contextual orders stay for
@@ -658,15 +668,15 @@ Still open:
 
 ## 9. Immediate next slice
 
-Phases 1–4d are in. The next slice is **Phase 5 — workplaces and economy**, in three passes:
+Phases 1–5a are in. The next slice is **Phase 5b — Well Wheel, Farm and needs**:
 
-1. **5a:** free builder role + Scavenger Hut + job slots/assignment; the building card grows real
-   worker slots and the unit card shows `HOME`.
-2. **5b:** Well Wheel + Farm + daily food/water upkeep and morale/leave.
-3. **5c:** Workshop-only ammo/components, recruitment, roles derived from workplaces.
-4. Keep the hard rules: the turret never targets humans; ghouls never attack buildings; raiders do;
-   player buildings stay mud + scrap.
-5. Then Phase 6 (relay objective and a complete run).
+1. **Well Wheel** with one water-carrier slot; the Rain Catcher stays the passive early source.
+2. **Farm** with two farmer slots; food production consumes water.
+3. **Daily upkeep:** one food + one water per survivor per day; missing supplies slow them and then
+   they leave. Morale warning in the HUD.
+4. **HUD stockpiles:** scrap/water/food with caps, plus the day counter and a dawn report.
+5. Then **5c:** Workshop-only ammo/components, recruitment and roles derived from workplaces, then
+   Phase 6 (the relay objective and a complete run).
 
-The next visible milestone: **assign one survivor to a Scavenger Hut and watch scrap arrive while
-you command the defence — no gather orders, no repeated hauling.**
+The next visible milestone: **assign survivors to the well and the farm, watch the day tick over,
+and see the camp feed itself while the workshop waits for its scrap.**

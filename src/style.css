@@ -2175,3 +2175,56 @@ body.wiring .unit-card {
 body.build-open .building-card {
   display: none;
 }
+
+/* workplace slots */
+.bcard-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.bcard-slot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 7px;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  text-align: left;
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(138, 107, 66, 0.55);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+
+.bcard-slot b {
+  font-size: 8px;
+  color: var(--amber);
+  letter-spacing: 0.06em;
+}
+
+.bcard-slot.filled {
+  border-style: solid;
+  border-color: var(--line-bright);
+  background: rgba(240, 169, 94, 0.08);
+}
+
+.bcard-slot.filled b {
+  color: var(--text);
+}
+
+.unit-control.alt {
+  margin-bottom: 5px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  font-weight: 400;
+}
+
+.unit-control.alt:hover {
+  color: var(--amber-hot);
+  border-color: var(--line-bright);
+}

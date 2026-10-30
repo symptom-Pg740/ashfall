@@ -72,6 +72,7 @@ export class UI {
       unitHpFill: document.getElementById('unit-hp-fill'),
       unitStatus: document.getElementById('unit-status'),
       unitControl: document.getElementById('unit-control'),
+      unitPost: document.getElementById('unit-post'),
       gridPanel: document.getElementById('grid-panel'),
       gridDay: document.getElementById('grid-day'),
       gridClock: document.getElementById('grid-clock'),
@@ -86,6 +87,7 @@ export class UI {
       bcardPower: document.getElementById('bcard-power'),
       bcardNote: document.getElementById('bcard-note'),
       bcardRows: document.getElementById('bcard-rows'),
+      bcardSlots: document.getElementById('bcard-slots'),
       bcardProgress: document.getElementById('bcard-progress'),
       bcardProgressFill: document.getElementById('bcard-progress-fill'),
       bcardActions: document.getElementById('bcard-actions'),
@@ -212,6 +214,11 @@ export class UI {
       e.preventDefault();
       e.stopPropagation();
       this.cb.unitControl?.();
+    });
+    this.el.unitPost?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.cb.unitPost?.();
     });
     this.el.unitClose?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -399,13 +406,22 @@ export class UI {
     if (!view || !this.el.unitCard) return;
     this.el.unitCard.classList.remove('hidden');
     this.el.unitName.textContent = view.name;
-    this.el.unitRole.textContent = view.role + (view.armed ? ' · ARMED' : '');
+    this.el.unitRole.textContent =
+      view.role + (view.armed ? ' · ARMED' : '') + (view.home ? ` · ${view.home}` : '');
     this.el.unitHp.textContent = `${Math.max(0, Math.round(view.hp))}/${Math.round(view.maxHp)}`;
     this.el.unitHpFill.style.width = `${Math.max(0, Math.min(100, (view.hp / view.maxHp) * 100))}%`;
     this.el.unitStatus.textContent = view.status;
     this.el.unitControl.disabled = !view.canControl;
     this.el.unitControl.textContent = mode === 'direct' ? 'RELEASE' : 'TAKE CONTROL';
     this.el.unitControl.classList.toggle('release', mode === 'direct');
+    if (this.el.unitPost) {
+      const show = !!view.canWork;
+      this.el.unitPost.classList.toggle('hidden', !show);
+      if (show) {
+        this.el.unitPost.textContent =
+          view.role === 'BUILDER' ? 'RELEASE BUILDER' : view.home ? 'RELEASE POST' : 'MAKE BUILDER';
+      }
+    }
   }
 
   updateUnitCard(view, mode) {
@@ -439,6 +455,28 @@ export class UI {
       const show = view.progress != null;
       this.el.bcardProgress.classList.toggle('hidden', !show);
       if (show) this.el.bcardProgressFill.style.width = `${view.progress}%`;
+    }
+
+    if (this.el.bcardSlots) {
+      this.el.bcardSlots.innerHTML = '';
+      const slots = view.slots || [];
+      this.el.bcardSlots.classList.toggle('hidden', !slots.length);
+      for (const slot of slots) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `bcard-slot${slot.name ? ' filled' : ''}`;
+        const role = document.createElement('span');
+        role.textContent = slot.role;
+        const name = document.createElement('b');
+        name.textContent = slot.name || 'ASSIGN';
+        btn.append(role, name);
+        btn.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.cb.buildingSlot?.(slot.index);
+        });
+        this.el.bcardSlots.appendChild(btn);
+      }
     }
 
     if (this.el.bcardRows) {

@@ -401,6 +401,66 @@ function warehouse() {
   return merge(p);
 }
 
+function scavengerHut() {
+  const mud = '#c9a878';
+  const mudDark = '#a98a61';
+  const stone = '#b6a184';
+  const wood = '#6b4a2e';
+  const woodDark = '#4e3522';
+  const rust = '#8a4f35';
+  const metal = '#777a78';
+  const tarp = '#7c6447';
+  const dark = '#2f2821';
+  const p = [baseDisc(1.95)];
+
+  // Stone footing and a low, patched mud box.
+  p.push(box(3.0, 0.16, 2.5, stone, 0, 0.08, 0));
+  p.push(box(2.55, 1.5, 2.05, mud, 0, 0.9, -0.2));
+  p.push(box(0.7, 0.48, 0.06, mudDark, -0.72, 1.25, 0.84));
+  p.push(box(0.62, 0.36, 0.06, mudDark, 0.7, 0.55, 0.84));
+  p.push(box(2.8, 0.14, 2.3, mudDark, 0, 1.69, -0.2));
+  // A scrap patch and a short stove pipe on the roof.
+  p.push(box(1.05, 0.05, 0.8, rust, 0.55, 1.77, -0.45, 0, 0.12, 0));
+  p.push(cyl(0.1, 0.12, 0.9, 6, metal, -0.65, 2.15, -0.65));
+
+  // Door and a small window with a shutter.
+  p.push(box(0.85, 1.05, 0.1, dark, -0.35, 0.6, 0.85));
+  p.push(box(0.12, 1.15, 0.12, woodDark, -0.84, 0.62, 0.88));
+  p.push(box(0.12, 1.15, 0.12, woodDark, 0.14, 0.62, 0.88));
+  p.push(box(0.68, 0.5, 0.08, dark, 0.72, 1.08, 0.86));
+  p.push(box(0.72, 0.07, 0.12, wood, 0.72, 1.36, 0.9));
+
+  // Scrap lean-to: two poles and an angled sheet.
+  for (const sz of [-1, 0.75]) {
+    p.push(cyl(0.06, 0.08, 1.9, 5, woodDark, 1.35, 0.95, sz));
+  }
+  p.push(box(1.15, 0.06, 2.2, rust, 1.75, 1.72, -0.1, 0, 0, -0.28));
+  p.push(box(0.06, 0.06, 2.15, metal, 1.22, 1.95, -0.1));
+
+  // Hand cart by the door.
+  p.push(box(1.0, 0.16, 0.62, wood, -1.55, 0.42, 1.15));
+  p.push(box(0.9, 0.22, 0.52, woodDark, -1.55, 0.58, 1.15, 0, 0.08, 0));
+  p.push(cyl(0.3, 0.3, 0.08, 8, woodDark, -1.95, 0.3, 0.92, 0, 0, Math.PI / 2));
+  p.push(cyl(0.3, 0.3, 0.08, 8, woodDark, -1.15, 0.3, 0.92, 0, 0, Math.PI / 2));
+  p.push(box(0.05, 0.05, 0.8, woodDark, -1.55, 0.62, 1.65, 0.28, 0, 0));
+
+  // Hanging cans and sorted scrap piles.
+  for (let i = 0; i < 3; i++) {
+    p.push(cyl(0.055, 0.055, 0.16, 6, metal, 1.45 + i * 0.18, 1.35 - i * 0.04, 0.75, 0, 0, 0));
+  }
+  p.push(box(0.55, 0.3, 0.5, rust, 0.55, 0.22, 1.0, 0, 0.3, 0));
+  p.push(box(0.4, 0.22, 0.36, metal, 0.95, 0.18, 1.15, 0, -0.4, 0));
+  p.push(box(0.3, 0.18, 0.3, tarp, -0.9, 0.17, 1.1, 0, 0.2, 0));
+
+  // Chalk tally board.
+  p.push(cyl(0.04, 0.05, 1.1, 4, woodDark, 1.1, 0.55, 0.72));
+  p.push(box(0.55, 0.34, 0.05, '#d8c8a8', 1.1, 1.05, 0.74, 0, -0.12, 0));
+  p.push(box(0.34, 0.03, 0.02, '#5d4631', 1.08, 1.08, 0.77, 0, -0.12, 0));
+  p.push(box(0.26, 0.03, 0.02, '#5d4631', 1.07, 1.0, 0.77, 0, -0.12, 0));
+
+  return bakeBaseAO(merge(p), 0.5, 0.3);
+}
+
 export const BUILDINGS = [
   {
     id: 'barricade',
@@ -439,6 +499,15 @@ export const BUILDINGS = [
     cost: 22,
     radius: 3.15,
     desc: '+120 storage.',
+    geometry: null,
+  },
+  {
+    id: 'scavenger',
+    name: 'SCAVENGER HUT',
+    cost: 16,
+    radius: 2.1,
+    desc: 'Assign scavengers. 26m.',
+    job: { role: 'scavenger', label: 'SCAVENGER', slots: 2, radius: 26 },
     geometry: null,
   },
   {
@@ -510,6 +579,7 @@ const GEO_BUILDERS = {
   catcher,
   house: adobeHouse,
   warehouse,
+  scavenger: scavengerHut,
   solar: solarArray,
   pole: powerPole,
   battery: batteryBank,

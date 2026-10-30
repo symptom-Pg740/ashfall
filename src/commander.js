@@ -119,16 +119,19 @@ export class Commander {
     const armed = unit.isLeader ? this.player.weapon : unit.weapon;
     const possessed = unit === this.player.possessedUnit;
     const live = unit.isLeader || possessed;
+    const dead = unit.isLeader ? this.state.dead : unit.dead;
     return {
       key: this.keyOf(unit),
       name: unit.isLeader ? 'YOU' : unit.name,
       role: (unit.isLeader ? 'leader' : unit.role || 'scavenger').toUpperCase(),
+      home: unit.isLeader ? null : unit.home?.def?.name || null,
       hp: live ? this.state.health : unit.hp,
       maxHp: live ? this.state.maxHealth : unit.maxHp,
       status: this.statusOf(unit),
       armed: !!armed,
-      dead: unit.isLeader ? this.state.dead : unit.dead,
-      canControl: !(unit.isLeader ? this.state.dead : unit.dead),
+      dead,
+      canControl: !dead,
+      canWork: !unit.isLeader && !dead && !possessed,
     };
   }
 
@@ -143,6 +146,8 @@ export class Commander {
     const job = unit.job;
     if (!job) {
       if (unit.carry > 0) return `CARRYING ${unit.carry}`;
+      if (unit.home) return `AT ${unit.home.def.name}`;
+      if (unit.role === 'builder') return 'READY TO BUILD';
       return unit.role === 'guard' ? 'ON WATCH' : 'IDLE';
     }
     if (job.type === 'move') return 'MOVING';
@@ -231,6 +236,17 @@ export class Commander {
   // -------------------------------------------------------------------------
   // possession
   // -------------------------------------------------------------------------
+
+  /** Unit-card role button: release a post, release the builder role, or become a builder. */
+  toggleRole() {
+    const unit = this.selected;
+    if (!unit || unit.isLeader || unit.dead || unit.possessed || this.state.dead) return;
+    this.campFolk.toggleRole(unit);
+    this._lastKey = '';
+    this.refresh(unit);
+    this.ui.setRoster(this.roster());
+    this.onSave();
+  }
 
   toggleControl() {
     if (this.mode === 'direct') {
@@ -390,31 +406,11 @@ export class Commander {
       return;
     }
     if (!building || building.built) return;
+    building.workBlockedUntil = 0;
     this.campFolk.issueJob(unit, { type: 'build', building });
     this.marker(building.x, building.z, '#ffc37a');
     this.ui.toast(`${unit.name} → BUILD ${building.def.name}`);
     this.refresh(unit);
-  }
-
-  /** Find the nearest free survivor for a freshly placed site. */
-  autoAssignBuild(building) {
-    if (!building || building.built) return null;
-    let best = null;
-    let bestD = Infinity;
-    for (const p of this.campFolk.people) {
-      if (p.dead || p.possessed || p.manning || p.job) continue;
-      const d = Math.hypot(p.rig.group.position.x - building.x, p.rig.group.position.z - building.z);
-      if (d < bestD) {
-        bestD = d;
-        best = p;
-      }
-    }
-    if (!best) {
-      this.ui.hint('NO FREE BUILDER · SELECT A UNIT AND TAP THE SITE', 2600);
-      return null;
-    }
-    this.orderBuild(best, building);
-    return best;
   }
 
   orderManTower(unit, tower) {

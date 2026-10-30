@@ -267,6 +267,7 @@ const buildingCard = new BuildingCard({
   settlement,
   power,
   campFolk,
+  scrapField,
   state,
   getSelected: () => commander.selected,
   screenOf: (x, y, z) => commander.screenOf(x, y, z),
@@ -339,6 +340,9 @@ raiders.settlement = settlement;
 settlement.onBuildingDestroyed = (building) => {
   power.removeBuilding(building);
   if (buildingCard.building === building) buildingCard.close();
+  for (const person of campFolk.people) {
+    if (person.home === building) campFolk.releaseWorkplace(person, true);
+  }
   if (building.manned) {
     campFolk.down(building.manned);
     building.manned = null;
@@ -364,6 +368,15 @@ campFolk.onNoPath = (person) => {
   ui.toast(`${person.name} · NO PATH`, true);
   if (commander.selected === person) commander.refresh(person);
 };
+campFolk.onBuilderAssigned = (person, building) => {
+  ui.toast(`${person.name} → ${building.def.name} SITE`);
+};
+campFolk.onRoleChanged = (person, role) => {
+  ui.toast(`${person.name} · ${role.toUpperCase()}`);
+  if (commander.selected === person) commander.refresh(person);
+  saveGame();
+};
+campFolk.isStorageFull = () => state.scrap >= (state.scrapCap || 80);
 campFolk.onBuildComplete = (building) => {
   if (!settlement.completeBuilding(building)) return;
   const wired = power.attach(building);
@@ -459,6 +472,7 @@ window.__ashfall = {
   pathDebug,
   nav,
   settlement,
+  buildings: BUILDINGS,
   player,
   enemies,
   firearms,
@@ -507,9 +521,11 @@ ui.on('started', () => {
 });
 
 ui.on('unitControl', () => commander.toggleControl());
+ui.on('unitPost', () => commander.toggleRole());
 ui.on('unitClose', () => commander.clear());
 ui.on('rosterSelect', (key) => commander.selectKey(key));
 ui.on('buildingAction', (id) => buildingCard.action(id));
+ui.on('buildingSlot', (index) => buildingCard.slot(index));
 ui.on('buildingClose', () => buildingCard.close());
 ui.on('wireCancel', () => wire.cancel());
 ui.on('buildToggle', toggleBuild);
@@ -669,8 +685,10 @@ function doPlace() {
     return;
   }
   state.scrap -= res.cost;
-  const builder = commander.autoAssignBuild(res.building);
-  ui.toast(`${res.building.def.name} SITE${builder ? ` · ${builder.name} EN ROUTE` : ' · ASSIGN A BUILDER'}`);
+  const hasBuilder = campFolk.people.some((p) => !p.dead && p.role === 'builder');
+  ui.toast(
+    `${res.building.def.name} SITE${hasBuilder ? ' · BUILDER WILL ATTEND' : ' · SET A SURVIVOR TO BUILDER'}`,
+  );
   ui.updateHUD(state);
   cameraShake = Math.max(cameraShake, 0.12);
   // One site per pick: the red ghost ring was confusing next to the new scaffold.
@@ -869,7 +887,7 @@ function saveGame() {
   // the write instead of saving the leader on the wrong tile; release/down saves immediately.
   if (player.possessedUnit) return;
   writeSave({
-    v: 4,
+    v: 5,
     seed: WORLD_SEED,
     savedAt: Date.now(),
     state: {
@@ -886,6 +904,7 @@ function saveGame() {
     player: { x: player.x, z: player.z, heading: player.heading },
     equipment: { ...player.rig.equipment },
     buildings: settlement.serialize().buildings,
+    units: campFolk.serialize(),
     scrap: scrapField.serialize(),
     power: power.serialize(),
     timers: {
@@ -931,6 +950,7 @@ function loadGame() {
   player.refreshWeapon();
 
   settlement.restore(save.buildings);
+  campFolk.restore(save.units, (id) => settlement.buildings.find((b) => b.id === id) || null);
   power.restore(save.power);
   scrapField.restore(save.scrap);
   if (save.timers) {

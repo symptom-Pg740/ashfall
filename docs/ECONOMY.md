@@ -1,7 +1,9 @@
 # Workplaces, jobs and the settlement economy
 
-**Status:** design for Phase 5 (not built yet). Numbers are provisional; we are still in the
-testing phase, so costs, rates and even the job names will move.
+**Status:** Phase **5a is implemented** (free builder role, Scavenger Hut, two slots, work loop,
+assignment, saved roles). 5b (Well Wheel, Farm, needs) and 5c (Workshop, ammo, recruitment) are
+still design. Numbers are provisional; we are still in the testing phase, so costs, rates and even
+the job names will move.
 
 This is the detailed design behind `docs/GAME_PLAN.md`. The short version: **assign a survivor to a
 building, not to a task.** The building gives them a repeatable job. Manual orders still exist, but
@@ -86,18 +88,20 @@ any unit can still be manually ordered to build a site.
   if the global **BUILD / REPAIR** toggle is set to repair.
 - The player places sites anywhere in the camp; builders handle the walking.
 - Switching a builder back to a workplace role releases the construction queue.
-- The current random auto-assign is removed; only builder-role units auto-answer the queue.
+- The random auto-assign on placement is gone; only builder-role units auto-answer the queue.
 
 This is the answer to "where do builders go": they are a role, not a station. It keeps the camp
 layout free and avoids a building that exists only to hold one worker.
 
-### Scavenger Hut — automated scrap
+### Scavenger Hut — automated scrap — **implemented in 5a**
 
-- Cost: 16 scrap; radius 2.0; a low mud hut with a scrap lean-to and a hauling cart.
+- Cost: 16 scrap; radius 2.1; a low mud hut with a scrap lean-to and a hauling cart.
 - Slots: 2 scavengers.
 - Work radius: 26 m around the hut.
-- Loop: find the nearest active scrap node in radius → gather → haul to the nearest warehouse → repeat.
+- Loop: find the nearest active, unclaimed scrap node in radius → gather → haul to the nearest
+  warehouse → repeat. Two workers pick different piles.
 - Idle reasons: no active nodes in radius (`NO NODES`), storage full (`STORAGE FULL`), no path.
+  Unreachable piles are skipped for 10 s instead of retrying every frame.
 - The hut is a workplace, not an extra stockpile; scrap still goes to the warehouse.
 
 ### Well Wheel — water without a river
@@ -271,9 +275,10 @@ Changes:
   loops' primitives (move/gather/haul/build/repair/man).
 - `Settlement` buildings gain `jobs`, `workers`, `attention`, `recipe`; the construction queue.
 - `Settlement.place` no longer auto-assigns; a **builder-role** unit picks up the site. The unit card
-  can set/clear the builder role.
+  can set/clear the builder role. Implemented in 5a.
 - `Armory` ammo purchases draw from the workshop stockpile; the workshop recipe is the primary source.
-- Save schema: workplaces, assignments, resources, needs, recipe, day counter; migrate v4 → v5.
+- Save schema: **v5** adds survivor roles, workplace assignments and survivor positions (shipped in
+  5a). Resources, needs, recipes and the day counter still need adding in 5b/5c.
 - The **building card** replaces building contextual orders for assignment/repair/man/wire; unit
   orders remain for move/attack/gather.
 
