@@ -19,6 +19,7 @@ export class Raiders {
     this.people = [];
     this.registry = null;
     this.firearms = null;
+    this.settlement = null;
     this.onKill = null;
     this.baseAngle = this.rng() * Math.PI * 2;
 
@@ -94,6 +95,7 @@ export class Raiders {
         reposition: null,
         repositionTimer: 0,
         suppressed: 0,
+        objective: null,
         seekingCover: false,
         slotAngle: (i / POOL) * Math.PI * 2,
       });
@@ -139,6 +141,7 @@ export class Raiders {
       p.repositionTimer = 0;
       p.suppressed = 0;
       p.seekingCover = false;
+      p.objective = null;
       spawned++;
     }
     return spawned;
@@ -234,6 +237,44 @@ export class Raiders {
     return best || this.findFiringPosition(p, player);
   }
 
+  chooseObjective(p) {
+    const buildings = this.settlement?.buildings || [];
+    const pos = p.rig.group.position;
+    let best = null;
+    let bestScore = Infinity;
+    for (const b of buildings) {
+      if (!b.built || b.destroyed) continue;
+      const d = Math.hypot(b.x - pos.x, b.z - pos.z);
+      let priority = 4;
+      if (b.type === 'warehouse') priority = 30;
+      else if (b.def?.power) priority = 26;
+      else if (b.type === 'turret' || b.type === 'tower') priority = 22;
+      else if (b.type === 'campfire') priority = 12;
+      const score = d - priority;
+      if (score < bestScore) {
+        bestScore = score;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  shootBuilding(p) {
+    const b = p.objective;
+    if (!b || !b.built || b.destroyed) return;
+    const pos = p.rig.group.position;
+    const shot = this.firearms.fire(
+      { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'hostile' },
+      { weapon: p.weapon, aimPoint: { x: b.x, y: b.y + 1.0, z: b.z } },
+    );
+    p.mag--;
+    p.cooldown = 60 / p.weapon.rpm;
+    p.recoil = 1;
+    if (p.mag <= 0) p.reloadTimer = p.weapon.reload;
+    this.settlement?.damageBuilding(b, 14);
+    if (shot.killed) this.onKill?.(shot.x, shot.z);
+  }
+
   shoot(p) {
     const pos = p.rig.group.position;
     const shot = this.firearms.fire(
@@ -285,7 +326,17 @@ export class Raiders {
 
       p.suppressed = Math.max(0, p.suppressed - dt);
 
-      const target = p.aim.target;
+      if (!p.objective || p.objective.destroyed || !p.objective.built) {
+        p.objective = this.chooseObjective(p);
+      }
+      let target = p.aim.target;
+      // Raiders are on a mission: they only break off for a unit that is close enough to threaten
+      // them. A gunner on a distant watchtower can therefore keep shooting while they work.
+      if (target && p.objective) {
+        const td = Math.hypot(target.x - pos.x, target.z - pos.z);
+        if (td > 14) target = null;
+      }
+      const obj = target ? null : p.objective;
       let moving = false;
       if (target && !p.reposition) {
         p.heading = p.aim.aimYaw;
@@ -316,6 +367,26 @@ export class Raiders {
           } else {
             p.reposition = null;
             p.repositionTimer = 0;
+          }
+        } else if (obj) {
+          const bx = obj.x - pos.x;
+          const bz = obj.z - pos.z;
+          const bd = Math.hypot(bx, bz) || 1;
+          const edgeX = obj.x + ((pos.x - obj.x) / bd) * (obj.radius + 0.7);
+          const edgeZ = obj.z + ((pos.z - obj.z) / bd) * (obj.radius + 0.7);
+          const los = this.firearms
+            ? this.firearms.hasLineOfSight(pos.x, pos.y + 1.25, pos.z, edgeX, obj.y + 1.0, edgeZ)
+            : true;
+          p.heading = Math.atan2(bx, bz);
+          if (bd > 10.5 || !los) {
+            const step = Math.min(p.speed * dt, Math.max(0, bd - 8));
+            pos.x += (bx / bd) * step;
+            pos.z += (bz / bd) * step;
+            moving = true;
+            p.phase += dt * (5 + p.speed);
+          } else {
+            p.phase += dt * 1.2;
+            if (p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) this.shootBuilding(p);
           }
         } else if (dist > 18) {
           const step = Math.min(p.speed * dt, dist - 18);

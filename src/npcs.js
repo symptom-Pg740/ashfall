@@ -19,6 +19,7 @@ export class CampFolk {
     this.onKill = null;
     this.onScrap = null;
     this.onBuildComplete = null;
+    this.onBuildingRepaired = null;
     this.scrapField = options.scrapField || null;
     this.dropPoint = options.dropPoint || null;
     this.obstacles = options.obstacles || [];
@@ -402,6 +403,22 @@ export class CampFolk {
       return null;
     }
 
+    if (j.type === 'repair') {
+      const b = j.building;
+      if (!b || !b.built || b.destroyed || b.hp >= b.maxHp) {
+        p.job = null;
+        return null;
+      }
+      if (distTo(b.x, b.z) > b.radius + 1.5) return { x: b.x, z: b.z };
+      b.hp = Math.min(b.maxHp, b.hp + dt * 14);
+      if (b.hp >= b.maxHp) {
+        p.job = null;
+        p.holdTimer = 2;
+        this.onBuildingRepaired?.(b);
+      }
+      return null;
+    }
+
     if (j.type === 'build') {
       const b = j.building;
       if (!b || b.built) {
@@ -606,7 +623,7 @@ export class CampFolk {
         let tx = jobTarget.x;
         let tz = jobTarget.z;
         const type = p.job?.type;
-        if (this.nav && (type === 'move' || type === 'gather' || type === 'build' || type === 'man')) {
+        if (this.nav && (type === 'move' || type === 'gather' || type === 'build' || type === 'repair' || type === 'man')) {
           const key = `${Math.round(jobTarget.x * 2)}:${Math.round(jobTarget.z * 2)}`;
           p.pathTimer -= dt;
           if (p.pathKey !== key || p.pathTimer <= 0) {
@@ -651,7 +668,7 @@ export class CampFolk {
             lookX = node.x;
             lookZ = node.z;
           }
-        } else if (j?.type === 'build' && j.building) {
+        } else if ((j?.type === 'build' || j?.type === 'repair') && j.building) {
           p.heading = Math.atan2(j.building.x - pos.x, j.building.z - pos.z);
           lookX = j.building.x;
           lookZ = j.building.z;

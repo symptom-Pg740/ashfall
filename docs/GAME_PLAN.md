@@ -8,10 +8,9 @@ a single avatar.
 This document is the working plan. `docs/REALISM.md` is the separate backlog of realism items so
 they are not lost while the systems work happens.
 
-**Status:** Phases 1–4 first slices shipped (command/possession; warehouse and hauling; day/night
-and power; Vickers turret + watchtower gunner + nav grid), plus **construction jobs** (build sites
-anywhere, units finish them). Raid composition and infrastructure targeting are next. See §6 for the
-gate notes.
+**Status:** Phases 1–4b first slices shipped (command/possession; warehouse and hauling; day/night
+and power; Vickers turret + watchtower gunner + nav grid; construction jobs; raids against the grid,
+building HP/damage/repair). Phase 5 economy is next. See §6 for the gate notes.
 
 ---
 
@@ -355,8 +354,24 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 - Gate: turret ignores raiders and kills ghouls; unpowered turret does not fire; tower gunner fires
   only while assigned; release returns them to the ground. **Passed** (ghoul 500 → 266 under turret
   fire; raider untouched; tower gunner 12 shots, 500 → 284; unpowered mag stayed 250).
-- Remaining for Phase 4b: raid composition by time of day and raiders targeting infrastructure.
 - Not saved yet: tower manning and turret belt/cooldown.
+
+### Phase 4b — Raids against the grid — **implemented (first slice)**
+
+- Raid composition: daytime raids spawn rifle raiders, night raids spawn ghouls; the banner labels
+  the kind (`RAIDERS` / `GHOULS`). The night ambient ghoul spawn is doubled.
+- Raiders pick the nearest **warehouse or power building** (priority over campfire/other), move to
+  ~10.5 m, and fire at it for 14 structure damage per shot. They only break off for a unit within
+  14 m, so a distant watchtower gunner can keep firing while they work.
+- Structures have HP (`60 + cost × 8`), a floating damage bar and low-health smoke. Destruction:
+  remove from the scene, cut power links/wires, drop warehouse capacity, remove a chapel's +25
+  vitality, down a tower gunner, rebuild the nav grid on the next path.
+- Repair: select any survivor and tap a damaged structure; they walk within radius + 1.5 and restore
+  14 HP/s. Towers keep manning priority for armed units; an unarmed survivor repairs a damaged tower.
+- Gate: a day raid hits the warehouse; a night raid sends ghouls; a destroyed pole removes its wire;
+  a destroyed tower downs its gunner; a repair restores a damaged warehouse. **Passed** (raider 222 →
+  152 warehouse HP; pole/tower destruction cleared 1 link/wire and downed the gunner; repair 136 →
+  149 and climbing; raid banners RAIDERS/GHOULS; scheduled 13:45 raiders vs 22:25 ghouls).
 
 ### Phase 5 — Economy and progression
 
@@ -409,13 +424,13 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 
 ## 9. Immediate next slice
 
-Phases 1–4 are in. The next slice is **Phase 4b — raids against the grid**, then Phase 5:
+Phases 1–4b are in. The next slice is **Phase 5 — economy and progression**:
 
-1. Raiders target the warehouse and power buildings when no unit is closer.
-2. Night raids favour ghouls; day raids favour raiders; mixed assaults later.
-3. Building HP for warehouses, poles and batteries, and a repair job for engineers.
-4. A raid warning that tells the player which side is coming, so the turret arc and gunner matter.
-5. Then food/water upkeep, recruitment and the workshop (Phase 5).
+1. Food and water upkeep per survivor per day; unfed units lose speed/morale, then leave.
+2. Recruitment from surplus food/water; houses raise the population cap.
+3. A workshop that unlocks the existing weapon upgrades, turret belts and wire spools.
+4. Components from ruins; roles for engineer/scavenger/medic; repair becomes a role bonus.
+5. Then the relay objective and win/lose run in Phase 6.
 
-The next visible milestone: **a night wave breaks the north fence and the turret holds it, while a
-day raid goes for the warehouse and the watchtower gunner is the answer.**
+The next visible milestone: **a camp of 5–6 survivors that feeds itself, recruits, and produces the
+components needed for the relay — while day raiders and night ghouls test the grid.**

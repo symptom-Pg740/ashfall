@@ -769,11 +769,15 @@ export class Settlement {
     const sphere = mesh.geometry.boundingSphere.clone().applyMatrix4(group.matrixWorld);
 
     if (id != null && id >= this.nextBuildId) this.nextBuildId = id + 1;
+    const maxHp = def.hp || 60 + def.cost * 8;
     const building = {
       def,
       id: id ?? this.nextBuildId++,
       type: def.id,
       charge: 0,
+      hp: maxHp,
+      maxHp,
+      destroyed: false,
       x,
       z,
       y,
@@ -892,6 +896,27 @@ export class Settlement {
       building.glow = glow;
     }
 
+    const hpWidth = Math.max(1.6, def.radius * 1.5);
+    const hpY = def.id === 'pole' ? 4.2 : def.id === 'tower' ? 5.0 : def.id === 'light' ? 3.8 : Math.max(4.0, def.radius * 0.7 + 3.2);
+    const hpBg = new THREE.Mesh(
+      new THREE.BoxGeometry(hpWidth, 0.1, 0.3),
+      new THREE.MeshBasicMaterial({ color: 0x2b2117, transparent: true, opacity: 0.82, depthWrite: false, depthTest: false }),
+    );
+    hpBg.position.set(0, hpY, 0);
+    hpBg.renderOrder = 20;
+    hpBg.visible = false;
+    model.add(hpBg);
+    const hpFill = new THREE.Mesh(
+      new THREE.BoxGeometry(hpWidth, 0.12, 0.32),
+      new THREE.MeshBasicMaterial({ color: 0x7fbf6a, toneMapped: false, depthWrite: false, depthTest: false }),
+    );
+    hpFill.position.set(0, hpY + 0.03, 0);
+    hpFill.renderOrder = 21;
+    hpFill.visible = false;
+    model.add(hpFill);
+    building.hpBar = { bg: hpBg, fill: hpFill, width: hpWidth };
+    building.smokeTimer = 0;
+
     building.site = this.makeSite(def);
     group.add(building.site.group);
     building.model.visible = !!building.built;
@@ -937,19 +962,43 @@ export class Settlement {
     const width = Math.max(2.0, radius * 1.8);
     const back = new THREE.Mesh(
       new THREE.BoxGeometry(width, 0.12, 0.34),
-      new THREE.MeshBasicMaterial({ color: 0x2b2117, transparent: true, opacity: 0.82, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: 0x2b2117, transparent: true, opacity: 0.82, depthWrite: false, depthTest: false }),
     );
     back.position.set(0, 1.72, 0);
+    back.renderOrder = 20;
     group.add(back);
     const bar = new THREE.Mesh(
       new THREE.BoxGeometry(width, 0.14, 0.36),
-      new THREE.MeshBasicMaterial({ color: 0xffb066, toneMapped: false, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: 0xffb066, toneMapped: false, depthWrite: false, depthTest: false }),
     );
-    bar.position.set(0, 1.74, 0);
+    bar.position.set(0, 1.77, 0);
+    bar.renderOrder = 21;
     bar.scale.x = 0.001;
     group.add(bar);
 
     return { group, bar, width };
+  }
+
+  damageBuilding(building, amount) {
+    if (!building || !building.built || building.destroyed) return false;
+    building.hp = Math.max(0, building.hp - amount);
+    this.particles.burst(building.x, building.y + 1.2, building.z, '#d8b08a', 5, 1.5);
+    this.onBuildingDamage?.(building);
+    if (building.hp <= 0) this.destroyBuilding(building);
+    return true;
+  }
+
+  destroyBuilding(building) {
+    if (!building || building.destroyed) return;
+    building.destroyed = true;
+    building.built = false;
+    this.particles.burst(building.x, building.y + 1, building.z, '#b09572', 26, 3.6);
+    this.particles.burst(building.x, building.y + 0.6, building.z, '#5a5048', 12, 2.2);
+    this.scene.remove(building.group);
+    const index = this.buildings.indexOf(building);
+    if (index >= 0) this.buildings.splice(index, 1);
+    this.syncStorage();
+    this.onBuildingDestroyed?.(building);
   }
 
   /** Turn a site into a finished building. Returns false if it was already done. */
@@ -979,6 +1028,7 @@ export class Settlement {
           Number.isFinite(item.buildProgress) ? item.buildProgress : 1,
         );
         building.charge = Number.isFinite(item.charge) ? item.charge : 0;
+        if (Number.isFinite(item.hp)) building.hp = Math.max(0, Math.min(building.maxHp, item.hp));
       }
     }
     this.syncStorage();
@@ -994,6 +1044,7 @@ export class Settlement {
         charge: b.charge || 0,
         built: b.built !== false,
         buildProgress: b.buildProgress ?? 1,
+        hp: b.hp,
       })),
       prodTimer: this.prodTimer,
       houseTimer: this.houseTimer,
@@ -1270,6 +1321,24 @@ export class Settlement {
         t.mesh.material.opacity = 0;
       } else {
         t.mesh.material.opacity = (t.life / 0.11) * 0.9;
+      }
+    }
+
+    // damage bars + smoke
+    for (const b of this.buildings) {
+      if (!b.hpBar) continue;
+      const damaged = b.built && !b.destroyed && b.hp < b.maxHp;
+      b.hpBar.bg.visible = damaged;
+      b.hpBar.fill.visible = damaged;
+      if (!damaged) continue;
+      const p = Math.max(0, Math.min(1, b.hp / b.maxHp));
+      b.hpBar.fill.scale.x = Math.max(0.001, p);
+      b.hpBar.fill.position.x = -b.hpBar.width * 0.5 * (1 - p);
+      b.hpBar.fill.material.color.setHex(p > 0.55 ? 0x7fbf6a : p > 0.25 ? 0xe0a24e : 0xd66a4a);
+      b.smokeTimer -= dt;
+      if (b.hp < b.maxHp * 0.42 && b.smokeTimer <= 0) {
+        b.smokeTimer = 0.55;
+        this.particles.burst(b.x, b.y + 1.3, b.z, '#5a5048', 2, 1.1);
       }
     }
 

@@ -151,6 +151,11 @@ export class Commander {
       return 'TO THE PILE';
     }
     if (job.type === 'man') return 'TO THE TOWER';
+    if (job.type === 'repair') {
+      return job.building && Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) < job.building.radius + 1.6
+        ? `REPAIRING ${job.building.def.name}`
+        : `TO REPAIR ${job.building?.def.name || 'STRUCTURE'}`;
+    }
     if (job.type === 'build') {
       return job.building && Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) < job.building.radius + 1.6
         ? `BUILDING ${job.building.def.name}`
@@ -360,6 +365,18 @@ export class Commander {
     return best;
   }
 
+  orderRepair(unit, building) {
+    if (!unit || unit.isLeader || unit.dead) {
+      this.ui.hint('SELECT A SURVIVOR TO REPAIR', 1800);
+      return;
+    }
+    if (!building || !building.built || building.destroyed || building.hp >= building.maxHp) return;
+    this.campFolk.issueJob(unit, { type: 'repair', building });
+    this.marker(building.x, building.z, '#8fbf7a');
+    this.ui.toast(`${unit.name} → REPAIR ${building.def.name}`);
+    this.refresh(unit);
+  }
+
   orderBuild(unit, building) {
     if (!unit || unit.isLeader || unit.dead) {
       this.ui.hint('SELECT A SURVIVOR TO BUILD', 1800);
@@ -461,7 +478,7 @@ export class Commander {
       this.orderBuild(this.selected, building);
       return;
     }
-    if (building && building.type === 'tower') {
+    if (building && building.type === 'tower' && building.built) {
       if (this.selected.isLeader) {
         this.ui.hint('TAKE CONTROL OF A SURVIVOR TO MAN THE TOWER', 2000);
         return;
@@ -474,7 +491,8 @@ export class Commander {
         return;
       }
       if (!this.selected.weapon) {
-        this.ui.toast(`${this.selected.name} IS UNARMED`, true);
+        if (building.hp < building.maxHp) this.orderRepair(this.selected, building);
+        else this.ui.toast(`${this.selected.name} IS UNARMED`, true);
         return;
       }
       if (building.manned) {
@@ -482,6 +500,10 @@ export class Commander {
         return;
       }
       this.orderManTower(this.selected, building);
+      return;
+    }
+    if (building && building.built && !building.destroyed && building.hp < building.maxHp) {
+      this.orderRepair(this.selected, building);
       return;
     }
 

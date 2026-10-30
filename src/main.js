@@ -306,6 +306,30 @@ campFolk.attachCombat({
   onDown: (name) => ui.toast(`${name} DOWN — RESPAWNING`, true),
 });
 raiders.attachCombat({ registry, firearms });
+raiders.settlement = settlement;
+settlement.onBuildingDestroyed = (building) => {
+  power.removeBuilding(building);
+  if (building.manned) {
+    campFolk.down(building.manned);
+    building.manned = null;
+  }
+  if (building.type === 'chapel') {
+    state.maxHealth = Math.max(100, state.maxHealth - 25);
+    state.health = Math.min(state.health, state.maxHealth);
+  }
+  ui.toast(`${building.def.name} DESTROYED`, true);
+  ui.updateHUD(state);
+  saveGame();
+};
+settlement.onBuildingDamage = (building) => {
+  if (Math.hypot(building.x - player.x, building.z - player.z) < 24) {
+    cameraShake = Math.max(cameraShake, 0.12);
+  }
+};
+campFolk.onBuildingRepaired = (building) => {
+  ui.toast(`${building.def.name} REPAIRED`);
+  saveGame();
+};
 campFolk.onBuildComplete = (building) => {
   if (!settlement.completeBuilding(building)) return;
   power.attach(building);
@@ -412,6 +436,7 @@ window.__ashfall = {
 let spawnAt = 0;
 let nextRaid = 70;
 let raidActive = false;
+let raidKind = 'raiders';
 let spawnWarned = false;
 let nextSpawnGap = 16;
 let resumedGame = false;
@@ -1087,12 +1112,19 @@ function collidePlayer() {
 // simulation
 // ---------------------------------------------------------------------------
 
-function startRaid(count = 2, distance = 30) {
-  const spawned = raiders.spawnWave(count, player.x, player.z, distance);
+function raidRemaining() {
+  return raidKind === 'ghouls' ? enemies.activeCount : raiders.activeCount;
+}
+
+function startRaid(kind = 'raiders', count = 2, distance = 30) {
+  const spawned = kind === 'ghouls'
+    ? enemies.spawn(count, player.x, player.z, distance)
+    : raiders.spawnWave(count, player.x, player.z, distance);
   if (spawned) {
     raidActive = true;
-    ui.setRaid(raiders.activeCount);
-    ui.hint('RAIDERS IN THE DUST', 3400);
+    raidKind = kind;
+    ui.setRaid(raidRemaining(), kind);
+    ui.hint(kind === 'ghouls' ? 'GHOULS IN THE DARK' : 'RAIDERS IN THE DUST', 3400);
   }
   return spawned;
 }
@@ -1150,8 +1182,9 @@ function simulate(dt) {
   }
   if (state.time > spawnAt) {
     if (enemies.activeCount < enemies.maxActive) {
-      const n = 1 + Math.floor(state.time / 110);
-      enemies.spawn(Math.min(n, 3), player.x, player.z, 32);
+      const night = dayCycle.daylight < 0.3;
+      const n = (1 + Math.floor(state.time / 110)) * (night ? 2 : 1);
+      enemies.spawn(Math.min(n, night ? 5 : 3), player.x, player.z, 32);
       spawnAt = state.time + nextSpawnGap;
       nextSpawnGap = Math.max(9, 17 - state.time / 90);
     } else {
@@ -1162,16 +1195,18 @@ function simulate(dt) {
   // raider pressure: a small squad every minute or so
   if (state.time > nextRaid) {
     const n = 1 + Math.floor(state.time / 150);
-    const spawned = startRaid(Math.min(2, n), 30);
+    const night = dayCycle.daylight < 0.3;
+    const kind = night ? 'ghouls' : 'raiders';
+    const spawned = startRaid(kind, Math.min(3, kind === 'ghouls' ? n + 1 : n), 30);
     nextRaid = spawned ? state.time + 60 : state.time + 8;
   }
 
   if (raidActive) {
-    const remaining = raiders.activeCount;
-    ui.setRaid(remaining);
+    const remaining = raidRemaining();
+    ui.setRaid(remaining, raidKind);
     if (remaining === 0) {
       raidActive = false;
-      ui.setRaid(0);
+      ui.setRaid(0, raidKind);
       grantScrap(10);
       ui.updateHUD(state);
       ui.toast('RAID CLEARED · +10 SCRAP');
@@ -1224,6 +1259,8 @@ function loop(now) {
     dt *= 0.2;
   }
 
+  const dayInfo = dayCycle.update(dt);
+  ui.setClock(dayInfo);
   if (state.started) {
     simulate(dt);
   } else {
@@ -1236,8 +1273,6 @@ function loop(now) {
   campFolk.update(dt, state.time, player, settlement.buildings);
   raiders.update(dt, state.time, player);
   commander.update(dt);
-  const dayInfo = dayCycle.update(dt);
-  ui.setClock(dayInfo);
   power.update(dt, dayInfo.daylight);
   // Damage and passive regen change health outside the event-driven HUD paths.
   if (now - lastUIUpdate > 120) {
@@ -1294,7 +1329,7 @@ ui.setResume(resumedGame);
 refreshWardrobe();
 ui.setWeapon(player.armed, player.weapon?.name);
 ui.setAmmo(player.ammoState());
-ui.setRaid(0);
+ui.setRaid(0, 'raiders');
 if (resumedGame) {
   ui.updateHUD(state);
   ui.setGather(false);
@@ -1356,11 +1391,14 @@ if (debugParams.has('raider')) {
   r.isFar = false;
 }
 if (debugParams.has('raid')) {
-  setTimeout(() => startRaid(2, 9), 1200);
+  setTimeout(() => startRaid('raiders', 2, 9), 1200);
+}
+if (debugParams.has('raidghoul')) {
+  setTimeout(() => startRaid('ghouls', 3, 9), 1200);
 }
 if (debugParams.has('raidclear')) {
   setTimeout(() => {
-    startRaid(2, 10);
+    startRaid('raiders', 2, 10);
     setTimeout(() => {
       for (const p of raiders.people) {
         if (p.active) raiders.damage(p.target.ref, 999);

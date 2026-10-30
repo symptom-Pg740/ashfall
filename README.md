@@ -53,6 +53,7 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Take / release control | `TAKE CONTROL` / `RELEASE` | same buttons |
 | Man the watchtower | select an armed survivor, tap the tower | same |
 | Release the tower | tap the tower again, or order the gunner away | same |
+| Repair a structure | select a survivor, tap the damaged building | same |
 | Move (direct mode) | Left stick | `WASD` / arrows |
 | Strike / fire | `STRIKE` / `FIRE` button | `Space` |
 | Gather scrap | `GATHER` button (appears near a pile) | `E` |
@@ -166,6 +167,12 @@ The graph keeps the last ~45 seconds.
   active on completion; storage, power, production, healing and defence ignore unfinished sites.
   Placement is **anywhere in the camp** — pan the camera first, then choose a structure; it is no
   longer tied to the player's position.
+- **Raids, damage and repair (Phase 4b)** — raids now alternate by time of day: **raiders by day,
+  ghouls by night**, with the banner showing which. Raiders are on a mission: they walk to the nearest
+  **warehouse or power building**, shoot it, and only break off for a unit within 14 m. Structures
+  have HP, a floating damage bar and smoke at low health. A destroyed structure disappears, cuts its
+  power links, drops warehouse capacity, takes a chapel's vitality with it and downs a tower gunner.
+  Select a survivor and tap a damaged structure to **repair** it at 14 HP/s.
 - **Day/night and power (Phase 3)** — a 6-minute cycle drives the sun/moon, sky, fog, shadows and a
   solar output curve. **Solar arrays** generate 2.2 power, **poles** carry it 12 m, **battery banks**
   store 30 and **yard lights** burn 0.5 at night. A placed power building auto-wires to the nearest
@@ -344,9 +351,10 @@ chain. The turret only engages non-humans; human raids are your units' problem.
   deferring (audio tails/occlusion, animation, wounds, needs, weather, destruction), with cost and
   priority, so it is not lost.
 
-**Phases 1–4 are in, plus construction jobs:** buildings are placed anywhere in the camp and built
-by units, not the avatar. The next slice is **Phase 4b**: raids that target the warehouse and power
-grid, plus day/night raid composition, before the Phase 5 economy work.
+**Phases 1–4b are in, plus construction jobs:** buildings are placed anywhere in the camp and built
+by units; raids alternate between daytime raiders and night ghouls, and raiders go for the warehouse
+and the grid. The next slice is **Phase 5** — food/water upkeep, recruitment, the workshop and the
+relay objective.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgotten work.
@@ -360,6 +368,8 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgott
   manual LINK mode), there is no occlusion, and turret belts reload themselves.
 - Tower manning, turret belts and builder assignments are not saved; reload leaves towers and sites
   idle, and construction sites keep their progress but need a new builder.
+- Building HP is saved, but repair is free and has no engineer role yet.
+- Ghouls still target units, not buildings; mixed raider/ghoul assaults are not implemented.
 - Raiders do not yet target the warehouse or power infrastructure, and night raids are not yet
   differentiated.
 - The 1 m nav grid is coarse; very narrow gaps can still be unreachable.
@@ -387,7 +397,8 @@ Append to the URL:
 | `?weapon=rifle` | equip a weapon (`pistol`, `rifle`, `shotgun`, or melee) |
 | `?ghoul=1` | one stationary ghoul in front of the player |
 | `?raider=1` | one hostile raider beside the player |
-| `?raid=1` | start a raid immediately |
+| `?raid=1` | start a raider raid immediately |
+| `?raidghoul=1` | start a ghoul raid immediately |
 | `?raidclear=1` | spawn and immediately clear a raid |
 | `?armory=1` | open the outfit/armory panel |
 | `?upgrade=damage` | buy one upgrade tier and open the panel |

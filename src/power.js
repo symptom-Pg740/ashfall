@@ -179,6 +179,17 @@ export class PowerNetwork {
     }
   }
 
+  removeBuilding(building) {
+    if (!building) return;
+    this.links = this.links.filter((l) => l.a !== building.id && l.b !== building.id);
+    for (const [key, wire] of [...this.wires.entries()]) {
+      if (wire.a === building || wire.b === building) {
+        this.removeWire(wire.a, wire.b);
+      }
+    }
+    this.solve(0, 1);
+  }
+
   serialize() {
     return { links: this.links.map((l) => ({ a: l.a, b: l.b })) };
   }

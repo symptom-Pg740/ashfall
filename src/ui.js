@@ -18,7 +18,7 @@ export class UI {
     this.lastMag = 0;
     this.lastReserve = Infinity;
     this.lastReloading = false;
-    this.lastRaid = -1;
+    this.lastRaid = '';
     this.hitTimer = 0;
     this.commanderMode = 'command';
     this._rosterKey = '';
@@ -81,6 +81,7 @@ export class UI {
       ammo: document.getElementById('hud-ammo'),
       raidBanner: document.getElementById('raid-banner'),
       raidCount: document.getElementById('raid-count'),
+      raidKind: document.getElementById('raid-kind'),
       ammoChip: document.getElementById('ammo-chip'),
       hitMarker: document.getElementById('hit-marker'),
       pSeed: document.getElementById('p-seed'),
@@ -418,12 +419,14 @@ export class UI {
     }
   }
 
-  setRaid(count) {
+  setRaid(count, kind = 'raiders') {
     if (!this.el.raidBanner) return;
-    if (count === this.lastRaid) return;
-    this.lastRaid = count;
+    const key = `${count}:${kind}`;
+    if (key === this.lastRaid) return;
+    this.lastRaid = key;
     this.el.raidBanner.classList.toggle('hidden', count <= 0);
     if (count > 0 && this.el.raidCount) this.el.raidCount.textContent = String(count);
+    if (this.el.raidKind) this.el.raidKind.textContent = kind === 'ghouls' ? 'GHOULS' : 'RAIDERS';
   }
 
   hitMarker(kill = false) {
