@@ -24,7 +24,7 @@ export class UI {
     this.hitTimer = 0;
     this.commanderMode = 'command';
     this._rosterKey = '';
-    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: true, sound: true };
+    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: true, sound: true, paths: false };
     this.orientationLock = null;
     this.compassDrag = null;
     this.compassAngle = 0;

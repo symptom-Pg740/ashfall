@@ -142,12 +142,18 @@ The graph keeps the last ~45 seconds.
 
 ## What is implemented
 
-- **Procedural terrain** — a seeded, baked 384² height/slope/moisture/road field (fBm, domain warp,
-  ridged rim, soft terraces, droplet erosion) drives the mesh, props, player, buildings and enemies.
-  Vertex-coloured with a generated tiling sand albedo + normal map, winding dirt road, cross street
-  and ash/rust patches.
+- **Procedural terrain** — a seeded, baked 416² height/slope/moisture/road field (fBm, domain warp,
+  ridged rim, soft terraces, droplet erosion) drives a 300 m terrain plane, the props, player,
+  buildings and enemies. The playable disc is **180 m across** (radius 90). Vertex-coloured with a
+  generated tiling sand albedo + normal map, winding dirt road, cross street and ash/rust patches.
 - **Art direction** — sun-bleached sand, warm key light, cool fill, **real-time crisp shadows**,
   red adobe, cream stucco, terracotta roofs, blue shutters, exposed beams, cacti, shrubs and mesas.
+- **World scale and navigation (Phase 4d)** — the camp sits in an open **180 m** disc with the
+  scatter spread out (roughly half the old density, wider spacing, 14–18 m clear approaches). A
+  185×185 m navigation grid inflates buildings and wreckage, biases paths away from walls with a
+  soft clearance field, and uses binary-heap A* with a direct-line fast path. Units replan once when
+  wedged, then report `NO PATH` instead of walking into scenery; camp folk also separate from each
+  other. `PATHS` in the perf panel (or `?paths=1`) draws the live paths.
 - **Procedural props** — rocks, dead trees, saguaro cacti, desert shrubs, broken ruins, wrecked cars,
   a bus landmark, an **abandoned adobe ruin with a piano**, a camp banner, scrap piles, planks,
   barrels, rubble, clustered dry grass and distant mesas. Placed with blue-noise scatter masked by
@@ -373,11 +379,11 @@ language.
   old-world ruins; salvaged tech on camp-made mounts.
 - **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
 
-**Phases 1–4c are in:** buildings are placed anywhere in the camp and built by units; the floating
+**Phases 1–4d are in:** buildings are placed anywhere in the camp and built by units; the floating
 building card, manual wire dragging with pole ports and the 360° turret fix are shipped; raids
-alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid.
-The next slice is **Phase 4d** — a larger world with spread-out scatter and better navigation — then
-Phase 5 (workplaces).
+alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid;
+the world is now a 180 m disc with spread-out scatter and clearance-aware navigation that reports
+`NO PATH`. The next slice is **Phase 5** — workplaces, needs and the workshop ammo economy.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgotten work.
@@ -397,15 +403,17 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
 - Building HP is saved and repair works, but repair is free and there is no engineer role yet.
 - Ghouls target living things only and never damage buildings; mixed raider/ghoul assaults are not
   implemented.
-- The 1 m nav grid is coarse; very narrow gaps can still be unreachable.
+- Navigation is a 1 m grid; gaps narrower than about two cells can still be unreachable, and very
+  large detours cost a short A* search. The debug overlay and `NO PATH` report make this visible.
 - Construction cannot be cancelled or refunded yet, and a wire cannot be removed (destroying an
   endpoint still removes its wires).
 - A site with no free survivor waits; there is no job queue or auto-reassign after a reload. The
   auto-assign on placement is transitional until the free builder role (Phase 5).
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
-- Shadow cost on older mobile GPUs is the main open performance question.
-- Circle collisions over a 1 m A* grid. Dense wreckage can still catch a unit; Phase 4d improves
-  clearance, path following and stuck recovery.
+- Shadow cost on older mobile GPUs is the main open performance question. The expanded world adds
+  terrain vertices and more instances; adaptive resolution is the current safety valve.
+- Circle collisions over a 1 m A* grid. Dense wreckage can still wedge a unit briefly, but it now
+  replans and reports `NO PATH` instead of grinding forever.
 - Water is produced but has no sink/economy yet.
 - No building removal or rotation; weapon upgrades exist but there is no settlement tech tree.
 - Ghouls, hostile rifle raiders and the camp guard only; pistol, pipe rifle and sawn-off.

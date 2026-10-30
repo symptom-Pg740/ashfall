@@ -96,6 +96,13 @@ export class CampFolk {
         pathIndex: 0,
         pathKey: '',
         pathTimer: 0,
+        attention: null,
+        pathFail: 0,
+        replan: 0,
+        stuckTimer: 0,
+        stuckCount: 0,
+        lastMoveX: x,
+        lastMoveZ: z,
         hp: 100,
         maxHp: 100,
         dead: false,
@@ -130,6 +137,10 @@ export class CampFolk {
     person.pathIndex = 0;
     person.pathKey = '';
     person.pathTimer = 0;
+    person.attention = null;
+    person.pathFail = 0;
+    person.replan = 0;
+    person.stuckCount = 0;
     if (person.aim) person.aim.setLock(job?.type === 'attack' ? job.target?.id ?? null : null);
     return true;
   }
@@ -138,7 +149,27 @@ export class CampFolk {
     if (!person) return;
     person.job = null;
     person.carry = 0;
+    person.attention = null;
     person.aim?.setLock(null);
+  }
+
+  /** A job could not be reached: stop, report on the unit card, and do not beeline into scenery. */
+  failJob(person, reason = 'NO PATH') {
+    if (!person) return false;
+    const job = person.job;
+    person.job = null;
+    person.path = null;
+    person.pathIndex = 0;
+    person.pathKey = '';
+    person.pathTimer = 0;
+    person.pathFail = 0;
+    person.replan = 0;
+    person.stuckCount = 0;
+    person.attention = reason;
+    person.holdTimer = 3;
+    person.aim?.setLock(null);
+    this.onNoPath?.(person, job, reason);
+    return true;
   }
 
   down(person) {
@@ -148,6 +179,7 @@ export class CampFolk {
     person.respawnTimer = 20;
     person.carry = 0;
     person.job = null;
+    person.attention = null;
     if (person.manning) {
       person.manning.manned = null;
       person.manning = null;
@@ -196,6 +228,7 @@ export class CampFolk {
     person.manning = tower;
     person.towerWeapon = { ...person.weapon, range: person.weapon.range + 6 };
     person.job = null;
+    person.attention = null;
     person.carry = 0;
     person.holdTimer = 0;
     person.phase = 0;
@@ -565,6 +598,7 @@ export class CampFolk {
           p.isFar = false;
           p.possessed = false;
           p.job = null;
+          p.attention = null;
           p.carry = 0;
           p.aim?.setLock(null);
           pos.set(p.home.x, heightAt(p.home.x, p.home.z), p.home.z);
@@ -622,6 +656,7 @@ export class CampFolk {
       } else if (jobTarget) {
         let tx = jobTarget.x;
         let tz = jobTarget.z;
+        let canMove = true;
         const type = p.job?.type;
         if (this.nav && (type === 'move' || type === 'gather' || type === 'build' || type === 'repair' || type === 'man')) {
           const key = `${Math.round(jobTarget.x * 2)}:${Math.round(jobTarget.z * 2)}`;
@@ -630,8 +665,18 @@ export class CampFolk {
             p.path = this.nav.path(pos.x, pos.z, jobTarget.x, jobTarget.z);
             p.pathIndex = 0;
             p.pathKey = key;
-            p.pathTimer = 2.5;
+            p.pathTimer = p.path ? 2.5 : 0.15;
           }
+          if (!p.path) {
+            p.pathFail += dt;
+            if (p.pathFail > 0.4) {
+              this.failJob(p, 'NO PATH');
+              canMove = false;
+            }
+          } else {
+            p.pathFail = 0;
+          }
+          if (!p.path) canMove = false;
           while (
             p.path &&
             p.pathIndex < p.path.length &&
@@ -644,16 +689,18 @@ export class CampFolk {
             tz = p.path[p.pathIndex].z;
           }
         }
-        const dx = tx - pos.x;
-        const dz = tz - pos.z;
-        const dist = Math.hypot(dx, dz) || 1;
-        const step = Math.min(p.speed * dt, dist);
-        const dir = this.steerAround(p, dx / dist, dz / dist, buildings);
-        pos.x += dir.x * step;
-        pos.z += dir.z * step;
-        p.heading = Math.atan2(dir.x, dir.z);
-        moving = true;
-        p.phase += dt * (5.2 + p.speed);
+        if (canMove) {
+          const dx = tx - pos.x;
+          const dz = tz - pos.z;
+          const dist = Math.hypot(dx, dz) || 1;
+          const step = Math.min(p.speed * dt, dist);
+          const dir = this.steerAround(p, dx / dist, dz / dist, buildings);
+          pos.x += dir.x * step;
+          pos.z += dir.z * step;
+          p.heading = Math.atan2(dir.x, dir.z);
+          moving = true;
+          p.phase += dt * (5.2 + p.speed);
+        }
       } else if (jobActive) {
         // Holding: harvesting, waiting for a reload, or standing at firing range. Face the work.
         const j = p.job;
@@ -725,6 +772,38 @@ export class CampFolk {
       this.resolveCollisions(p, buildings);
       pos.y = heightAt(pos.x, pos.z);
 
+      // Stuck detection. A unit that is trying to move but not covering ground is wedged on
+      // wreckage, a building corner or another body. Replan once; if that fails, report `NO PATH`.
+      if (moving) {
+        p.stuckTimer += dt;
+        if (p.stuckTimer >= 0.55) {
+          const moved = Math.hypot(pos.x - p.lastMoveX, pos.z - p.lastMoveZ);
+          if (moved < 0.18) p.stuckCount++;
+          else {
+            p.stuckCount = 0;
+            if (moved > 1.0) p.replan = 0;
+          }
+          p.stuckTimer = 0;
+          p.lastMoveX = pos.x;
+          p.lastMoveZ = pos.z;
+          if (p.stuckCount >= 2) {
+            p.stuckCount = 0;
+            p.replan++;
+            p.pathTimer = 0;
+            p.pathKey = '';
+            p.path = null;
+            if (p.replan >= 2 && p.job) {
+              this.failJob(p, 'NO PATH');
+            }
+          }
+        }
+      } else {
+        p.stuckTimer = 0;
+        p.stuckCount = 0;
+        p.lastMoveX = pos.x;
+        p.lastMoveZ = pos.z;
+      }
+
       let diff = p.heading - p.rig.group.rotation.y;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
@@ -752,6 +831,52 @@ export class CampFolk {
           if (p.mag <= 0) p.reloadTimer = p.weapon.reload;
           if (shot.killed) this.onKill?.(shot.x, shot.z);
         }
+      }
+    }
+
+    this.separateUnits();
+  }
+
+  /** Keep camp folk out of each other's capsules; cheap at this population. */
+  separateUnits() {
+    const people = this.people;
+    const r = 0.62;
+    for (let i = 0; i < people.length; i++) {
+      const a = people[i];
+      if (a.dead) continue;
+      const pa = a.rig.group.position;
+      for (let j = i + 1; j < people.length; j++) {
+        const b = people[j];
+        if (b.dead) continue;
+        const pb = b.rig.group.position;
+        const dx = pb.x - pa.x;
+        const dz = pb.z - pa.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 >= r * r) continue;
+        let d = Math.sqrt(d2);
+        let nx;
+        let nz;
+        if (d < 1e-4) {
+          // Perfect overlap: give each pair a deterministic direction so they separate.
+          const angle = i * 2.399963 + j * 0.7;
+          nx = Math.cos(angle);
+          nz = Math.sin(angle);
+          d = 0;
+        } else {
+          nx = dx / d;
+          nz = dz / d;
+        }
+        const push = (r - d) * 0.5;
+        if (!a.possessed) {
+          pa.x -= nx * push;
+          pa.z -= nz * push;
+        }
+        if (!b.possessed) {
+          pb.x += nx * push;
+          pb.z += nz * push;
+        }
+        pa.y = heightAt(pa.x, pa.z);
+        pb.y = heightAt(pb.x, pb.z);
       }
     }
   }

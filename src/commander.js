@@ -139,6 +139,7 @@ export class Commander {
       return this.mode === 'direct' ? 'UNDER YOUR CONTROL' : 'TAKE CONTROL TO MOVE';
     }
     if (unit.manning) return 'ON THE TOWER';
+    if (unit.attention && !unit.job) return unit.attention;
     const job = unit.job;
     if (!job) {
       if (unit.carry > 0) return `CARRYING ${unit.carry}`;

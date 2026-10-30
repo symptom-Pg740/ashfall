@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { heightAt } from './terrain.js';
-import { makeRng, clamp } from './rng.js';
+import { heightAt, PLAY_RADIUS } from './terrain.js';
+import { makeRng } from './rng.js';
 import { box, merge, PALETTE } from './geo.js';
 
 const POOL = 64;
@@ -109,8 +109,12 @@ export class Enemies {
       if (!e) break;
       const a = this.rng() * Math.PI * 2;
       const r = spread + this.rng.range(-4, 8);
-      e.x = clamp(aroundX + Math.cos(a) * r, -50, 50);
-      e.z = clamp(aroundZ + Math.sin(a) * r, -50, 50);
+      const spawnX = aroundX + Math.cos(a) * r;
+      const spawnZ = aroundZ + Math.sin(a) * r;
+      const sd = Math.hypot(spawnX, spawnZ);
+      const keep = sd > PLAY_RADIUS ? PLAY_RADIUS / sd : 1;
+      e.x = spawnX * keep;
+      e.z = spawnZ * keep;
       e.y = heightAt(e.x, e.z);
       e.active = true;
       e.hp = 46;
@@ -224,9 +228,9 @@ export class Enemies {
       }
 
       const rr = Math.hypot(e.x, e.z);
-      if (rr > 50) {
-        e.x *= 50 / rr;
-        e.z *= 50 / rr;
+      if (rr > PLAY_RADIUS) {
+        e.x *= PLAY_RADIUS / rr;
+        e.z *= PLAY_RADIUS / rr;
       }
 
       e.y = heightAt(e.x, e.z);

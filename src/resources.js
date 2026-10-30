@@ -20,7 +20,7 @@ function buildPile() {
 export class ScrapField {
   constructor(scene, seed = 0x5c4a9) {
     this.rng = makeRng(seed);
-    this.count = 28;
+    this.count = 46;
     this.nodes = [];
     this.time = 0;
 
@@ -50,7 +50,7 @@ export class ScrapField {
       let z = 0;
       for (let tries = 0; tries < 40; tries++) {
         const a = this.rng() * Math.PI * 2;
-        const r = this.rng.range(7, 44);
+        const r = this.rng.range(9, 82);
         x = Math.cos(a) * r;
         z = Math.sin(a) * r;
         const tooClose = this.nodes.some((n) => Math.hypot(n.x - x, n.z - z) < 5);

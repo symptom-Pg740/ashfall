@@ -1,7 +1,7 @@
 import { buildSkinnedHumanoid, bakeStatic } from './skinned.js';
 import { AimController } from './aim.js';
 import { WEAPONS } from './weapons.js';
-import { heightAt } from './terrain.js';
+import { heightAt, PLAY_RADIUS } from './terrain.js';
 import { deriveSeed, makeRng, damp } from './rng.js';
 import { shortestAngle } from './actors.js';
 
@@ -118,8 +118,12 @@ export class Raiders {
       if (!p) break;
       const a = this.rng() * Math.PI * 2;
       const radius = distance + this.rng.range(-2, 3);
-      const x = aroundX + Math.cos(a) * radius;
-      const z = aroundZ + Math.sin(a) * radius;
+      const spawnX = aroundX + Math.cos(a) * radius;
+      const spawnZ = aroundZ + Math.sin(a) * radius;
+      const sd = Math.hypot(spawnX, spawnZ);
+      const keep = sd > PLAY_RADIUS ? PLAY_RADIUS / sd : 1;
+      const x = spawnX * keep;
+      const z = spawnZ * keep;
       p.active = true;
       p.dead = false;
       p.hp = p.maxHp;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createTerrain, heightAt, worldField } from './terrain.js';
+import { createTerrain, heightAt, worldField, WORLD_RADIUS, PLAY_RADIUS } from './terrain.js';
 import { WORLD_SEED, deriveSeed } from './rng.js';
 import { createAtmosphere, SUN_DIR } from './sky.js';
 import { createWasteland } from './props.js';
@@ -20,6 +20,7 @@ import { DayCycle } from './daycycle.js';
 import { PowerNetwork } from './power.js';
 import { BuildingCard } from './buildingcard.js';
 import { WireTool } from './wire.js';
+import { PathDebug } from './pathdebug.js';
 import { NavGrid } from './nav.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readSave, writeSave, clearSave } from './save.js';
@@ -68,7 +69,7 @@ const CAMERA = {
   maxHalfHeight: 22,
   distance: 45,
   near: 0.5,
-  far: 140,
+  far: 240,
 };
 
 let viewHalfHeight = 11;
@@ -222,6 +223,7 @@ registry.add({
 registry.add(raiders);
 
 const ui = new UI();
+const pathDebug = new PathDebug(scene);
 const commander = new Commander({
   canvas,
   getCamera: () => activeCamera,
@@ -358,6 +360,10 @@ campFolk.onBuildingRepaired = (building) => {
   ui.toast(`${building.def.name} REPAIRED`);
   saveGame();
 };
+campFolk.onNoPath = (person) => {
+  ui.toast(`${person.name} · NO PATH`, true);
+  if (commander.selected === person) commander.refresh(person);
+};
 campFolk.onBuildComplete = (building) => {
   if (!settlement.completeBuilding(building)) return;
   const wired = power.attach(building);
@@ -450,6 +456,7 @@ window.__ashfall = {
   power,
   buildingCard,
   wire,
+  pathDebug,
   nav,
   settlement,
   player,
@@ -528,6 +535,8 @@ ui.on('toggle', (key, value) => {
     setOrtho(value);
   } else if (key === 'sound') {
     audio.setMuted(!value);
+  } else if (key === 'paths') {
+    pathDebug.setEnabled(value);
   }
 });
 ui.on('stress', (kind) => doStress(kind));
@@ -965,7 +974,7 @@ function validateWorld() {
       }
     }
   }
-  if (Math.hypot(player.x, player.z) > 52) issues.push('player outside the world');
+  if (Math.hypot(player.x, player.z) > PLAY_RADIUS + 1) issues.push('player outside the world');
   if (issues.length) {
     console.warn('[ashfall] validation', issues);
     ui.toast(`VALIDATION · ${issues.length} ISSUE${issues.length === 1 ? '' : 'S'}`, true);
@@ -984,7 +993,7 @@ const camTarget = new THREE.Vector3(player.x, player.pos.y, player.z);
 const focus = new THREE.Vector3(player.x, 0, player.z);
 const lookAhead = new THREE.Vector3();
 const yaw = { current: 0, target: 0 };
-const PAN_LIMIT = 58;
+const PAN_LIMIT = PLAY_RADIUS + 6;
 let cameraFollow = true;
 const moveWorld = { x: 0, z: 0 };
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -1142,9 +1151,9 @@ function collidePlayer() {
   for (const o of wasteland.obstacles) push(o.x, o.z, o.r + 0.4);
   for (const b of settlement.buildings) push(b.x, b.z, b.radius + 0.35);
   const d = Math.hypot(x, z);
-  if (d > 50) {
-    x *= 50 / d;
-    z *= 50 / d;
+  if (d > PLAY_RADIUS) {
+    x *= PLAY_RADIUS / d;
+    z *= PLAY_RADIUS / d;
   }
   player.pos.x = x;
   player.pos.z = z;
@@ -1199,10 +1208,10 @@ function simulate(dt) {
   ui.setAmmo(player.ammoState());
   collidePlayer();
 
-  if (Math.hypot(player.x, player.z) > 50 && !boundaryWarned) {
+  if (Math.hypot(player.x, player.z) > PLAY_RADIUS && !boundaryWarned) {
     boundaryWarned = true;
     ui.hint('RAD STORM AHEAD — TURN BACK', 2600);
-  } else if (Math.hypot(player.x, player.z) < 47) {
+  } else if (Math.hypot(player.x, player.z) < PLAY_RADIUS - 3) {
     boundaryWarned = false;
   }
 
@@ -1316,6 +1325,7 @@ function loop(now) {
   raiders.update(dt, state.time, player);
   commander.update(dt);
   buildingCard.update(dt);
+  pathDebug.update(campFolk.people, dt);
   power.update(dt, dayInfo.daylight);
   // Damage and passive regen change health outside the event-driven HUD paths.
   if (now - lastUIUpdate > 120) {
@@ -1361,6 +1371,9 @@ ui.setToggle('embers', true);
 ui.setToggle('shadows', shadowsOn);
 ui.setToggle('ortho', orthoMode);
 ui.setToggle('sound', !audio.muted);
+const showPaths = new URLSearchParams(window.location.search).has('paths');
+pathDebug.setEnabled(showPaths);
+ui.setToggle('paths', showPaths);
 ui.setSeed(WORLD_SEED);
 input.camera = activeCamera;
 ui.updateHUD(state);

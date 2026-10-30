@@ -10,10 +10,11 @@ This document is the working plan. `docs/ECONOMY.md` is the detailed workplace/e
 backlog. We are still in the **testing phase**: the economy numbers, building names and even the
 assignment model can change after playtests. Keep new systems data-driven and save-migrated.
 
-**Status:** Phases 1–4c first slices shipped (command/possession; warehouse and hauling; day/night
+**Status:** Phases 1–4d first slices shipped (command/possession; warehouse and hauling; day/night
 and power; Vickers turret + watchtower gunner + nav grid; construction jobs; raids against the grid,
-building HP/damage/repair; floating building card, manual wiring and the 360° turret fix). The next
-slice is **Phase 4d — world scale and navigation**, then workplaces. See §6.
+building HP/damage/repair; floating building card, manual wiring and the 360° turret fix; expanded
+world with spread-out scatter and clearance-aware navigation). The next slice is **Phase 5 —
+workplaces and economy**. See §6.
 
 ---
 
@@ -350,23 +351,28 @@ That gives the run a beginning, a middle and an end, and a reason to build the w
 Lose if the campfire is destroyed or every unit is down. Win by completing the relay and surviving
 the final assault.
 
-### 4.9 Map scale and unit navigation
+### 4.9 Map scale and unit navigation — **implemented in 4d**
 
-The current playable area is a ~100 m square with a dense prop scatter. That density is a major
-reason units catch on ruins. The next world pass:
+The playable disc is now **radius 90 m (180 m across)**, up from 50 m. The terrain plane grew to
+300 m so the old rim still reads as distant badlands; the baked field is 416² and the same seed is
+kept. The camera pan limit, actor clamp, enemy/raider spawn clamp, nav bounds and scrap radius all
+follow `WORLD_RADIUS` / `PLAY_RADIUS` from `src/terrain.js`.
 
-- **Expand the playable area** to roughly **2× the current radius** (target ~180–200 m across) while
-  keeping the same world seed. Move the camera pan limit, camp radius, nav grid, power span and
-  scatter masks with it.
-- **Spread the scatter:** reduce grass/shrub/rock density by 40–60 %, enforce a larger minimum
-  spacing between large props, and leave clear approach lanes around the camp and between landmarks.
-- **Ruins and landmarks** stay old-world and can be placed farther apart; the camp gets room to grow.
-- **Chunking is a later phase (Phase 7).** The terrain is one mesh today; expanding the single mesh
-  and the instanced scatter is acceptable for the next test. Do not promise streaming yet.
-- **Navigation improvements** accompany the map: clearance-aware grid cells, smoother paths,
-  lookahead, stuck detection and replanning, unit separation, and a `NO PATH` attention state. If a
-  unit cannot reach a workplace it waits at the post and reports, instead of wandering.
-- Add a debug path overlay for testing (line + waypoints), off by default.
+- **Scatter:** rock/grass-shrub density dropped by roughly half; trees, cacti, ruins and wrecks use
+  wider minimum spacing (9–20 m) and the camp keeps a 14–18 m clear approach. Ruins now sit across
+  the whole disc instead of a tight 42 m ring.
+- **Navigation (`src/nav.js`):** a 1 m grid over the disc (185×185 cells) with inflated building and
+  prop footprints, a soft clearance field, A* on a binary heap, a direct-line fast path, and
+  string-pulled waypoints that finish on the exact target when it is walkable.
+- **Stuck recovery (`src/npcs.js`):** a unit that is trying to move but not covering ground replans
+  once, then fails the job with a `NO PATH` attention state and a toast. It never beelines into
+  scenery after a failed path.
+- **Separation:** camp folk push out of each other's capsules; perfect overlaps get a deterministic
+  direction so a pair cannot weld together.
+- **Debug:** the perf panel has a `PATHS` switch (or `?paths=1`) that draws current paths and
+  waypoints. Off by default.
+- **Chunking remains Phase 7.** The single terrain mesh and instanced scatter are deliberate for now;
+  streaming is not promised yet.
 
 ### 4.10 Art and lore identity
 
@@ -396,7 +402,8 @@ src/wire.js         manual LINK mode, pole ports, drag line, range/validity feed
 src/units.js        Unit model, roster, home workplace, roles, inventory
 src/jobs.js         Job primitives + work-loop runner + manual override
 src/commands.js     selection, contextual orders, command/direct mode
-src/nav.js          1 m grid, A* + smoothing, clearance, stuck recovery
+src/nav.js          1 m grid, binary-heap A*, clearance field, smoothing
+src/pathdebug.js    optional path/waypoint overlay for testing
 src/power.js        power graph, pole ports, solve, priorities, batteries
 src/daycycle.js     sun/moon, light + sky + solar curve
 src/emplacements.js turret + watchtower assignment and firing
@@ -544,17 +551,25 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 - Not yet: wire removal, workplace job slots (the card has the surface and the rows ready), needs,
   recipes, construction cancel/refund.
 
-### Phase 4d — World scale and navigation — **next**
+### Phase 4d — World scale and navigation — **implemented (first slice)**
 
-- Expand the playable area to ~2× the current radius (target 180–200 m across); move the camera pan
-  limit, camp radius, nav grid and power span with it.
-- Reduce scatter density 40–60 % and enforce spacing so the camp and approaches are readable.
-- Nav improvements: clearance-aware cells, smoother paths, lookahead, stuck detection/replan, unit
-  separation, `NO PATH` attention state, debug path overlay.
-- Confirm and keep the hard rule: **ghouls attack only living things, never buildings**.
-- Old-world ruins stay old-world; player buildings stay mud + scrap (art guide).
+- The playable disc is **180 m across** (radius 90); terrain 300 m; same seed. Camera far plane
+  raised to 240 and the pan limit follows the play radius.
+- Scatter density cut by roughly half (rocks 130→190 over a 2.7× larger disc, grass clusters
+  130→210 with fewer blades each), spacing widened and the camp cleared to 14–18 m.
+- Nav grid rebuilt around the play radius (185×185 cells), inflated footprints, soft clearance
+  penalty, binary-heap A*, direct-line fast path, exact-target endings.
+- Stuck detection: replan once, then fail with `NO PATH` and toast; unit status shows it.
+- Unit separation and perfect-overlap handling.
+- `PATHS` debug overlay (perf switch or `?paths=1`).
+- Ghouls still attack only living things; raiders still attack infrastructure; player structures
+  stay mud + scrap.
 - Gate: a unit crosses the expanded camp and around a ruin cluster without sticking; no job runs
-  forever without a `NO PATH` report; the frame budget holds on the low preset.
+  forever without a `NO PATH` report; frame budget holds on the low preset. **Passed** (13 m move
+  around a ruin completed with 0.59 m error and 3.09 m clearance; 60 m cross-map move 25 s; a
+  warehouse placed directly on the route was routed around with 4.4 m clearance; an unreachable
+  order failed after 0.4 s as `NO PATH`; validation ok; ~285–340 k triangles and 55–56 fps in the
+  headless baseline).
 - Chunk streaming is deliberately Phase 7.
 
 ### Phase 5 — Workplaces and economy
@@ -643,16 +658,15 @@ Still open:
 
 ## 9. Immediate next slice
 
-Phases 1–4c are in. The next slice is **Phase 4d — world scale and navigation**:
+Phases 1–4d are in. The next slice is **Phase 5 — workplaces and economy**, in three passes:
 
-1. Expand the playable area to ~180–200 m across and move the camera, nav grid, camp radius and
-   power span with it.
-2. Cut scatter density 40–60 % and enforce spacing, with clear approach lanes around the camp.
-3. Navigation: clearance-aware cells, path smoothing/lookahead, stuck detection and replanning, unit
-   separation, `NO PATH` reporting and a debug path overlay.
-4. Keep the hard rules: ghouls attack only living things; raiders attack infrastructure; player
-   buildings stay mud + scrap.
-5. Then Phase 5 (workplaces/economy).
+1. **5a:** free builder role + Scavenger Hut + job slots/assignment; the building card grows real
+   worker slots and the unit card shows `HOME`.
+2. **5b:** Well Wheel + Farm + daily food/water upkeep and morale/leave.
+3. **5c:** Workshop-only ammo/components, recruitment, roles derived from workplaces.
+4. Keep the hard rules: the turret never targets humans; ghouls never attack buildings; raiders do;
+   player buildings stay mud + scrap.
+5. Then Phase 6 (relay objective and a complete run).
 
-The next visible milestone: **a unit crosses the expanded camp, around a ruin cluster, without
-sticking — and reports `NO PATH` instead of wandering when it cannot.**
+The next visible milestone: **assign one survivor to a Scavenger Hut and watch scrap arrive while
+you command the defence — no gather orders, no repeated hauling.**

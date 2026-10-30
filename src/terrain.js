@@ -3,13 +3,15 @@ import { smoothstep, deriveSeed } from './rng.js';
 import { makeDetailSet } from './textures.js';
 import { WorldField } from './field.js';
 
-export const WORLD_RADIUS = 54;
-export const TERRAIN_SIZE = 190;
-const SEGMENTS = 128;
-const WORLD_EXTENT = 190;
+export const WORLD_RADIUS = 92;
+/** Actors are clamped just inside the playable disc; the nav grid ends here too. */
+export const PLAY_RADIUS = 90;
+export const TERRAIN_SIZE = 300;
+const SEGMENTS = 176;
+const WORLD_EXTENT = 300;
 
 /** Baked once at module load; every system samples the same field. */
-export const worldField = new WorldField(deriveSeed('terrain'), { size: 384, extent: WORLD_EXTENT });
+export const worldField = new WorldField(deriveSeed('terrain'), { size: 416, extent: WORLD_EXTENT });
 
 export function heightAt(x, z) {
   return worldField.heightAt(x, z);

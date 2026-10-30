@@ -335,10 +335,10 @@ export function createWasteland(scene, seed = 0x51a7) {
   // ---- rocks -------------------------------------------------------------
   {
     const places = scatterDisc(rng, {
-      minDist: 3.2,
+      minDist: 4.2,
       radius: WORLD_RADIUS - 1,
-      inner: 3,
-      count: 130,
+      inner: 16,
+      count: 190,
       weight: (x, z) => {
         if (roadAt(x, z) > 0.55) return 0;
         return 0.12 + slopeAt(x, z, 1.4) * 2.2;
@@ -364,10 +364,10 @@ export function createWasteland(scene, seed = 0x51a7) {
   // ---- dead trees --------------------------------------------------------
   {
     const places = scatterDisc(rng, {
-      minDist: 6,
+      minDist: 9,
       radius: WORLD_RADIUS - 2,
-      inner: 9,
-      count: 38,
+      inner: 14,
+      count: 52,
       weight: (x, z) => {
         if (slopeAt(x, z, 1.2) > 0.28) return 0;
         if (roadAt(x, z) > 0.4) return 0;
@@ -396,10 +396,10 @@ export function createWasteland(scene, seed = 0x51a7) {
   // ---- cacti -------------------------------------------------------------
   {
     const places = scatterDisc(rng, {
-      minDist: 7,
+      minDist: 9,
       radius: WORLD_RADIUS - 3,
-      inner: 9,
-      count: 30,
+      inner: 14,
+      count: 44,
       weight: (x, z) => {
         if (slopeAt(x, z, 1.1) > 0.22) return 0;
         if (roadAt(x, z) > 0.38) return 0;
@@ -427,10 +427,10 @@ export function createWasteland(scene, seed = 0x51a7) {
   // ---- desert shrubs -----------------------------------------------------
   {
     const places = scatterDisc(rng, {
-      minDist: 2.6,
+      minDist: 4.4,
       radius: WORLD_RADIUS - 2,
-      inner: 3,
-      count: 95,
+      inner: 8,
+      count: 130,
       weight: (x, z) => {
         if (slopeAt(x, z, 1.0) > 0.32) return 0;
         if (roadAt(x, z) > 0.45) return 0;
@@ -457,10 +457,10 @@ export function createWasteland(scene, seed = 0x51a7) {
   // ---- ruined structures -------------------------------------------------
   {
     const places = scatterDisc(rng, {
-      minDist: 8,
-      radius: 42,
-      inner: 16,
-      count: 24,
+      minDist: 14,
+      radius: 74,
+      inner: 18,
+      count: 30,
       weight: (x, z) => {
         if (slopeAt(x, z, 2.5) > 0.2) return 0;
         if (roadAt(x, z) > 0.3) return 0;
@@ -488,10 +488,10 @@ export function createWasteland(scene, seed = 0x51a7) {
   // ---- wrecked vehicles --------------------------------------------------
   {
     const places = scatterDisc(rng, {
-      minDist: 12,
-      radius: 46,
-      inner: 15,
-      count: 6,
+      minDist: 20,
+      radius: 80,
+      inner: 18,
+      count: 9,
       weight: (x, z) => {
         if (slopeAt(x, z, 2) > 0.25) return 0;
         if (roadAt(x, z) > 0.5) return 0;
@@ -553,10 +553,10 @@ export function createWasteland(scene, seed = 0x51a7) {
   // ---- debris ------------------------------------------------------------
   {
     const places = scatterDisc(rng, {
-      minDist: 2.2,
+      minDist: 3.6,
       radius: WORLD_RADIUS,
-      inner: 6,
-      count: 70,
+      inner: 18,
+      count: 110,
       weight: (x, z) => (roadAt(x, z) > 0.6 ? 0 : 0.6),
     });
     const geo = paint(new THREE.BoxGeometry(0.16, 0.13, 1.9), PALETTE.woodDark, 0.08);
@@ -577,10 +577,10 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   {
     const places = scatterDisc(rng, {
-      minDist: 3.4,
+      minDist: 5.0,
       radius: WORLD_RADIUS,
-      inner: 8,
-      count: 34,
+      inner: 16,
+      count: 52,
       weight: (x, z) => (roadAt(x, z) > 0.5 ? 0 : 0.5),
     });
     const geo = paint(new THREE.CylinderGeometry(0.34, 0.34, 0.92, 8), PALETTE.rustDark);
@@ -601,10 +601,10 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   {
     const places = scatterDisc(rng, {
-      minDist: 2.8,
+      minDist: 4.0,
       radius: WORLD_RADIUS,
-      inner: 5,
-      count: 46,
+      inner: 16,
+      count: 70,
       weight: (x, z) => (roadAt(x, z) > 0.55 ? 0 : 0.5),
     });
     const geo = paint(new THREE.DodecahedronGeometry(0.45, 0), PALETTE.concreteDark);
@@ -629,10 +629,10 @@ export function createWasteland(scene, seed = 0x51a7) {
     const geo = buildGrass();
     const spots = [];
     const clusters = scatterDisc(rng, {
-      minDist: 3.8,
+      minDist: 5.2,
       radius: WORLD_RADIUS - 1,
-      inner: 3,
-      count: 130,
+      inner: 6,
+      count: 210,
       weight: (x, z) => {
         if (slopeAt(x, z, 1.0) > 0.34) return 0;
         if (roadAt(x, z) > 0.5) return 0;
@@ -640,7 +640,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       },
     });
     for (const cluster of clusters) {
-      const blades = rng.int(5, 9);
+      const blades = rng.int(4, 7);
       for (let j = 0; j < blades; j++) {
         const a = rng() * Math.PI * 2;
         const r = Math.sqrt(rng()) * 1.7;
@@ -700,7 +700,7 @@ export function createWasteland(scene, seed = 0x51a7) {
     const rng2 = makeRng(0xdead77);
     for (let i = 0; i < 17; i++) {
       const angle = rng2() * Math.PI * 2;
-      const radius = rng2.range(58, 94);
+      const radius = rng2.range(118, 138);
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
       const base = rng2.range(7, 21);
@@ -718,7 +718,7 @@ export function createWasteland(scene, seed = 0x51a7) {
     }
     for (let i = 0; i < 4; i++) {
       const angle = rng2() * Math.PI * 2;
-      const radius = rng2.range(66, 90);
+      const radius = rng2.range(122, 134);
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
       const h = rng2.range(16, 30);
