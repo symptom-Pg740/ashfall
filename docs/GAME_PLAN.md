@@ -10,19 +10,19 @@ This document is the working plan. `docs/ECONOMY.md` is the detailed workplace/e
 backlog. We are still in the **testing phase**: the economy numbers, building names and even the
 assignment model can change after playtests. Keep new systems data-driven and save-migrated.
 
-**Status:** Phases 1–5a first slices shipped (command/possession; warehouse and hauling; day/night
-and power; Vickers turret + watchtower gunner + nav grid; construction jobs; raids against the grid,
+**Status:** Phases 1–5b first slices shipped (command/possession; warehouse and hauling; day/night
+and power; Vickers turret + guard post gunner + nav grid; construction jobs; raids against the grid,
 building HP/damage/repair; floating building card, manual wiring and the 360° turret fix; expanded
 world with spread-out scatter and clearance-aware navigation; free builder role, Scavenger Hut,
-workplace assignment and saved roles). The next slice is **Phase 5b — Well Wheel, Farm and needs**.
-See §6.
+workplace assignment and saved roles; Well Wheel, Farm, daily needs and the food/water HUD). The next
+slice is **Phase 5c — Workshop, ammo and recruitment**. See §6.
 
 ---
 
 ## 1. Where we are, and what changes
 
 Today Ashfall is a **command prototype**: a player avatar, a roster of three survivors, construction
-sites, a warehouse, a day/night cycle, a solar/pole/battery grid, a Vickers turret, a watchtower
+sites, a warehouse, a day/night cycle, a solar/pole/battery grid, a Vickers turret, a guard post
 gunner, daytime raider raids and night ghoul raids. The player still issues most tasks by hand; the
 workplace model below is the next shift.
 
@@ -34,7 +34,7 @@ The next version changes the unit of play from **one character** to **a faction*
   camera behind that unit. The RPG layer is a mode, not a separate game.
 - The economy becomes physical: resources are **hauled to a warehouse** and stacked there.
 - Defences become infrastructure: **solar → poles → wires → consumers**, with a **Vickers-style
-  turret** that only engages non-humans, and a **watchtower** that needs an assigned gunner.
+  turret** that only engages non-humans, and a **guard post** that needs an assigned gunner.
 - **Workplaces replace task micromanagement.** A survivor is assigned to a **building**, not to a
   pile or a trip. The building gives them a repeatable loop (scavenge, draw water, farm, craft,
   build, guard). Manual orders are temporary overrides that return the worker to their post.
@@ -59,7 +59,7 @@ is simply the first unit in the roster.
 | Warehouse + hauling | Turns abstract resources into space and time. It gives the camp a centre of gravity, makes roads and distance matter, and creates a visible stockpile. |
 | Power network with poles and wires | Strong visual identity and a real constraint. It also gives the turret a reason to exist and makes night a system, not a colour grade. |
 | Turret that cannot identify humans | Excellent lore-driven rule. It splits defence cleanly: the turret handles ghouls, your people handle raiders. It also stops the turret from trivialising the game. |
-| Watchtower needs a gunner | Manpower becomes a resource. Towers are strong but cost a unit that could be scavenging. |
+| Guard post needs a gunner | Manpower becomes a resource. Towers are strong but cost a unit that could be scavenging. |
 | Workplaces instead of task orders | The correct colony-game abstraction. One decision per building removes the gather/haul busywork and lets the camp run while the player fights or builds. |
 | Scavenger Hut / free builder role | These are the two jobs that most need automation: a hut that loops gather→haul, and a builder role that answers the construction queue. The role avoids a building that exists only to hold one worker. |
 | Well Wheel, Farm, Workshop | A simple production triangle: water and food sustain the population, scrap becomes ammo. The wheel must be a **well wheel** (desert) unless a river/oasis is added. |
@@ -187,7 +187,7 @@ The player assigns a survivor to a building once and the building gives them a l
 - Well Wheel → draw water while staffed;
 - Farm → grow food, consuming water;
 - Workshop → convert scrap to ammo/components with a selected recipe;
-- Watchtower → guard the tower.
+- Guard post → guard the tower.
 
 The detailed loops, slots, costs and attention states are in [ECONOMY.md](ECONOMY.md). The
 important control decision is that **buildings are managed through the card, not through a selected
@@ -304,14 +304,17 @@ place. See [ECONOMY.md](ECONOMY.md) for the full workplace model.
 - **Lore:** it cannot identify humans. Raiders, camp folk and the player are never targets. If the
   player expects it to shoot raiders, the card says why it will not.
 
-**Watchtower (changed)**
+**Guard post (changed)**
 
-- No automatic fire. An armed unit is assigned through the **tower card's gunner slot** (or selected
-  unit → tap the tower as a shortcut). The unit walks to the base, then mans the platform.
+- No automatic fire. An armed unit is assigned through the **guard post card's gunner slot** (or a
+  selected unit → tap the post as a shortcut). The unit walks to the position, then mans the firing
+  step.
 - While manned: +6 m weapon range, 40 % damage reduction, and the tower counts as the unit's position
   for targeting.
-- Unassign from the tower card; the unit climbs down. If the tower is destroyed, the gunner is
-  downed.
+- Unassign from the post card; the unit steps out. If the post is destroyed, the gunner is downed.
+- **Fixed in 5b:** the gunner's shots now ignore the post's own collision cylinder (previously every
+  round hit the structure they were standing in and never left). The silhouette is a low sandbagged
+  fighting position, not a tall tower, so incoming fire can still reach the gunner above the parapet.
 - This makes human raids the player's problem and ghoul waves the turret's problem.
 
 ### 4.6 Raids and pressure
@@ -333,12 +336,14 @@ The full design is in [ECONOMY.md](ECONOMY.md). Summary:
 - **Scavenger Hut** — assigned scavengers loop gather → haul within a work radius. **Implemented in
   5a** (two slots, 26 m, `NO NODES` / `STORAGE FULL`).
 - **Well Wheel** — a staffed, hand-cranked well wheel produces water (the Rain Catcher remains a
-  passive early source).
-- **Farm** — staffed farmers produce food and consume water.
+  passive early source). **Implemented in 5b** (1 slot, 1 water / 4 s).
+- **Farm** — staffed farmers produce food and consume water. **Implemented in 5b** (2 slots,
+  1 food / 7 s per farmer, 1 water / 20 s).
 - **Workshop** — assigned artisans convert scrap into pistol/rifle rounds, shells or components with
-  a selected recipe; the weapon upgrade bench lives here.
-- **Needs:** one food and one water per survivor per day; missing supplies slow them, then they
-  leave. Surplus and a free house slot attract a new survivor every few days.
+  a selected recipe; the weapon upgrade bench lives here. **Next in 5c.**
+- **Needs:** one food and one water per survivor per day; missing supplies slow them by 20% and two
+  consecutive unfed dawns make them leave. **Implemented in 5b** (dawn tick, `hunger`/`thirst`,
+  dawn report, HUD caps). Surplus and a free house slot attracting a new survivor is 5c.
 - **Roles:** builder is a free role; the rest are derived from the workplace (scavenger, water
   carrier, farmer, artisan, gunner); reassigning changes the role. No class-selection screen.
 - The former armory "buy ammo" becomes a draw from the workshop stockpile (or a bad-rate emergency
@@ -408,7 +413,7 @@ src/nav.js          1 m grid, binary-heap A*, clearance field, smoothing
 src/pathdebug.js    optional path/waypoint overlay for testing
 src/power.js        power graph, pole ports, solve, priorities, batteries
 src/daycycle.js     sun/moon, light + sky + solar curve
-src/emplacements.js turret + watchtower assignment and firing
+src/emplacements.js turret + guard post assignment and firing
 ```
 
 Changes to existing files:
@@ -505,7 +510,7 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
   removed in Phase 4c; it now traverses 360°.
   Target selection walks the ghoul pool only; raiders/camp/player are invisible to it. The head
   turns, the lamp goes green/red with power, and bursts use the shared tracer/FX/audio.
-- Watchtower auto-fire removed. An armed survivor ordered to the tower walks there via A*, mounts
+- Guard post auto-fire removed. An armed survivor ordered to the tower walks there via A*, mounts
   the platform, gains +6 m range and 40% damage reduction, and fires their own weapon. Tapping the
   tower again or issuing another order releases them to the ground.
 - 1 m A* nav grid (settlement + props, 8-neighbour, line-simplified) for move/gather/man orders.
@@ -520,7 +525,7 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
   the kind (`RAIDERS` / `GHOULS`). The night ambient ghoul spawn is doubled.
 - Raiders pick the nearest **warehouse or power building** (priority over campfire/other), move to
   ~10.5 m, and fire at it for 14 structure damage per shot. They only break off for a unit within
-  14 m, so a distant watchtower gunner can keep firing while they work.
+  14 m, so a distant guard post gunner can keep firing while they work.
 - Structures have HP (`60 + cost × 8`), a floating damage bar and low-health smoke. Destruction:
   remove from the scene, cut power links/wires, drop warehouse capacity, remove a chapel's +25
   vitality, down a tower gunner, rebuild the nav grid on the next path.
@@ -590,8 +595,19 @@ Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
   first tick and completed; two slots picked distinct nodes; scrap 26→80 then `STORAGE FULL`;
   manual move resumed gathering after 70 frames; v5 save/reload restored REN as builder and SILAS on
   the hut; unreachable sites are skipped for 15 s instead of looping `NO PATH`).
-- **5b — Well Wheel + Farm + needs.** Water and food production, daily upkeep, morale/leave,
-  stockpiles and HUD. The Rain Catcher remains the passive early source.
+- **5b — Well Wheel + Farm + needs — implemented (first slice).**
+  One water-carrier slot (**+1 water / 4 s**) and two farmer slots (**+1 food / 7 s**, **1 water /
+  20 s** each). The Rain Catcher remains the passive early source. At each dawn every living survivor
+  consumes 1 water + 1 food; missing supplies apply a 20% speed penalty and two consecutive unfed
+  dawns make them leave camp (removed from the roster, saved as left). The HUD gained a food chip and
+  both water/food show `stored/cap`; a dawn line reports day, survivors and stores.
+  **Gate:** staff the well and farm, watch water/food rise and the farm consume water; empty the
+  water and see the farm report `NO WATER`; fill a store and see `STORAGE FULL`; run two dawns with
+  no supplies and watch a survivor leave; reload and keep the assignments and needs. **Passed**
+  (15 s staffing: water +3, food +2 after travel; farm stopped at 0 water with `NO WATER`; dawn
+  10→7 water/food for 3 survivors; two unfed dawns left all three, hid them and freed the slots;
+  v5 save/reload kept roles, homes, hunger/thirst and the left state; HUD reads `water/cap` and
+  `food/cap`).
 - **5c — Workshop + ammo + recruitment/roles.** Scrap→ammo/components recipes; the workshop is the
   **only** ammo source, and the armory displays the stock (no scrap purchase), weapon upgrades at the
   workshop, population growth and roles derived from workplaces.
@@ -668,15 +684,14 @@ Still open:
 
 ## 9. Immediate next slice
 
-Phases 1–5a are in. The next slice is **Phase 5b — Well Wheel, Farm and needs**:
+Phases 1–5b are in. The next slice is **Phase 5c — Workshop, ammo and recruitment**:
 
-1. **Well Wheel** with one water-carrier slot; the Rain Catcher stays the passive early source.
-2. **Farm** with two farmer slots; food production consumes water.
-3. **Daily upkeep:** one food + one water per survivor per day; missing supplies slow them and then
-   they leave. Morale warning in the HUD.
-4. **HUD stockpiles:** scrap/water/food with caps, plus the day counter and a dawn report.
-5. Then **5c:** Workshop-only ammo/components, recruitment and roles derived from workplaces, then
-   Phase 6 (the relay objective and a complete run).
+1. **Workshop** with two artisan slots and recipes: pistol rounds, rifle rounds, shells, components.
+2. **Workshop-only ammo:** remove the armory scrap purchase; guns draw from the workshop stock and
+   can run dry. Weapon upgrades move to the workshop/armory card.
+3. **Recruitment:** surplus food/water and a free house slot attract a survivor every 2–3 days, up to
+   a population cap; roles follow the workplace.
+4. **Morale** around raids and hunger, then **Phase 6** (the relay objective and a complete run).
 
-The next visible milestone: **assign survivors to the well and the farm, watch the day tick over,
-and see the camp feed itself while the workshop waits for its scrap.**
+The next visible milestone: **set a workshop recipe, watch scrap become rounds, and recruit a new
+survivor because the camp has food to spare.**

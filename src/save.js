@@ -6,7 +6,7 @@ export const SAVE_KEY = 'ashfall-save-v1';
  *  2 — adds `ammo`, `mags` and `upgrades` (the armory economy)
  *  3 — adds `power` links, building ids and battery charge
  *  4 — adds construction sites (`built`, `buildProgress`)
- *  5 — adds survivor roles, workplace assignments and survivor positions
+ *  5 — adds survivor roles, workplace assignments, survivor positions and needs; also stores food
  */
 export const SAVE_VERSION = 5;
 

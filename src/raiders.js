@@ -335,7 +335,7 @@ export class Raiders {
       }
       let target = p.aim.target;
       // Raiders are on a mission: they only break off for a unit that is close enough to threaten
-      // them. A gunner on a distant watchtower can therefore keep shooting while they work.
+      // them. A gunner in a distant guard post can therefore keep shooting while they work.
       if (target && p.objective) {
         const td = Math.hypot(target.x - pos.x, target.z - pos.z);
         if (td > 14) target = null;

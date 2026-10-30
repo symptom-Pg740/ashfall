@@ -24,7 +24,14 @@ export class CampFolk {
     this.onWorkReleased = null;
     this.onRoleChanged = null;
     this.onBuilderAssigned = null;
+    this.onWaterProduced = null;
+    this.onFoodProduced = null;
+    this.onLeave = null;
     this.isStorageFull = null;
+    this.isWaterFull = null;
+    this.isFoodFull = null;
+    this.isWaterEmpty = null;
+    this.takeWater = null;
     this.scrapField = options.scrapField || null;
     this.dropPoint = options.dropPoint || null;
     this.obstacles = options.obstacles || [];
@@ -77,6 +84,7 @@ export class CampFolk {
 
       const weapon = armed ? WEAPONS.pistol : null;
       const builder = style === 'skinned' && i === 2;
+      const speed = rng.range(1.9, 2.5);
       this.people.push({
         name: NAMES[i % NAMES.length],
         rig,
@@ -88,7 +96,8 @@ export class CampFolk {
         target: { x, z },
         home: null,
         timer: rng.range(0.5, 3),
-        speed: rng.range(1.9, 2.5),
+        speed,
+        baseSpeed: speed,
         heading: rig.group.rotation.y,
         phase: rng() * 6.28,
         role: builder ? 'builder' : armed ? 'guard' : 'scavenger',
@@ -105,6 +114,11 @@ export class CampFolk {
         pathKey: '',
         pathTimer: 0,
         attention: null,
+        hunger: 0,
+        thirst: 0,
+        left: false,
+        workTimer: 0,
+        waterTimer: 0,
         pathFail: 0,
         replan: 0,
         stuckTimer: 0,
@@ -177,7 +191,7 @@ export class CampFolk {
     if (person.home !== building && this.workersOf(building).length >= job.slots) return false;
     if (person.manning) this.releaseTower(person);
     person.home = building;
-    person.role = job.role;
+    person.role = (job.label || job.role).toLowerCase();
     person.job = null;
     person.carry = 0;
     person.attention = null;
@@ -186,9 +200,12 @@ export class CampFolk {
     person.pathKey = '';
     person.pathTimer = 0;
     person.pathFail = 0;
-    person.anchor = { x: building.x + 1.5, z: building.z + 1.5 };
+    const post = job.post || { x: 1.5, z: 1.5 };
+    person.anchor = { x: building.x + post.x, z: building.z + post.z };
     person.target = { ...person.anchor };
     person.timer = 0.5;
+    person.workTimer = 0;
+    person.waterTimer = 0;
     person.aim?.setLock(null);
     this.onWorkAssigned?.(person, building);
     return true;
@@ -207,6 +224,8 @@ export class CampFolk {
     person.pathKey = '';
     person.pathTimer = 0;
     person.pathFail = 0;
+    person.workTimer = 0;
+    person.waterTimer = 0;
     if (person.role !== 'builder') person.role = person.armed ? 'guard' : 'scavenger';
     person.anchor = { ...person.spawnAnchor };
     person.target = { ...person.anchor };
@@ -276,7 +295,7 @@ export class CampFolk {
   }
 
   /** Ran once per update while the survivor has no manual job. */
-  runWorkLoop(person, time, buildings = []) {
+  runWorkLoop(person, time, buildings = [], dt = 0.016) {
     if (person.dead) return;
     if (person.role === 'builder') {
       this.builderLoop(person, buildings);
@@ -290,6 +309,94 @@ export class CampFolk {
       return;
     }
     if (job.role === 'scavenger') this.scavengerLoop(person, b, job, time);
+    else if (job.role === 'water') this.wellLoop(person, b, job, dt);
+    else if (job.role === 'farmer') this.farmLoop(person, b, job, dt);
+  }
+
+  /** Stand at the wheel and draw water. Production pauses away from the post or when full. */
+  wellLoop(person, building, job, dt) {
+    if (this.isWaterFull?.()) {
+      person.attention = 'STORAGE FULL';
+      return;
+    }
+    const post = job.post || { x: 2.2, z: 0.4 };
+    const pos = person.rig.group.position;
+    const d = Math.hypot(building.x + post.x - pos.x, building.z + post.z - pos.z);
+    if (d > building.radius + 1.5) {
+      if (person.attention === 'NO PATH') return;
+      person.attention = null;
+      person.target = { x: building.x + post.x, z: building.z + post.z };
+      person.workTimer = 0;
+      this.issueJob(person, { type: 'move', x: building.x + post.x, z: building.z + post.z });
+      return;
+    }
+    person.attention = null;
+    person.target = { x: building.x + post.x, z: building.z + post.z };
+    person.timer = 3;
+    person.workTimer += dt;
+    if (person.workTimer >= 4) {
+      person.workTimer -= 4;
+      this.onWaterProduced?.(1, building);
+    }
+  }
+
+  /** Tend the plot: food out, water in. Two farmers each run their own cycle. */
+  farmLoop(person, building, job, dt) {
+    if (this.isFoodFull?.()) {
+      person.attention = 'STORAGE FULL';
+      return;
+    }
+    if (this.isWaterEmpty?.()) {
+      person.attention = 'NO WATER';
+      return;
+    }
+    const post = job.post || { x: 0, z: 3.3 };
+    const pos = person.rig.group.position;
+    const d = Math.hypot(building.x + post.x - pos.x, building.z + post.z - pos.z);
+    if (d > building.radius + 1.2) {
+      if (person.attention === 'NO PATH') return;
+      person.attention = null;
+      person.target = { x: building.x + post.x, z: building.z + post.z };
+      person.workTimer = 0;
+      person.waterTimer = 0;
+      this.issueJob(person, { type: 'move', x: building.x + post.x, z: building.z + post.z });
+      return;
+    }
+    person.attention = null;
+    person.target = { x: building.x + post.x, z: building.z + post.z };
+    person.timer = 3;
+    person.workTimer += dt;
+    person.waterTimer += dt;
+    if (person.waterTimer >= 20) {
+      if (!this.takeWater?.(1)) {
+        person.attention = 'NO WATER';
+        return;
+      }
+      person.waterTimer -= 20;
+    }
+    if (person.workTimer >= 7) {
+      person.workTimer -= 7;
+      this.onFoodProduced?.(1, building);
+    }
+  }
+
+  /** A survivor with two unfed days walks out of the camp. */
+  leaveCamp(person, reason = 'LEFT CAMP') {
+    if (!person || person.dead) return false;
+    if (person.manning) this.releaseTower(person);
+    if (person.home) this.releaseWorkplace(person, true);
+    person.hp = 0;
+    person.dead = true;
+    person.left = true;
+    person.respawnTimer = Infinity;
+    person.job = null;
+    person.carry = 0;
+    person.attention = reason;
+    person.rig.group.visible = false;
+    person.rig.mesh.visible = false;
+    if (person.farTier) person.farTier.visible = false;
+    this.onLeave?.(person, reason);
+    return true;
   }
 
   scavengerLoop(person, building, job, time) {
@@ -371,6 +478,7 @@ export class CampFolk {
       person.manning.manned = null;
       person.manning = null;
       person.towerWeapon = null;
+      person.ignoreBuilding = null;
       if (person.aim) person.aim.los = person.towerLos || null;
       person.towerLos = null;
     }
@@ -421,7 +529,8 @@ export class CampFolk {
     person.phase = 0;
     person.heading = tower.group.rotation.y;
     person.rig.group.rotation.y = person.heading;
-    person.rig.group.position.set(tower.x, tower.y + 3.05, tower.z);
+    person.rig.group.position.set(tower.x, tower.y + 0.28, tower.z);
+    person.ignoreBuilding = tower;
     person.rig.mesh.visible = true;
     if (person.farTier) person.farTier.visible = false;
     person.target = { x: tower.x, z: tower.z };
@@ -451,6 +560,7 @@ export class CampFolk {
     tower.manned = null;
     person.manning = null;
     person.towerWeapon = null;
+    person.ignoreBuilding = null;
     const x = tower.x + 1.25;
     const z = tower.z + 1.25;
     person.rig.group.position.set(x, heightAt(x, z), z);
@@ -707,11 +817,11 @@ export class CampFolk {
     return null;
   }
 
-  /** A gunner on the watchtower: fixed position, +6 m range, 40% cover. */
+  /** A gunner in the guard post: fixed position, +6 m range, 40% cover. */
   updateManning(p, dt) {
     const tower = p.manning;
     const pos = p.rig.group.position;
-    pos.set(tower.x, tower.y + 3.05, tower.z);
+    pos.set(tower.x, tower.y + 0.28, tower.z);
     p.cooldown = Math.max(0, p.cooldown - dt);
     p.recoil = damp(p.recoil, 0, 12, dt);
     if (p.reloadTimer > 0) {
@@ -746,7 +856,7 @@ export class CampFolk {
       if (combatTarget && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
         const shot = this.firearms.fire(
           { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'camp' },
-          { weapon: p.weapon, aimPoint: p.aim.targetPoint },
+          { weapon: p.weapon, aimPoint: p.aim.targetPoint, ignoreBuilding: p.ignoreBuilding || null },
         );
         p.mag--;
         p.cooldown = 60 / p.weapon.rpm;
@@ -778,6 +888,7 @@ export class CampFolk {
       }
 
       if (p.dead) {
+        if (p.left) continue;
         p.respawnTimer = Math.max(0, p.respawnTimer - dt);
         if (p.respawnTimer === 0) {
           p.dead = false;
@@ -807,7 +918,7 @@ export class CampFolk {
 
       // Workplaces run only when there is no manual job. A manual order is the override; when it
       // finishes, this loop resumes automatically.
-      if (!p.job) this.runWorkLoop(p, time, buildings);
+      if (!p.job) this.runWorkLoop(p, time, buildings, dt);
 
       if (p.armed) {
         p.cooldown = Math.max(0, p.cooldown - dt);
@@ -1035,6 +1146,9 @@ export class CampFolk {
       home: p.home?.id ?? null,
       hp: Math.max(0, Math.round(p.hp)),
       dead: !!p.dead,
+      left: !!p.left,
+      hunger: p.hunger || 0,
+      thirst: p.thirst || 0,
       x: p.rig.group.position.x,
       z: p.rig.group.position.z,
     }));
@@ -1048,11 +1162,15 @@ export class CampFolk {
       if (!s) continue;
       const home = Number.isFinite(s.home) ? findBuilding?.(s.home) : null;
       p.home = home && home.built ? home : null;
-      p.role = s.role === 'builder' ? 'builder' : home?.def?.job?.role || s.role || p.role;
+      p.role = s.role === 'builder' ? 'builder' : (home?.def?.job?.label || home?.def?.job?.role)?.toLowerCase() || s.role || p.role;
       p.hp = Number.isFinite(s.hp) ? Math.max(1, Math.min(p.maxHp, s.hp)) : p.maxHp;
       p.dead = !!s.dead;
-      p.respawnTimer = p.dead ? 20 : 0;
+      p.left = !!s.left;
+      p.hunger = Number.isFinite(s.hunger) ? s.hunger : 0;
+      p.thirst = Number.isFinite(s.thirst) ? s.thirst : 0;
+      p.respawnTimer = p.left ? Infinity : p.dead ? 20 : 0;
       if (p.dead) p.home = null;
+      p.speed = p.baseSpeed * (p.hunger > 0 || p.thirst > 0 ? 0.8 : 1);
       p.job = null;
       p.attention = null;
       p.carry = 0;

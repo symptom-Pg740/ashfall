@@ -148,7 +148,11 @@ const state = {
   dead: false,
   deadAt: 0,
   scrap: 26,
-  water: 0,
+  water: 4,
+  food: 4,
+  waterCap: 80,
+  foodCap: 80,
+  day: 1,
   kills: 0,
   health: 100,
   maxHealth: 100,
@@ -249,7 +253,7 @@ const settlement = new Settlement({
   particles,
   state,
   onWater: (n) => {
-    state.water = Math.min(999, state.water + n);
+    state.water = Math.min(state.waterCap || 80, state.water + n);
   },
   onKill: (x, z) => {
     state.kills++;
@@ -377,6 +381,27 @@ campFolk.onRoleChanged = (person, role) => {
   saveGame();
 };
 campFolk.isStorageFull = () => state.scrap >= (state.scrapCap || 80);
+campFolk.isWaterFull = () => state.water >= (state.waterCap || 80);
+campFolk.isFoodFull = () => state.food >= (state.foodCap || 80);
+campFolk.isWaterEmpty = () => state.water <= 0;
+campFolk.takeWater = (n = 1) => {
+  if (state.water < n) return false;
+  state.water -= n;
+  return true;
+};
+campFolk.onWaterProduced = (n = 1) => {
+  state.water = Math.min(state.waterCap || 80, state.water + n);
+  ui.updateHUD(state);
+};
+campFolk.onFoodProduced = (n = 1) => {
+  state.food = Math.min(state.foodCap || 80, state.food + n);
+  ui.updateHUD(state);
+};
+campFolk.onLeave = (person) => {
+  ui.toast(`${person.name} LEFT CAMP`, true);
+  ui.setRoster(commander.roster());
+  saveGame();
+};
 campFolk.onBuildComplete = (building) => {
   if (!settlement.completeBuilding(building)) return;
   const wired = power.attach(building);
@@ -390,8 +415,8 @@ campFolk.onBuildComplete = (building) => {
   ui.updateHUD(state);
   saveGame();
 };
-campFolk.onTowerManned = (person) => ui.toast(`${person.name} ON THE TOWER`);
-campFolk.onTowerReleased = (person) => ui.toast(`${person.name} OFF THE TOWER`);
+campFolk.onTowerManned = (person) => ui.toast(`${person.name} ON THE GUARD POST`);
+campFolk.onTowerReleased = (person) => ui.toast(`${person.name} OFF THE GUARD POST`);
 campFolk.onScrap = (value, person) => {
   if (!value) return false;
   const accepted = grantScrap(value);
@@ -489,7 +514,24 @@ window.__ashfall = {
   scrapField,
   wasteland,
   input,
-  actions: { doPlace, doGather, doStrike, doStress, applyQuality, setOrtho, rotateBy, saveGame, loadGame, validateWorld, damage: (n) => damagePlayer(n) },
+  actions: {
+    doPlace,
+    doGather,
+    doStrike,
+    doStress,
+    applyQuality,
+    setOrtho,
+    rotateBy,
+    saveGame,
+    loadGame,
+    validateWorld,
+    damage: (n) => damagePlayer(n),
+    dawn: () => {
+      state.day += 1;
+      dawnTick(state.day);
+    },
+    needs: () => campFolk.people.map((p) => ({ name: p.name, hunger: p.hunger, thirst: p.thirst, left: !!p.left, speed: p.speed })),
+  },
 };
 let spawnAt = 0;
 let nextRaid = 70;
@@ -893,6 +935,7 @@ function saveGame() {
     state: {
       scrap: state.scrap,
       water: state.water,
+      food: state.food,
       kills: state.kills,
       health: state.health,
       maxHealth: state.maxHealth,
@@ -923,11 +966,13 @@ function loadGame() {
   const num = (v, fallback) => (Number.isFinite(v) ? v : fallback);
 
   state.scrap = num(s.scrap, 26);
-  state.water = num(s.water, 0);
+  state.water = num(s.water, 4);
+  state.food = num(s.food, 4);
   state.kills = num(s.kills, 0);
   state.health = num(s.health, 100);
   state.maxHealth = Math.max(100, num(s.maxHealth, 100));
   state.time = num(s.time, 0);
+  state.day = 1 + Math.floor(state.time / 360);
   state.dead = false;
   state.deadAt = 0;
   state.lastDamage = state.time - 10;
@@ -1200,8 +1245,47 @@ function startRaid(kind = 'raiders', count = 2, distance = 30) {
   return spawned;
 }
 
+function dawnTick(day) {
+  let fed = 0;
+  let watered = 0;
+  for (const p of campFolk.people) {
+    if (p.dead) continue;
+    if (state.water > 0) {
+      state.water--;
+      p.thirst = 0;
+      watered++;
+    } else {
+      p.thirst = (p.thirst || 0) + 1;
+    }
+    if (state.food > 0) {
+      state.food--;
+      p.hunger = 0;
+      fed++;
+    } else {
+      p.hunger = (p.hunger || 0) + 1;
+    }
+    const unfed = p.hunger > 0 || p.thirst > 0;
+    p.speed = (p.baseSpeed || p.speed) * (unfed ? 0.8 : 1);
+    if (p.thirst >= 2 || p.hunger >= 2) campFolk.leaveCamp(p, 'LEFT CAMP');
+  }
+  const alive = campFolk.people.filter((p) => !p.dead).length;
+  ui.updateHUD(state);
+  ui.setRoster(commander.roster());
+  const short = fed < alive || watered < alive;
+  ui.hint(
+    `DAY ${day} · ${alive} SURVIVOR${alive === 1 ? '' : 'S'} · FOOD ${state.food} · WATER ${state.water}${short ? ' · SHORT SUPPLIES' : ''}`,
+    5200,
+  );
+  saveGame();
+}
+
 function simulate(dt) {
   state.time += dt;
+  const day = 1 + Math.floor(state.time / 360);
+  if (day > state.day) {
+    state.day = day;
+    dawnTick(day);
+  }
 
   if (state.dead) {
     settlement.update(dt, state.time, player, enemies);

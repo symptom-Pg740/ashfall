@@ -88,7 +88,7 @@ export class BuildingCard {
   /** The point above a building that the card hangs from, per silhouette. */
   anchorHeight(b) {
     const table = {
-      tower: 5.3,
+      tower: 2.3,
       chapel: 5.1,
       house: 3.7,
       warehouse: 3.0,
@@ -139,7 +139,10 @@ export class BuildingCard {
 
     const job = def.job || null;
     const workers = job && built ? this.campFolk.workersOf(b) : [];
-    const storageFull = this.state.scrap >= (this.state.scrapCap || 80);
+    const scrapFull = this.state.scrap >= (this.state.scrapCap || 80);
+    const waterFull = this.state.water >= (this.state.waterCap || 80);
+    const foodFull = this.state.food >= (this.state.foodCap || 80);
+    const noWater = this.state.water <= 0;
     const slots = [];
     let piles = 0;
     if (job && built) {
@@ -181,15 +184,29 @@ export class BuildingCard {
         : 'NO BUILDER ASSIGNED · SET A SURVIVOR TO BUILDER OR PRESS BUILD';
       noteBad = !builder;
     } else if (job) {
-      rows.push({ label: 'AREA', value: `${job.radius}M` });
-      if (def.id === 'scavenger') rows.push({ label: 'PILES', value: `${piles} IN AREA` });
+      if (def.id === 'scavenger') {
+        rows.push({ label: 'AREA', value: `${job.radius}M` });
+        rows.push({ label: 'PILES', value: `${piles} IN AREA` });
+      } else if (def.id === 'well') {
+        rows.push({ label: 'OUTPUT', value: job.output });
+        rows.push({ label: 'WATER', value: `${this.state.water} / ${this.state.waterCap || 0}` });
+      } else if (def.id === 'farm') {
+        rows.push({ label: 'OUTPUT', value: job.output });
+        rows.push({ label: 'WATER USE', value: job.waterUse });
+        rows.push({ label: 'WATER', value: `${this.state.water} / ${this.state.waterCap || 0}` });
+        rows.push({ label: 'FOOD', value: `${this.state.food} / ${this.state.foodCap || 0}` });
+      }
       rows.push({ label: 'WORKERS', value: `${workers.length} / ${job.slots}` });
       const attention = workers.find((p) => p.attention)?.attention;
+      const full = def.id === 'well' ? waterFull : def.id === 'farm' ? foodFull : scrapFull;
       if (!workers.length) {
-        note = `NO WORKER · ASSIGN A ${job.label} TO RUN THIS HUT`;
+        note = `NO WORKER · ASSIGN A ${job.label}`;
         noteBad = true;
-      } else if (storageFull) {
-        note = 'STORAGE FULL · SPEND SCRAP BEFORE HAULING';
+      } else if (full) {
+        note = def.id === 'well' ? 'WATER STORE FULL' : def.id === 'farm' ? 'FOOD STORE FULL' : 'STORAGE FULL · SPEND SCRAP BEFORE HAULING';
+        noteBad = true;
+      } else if (def.id === 'farm' && noWater) {
+        note = 'NO WATER · STAFF THE WELL WHEEL';
         noteBad = true;
       } else if (attention) {
         note = attention;
@@ -198,7 +215,7 @@ export class BuildingCard {
         note = `NO SCRAP PILES WITHIN ${job.radius}M`;
         noteBad = true;
       } else {
-        note = `GATHERING WITHIN ${job.radius}M`;
+        note = def.id === 'well' ? 'DRAWING WATER' : def.id === 'farm' ? 'TENDING THE PLOT' : `GATHERING WITHIN ${job.radius}M`;
       }
     } else if (def.id === 'turret') {
       const targets = b._targets || 0;
@@ -221,7 +238,7 @@ export class BuildingCard {
     } else if (def.id === 'tower') {
       rows.push({ label: 'GUNNER', value: gunner ? gunner.name : 'NONE' });
       rows.push({ label: 'BONUS', value: '+6M RANGE · 40% COVER' });
-      note = gunner ? `${gunner.name} IS ON WATCH` : 'ASSIGN AN ARMED SURVIVOR TO MAN THIS TOWER';
+      note = gunner ? `${gunner.name} IS ON WATCH` : 'ASSIGN AN ARMED SURVIVOR TO THIS POST';
       noteBad = !gunner;
     } else if (def.id === 'warehouse') {
       rows.push({ label: 'STORED', value: `${this.state.scrap} / ${this.state.scrapCap || 0}` });
@@ -257,9 +274,19 @@ export class BuildingCard {
           : job
             ? !workers.length
               ? 'NO WORKER'
-              : storageFull
-                ? 'STORAGE FULL'
-                : workers.find((p) => p.attention)?.attention || 'WORKING'
+              : def.id === 'well'
+                ? waterFull
+                  ? 'STORAGE FULL'
+                  : workers.find((p) => p.attention)?.attention || 'WORKING'
+                : def.id === 'farm'
+                  ? foodFull
+                    ? 'STORAGE FULL'
+                    : noWater
+                      ? 'NO WATER'
+                      : workers.find((p) => p.attention)?.attention || 'WORKING'
+                  : scrapFull
+                    ? 'STORAGE FULL'
+                    : workers.find((p) => p.attention)?.attention || 'WORKING'
             : 'BUILT',
       hp: Math.max(0, Math.round(b.hp)),
       maxHp: Math.round(b.maxHp),

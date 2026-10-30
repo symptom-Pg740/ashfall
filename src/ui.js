@@ -5,7 +5,18 @@ import { SLOTS, itemLabel } from './wardrobe.js';
 export class UI {
   constructor() {
     this.cb = {};
-    this.last = { scrap: -1, water: -1, kills: -1, health: -1, canGather: null, canPlace: null, reason: '' };
+    this.last = {
+      scrap: -1,
+      water: -1,
+      food: -1,
+      waterCap: -1,
+      foodCap: -1,
+      kills: -1,
+      health: -1,
+      canGather: null,
+      canPlace: null,
+      reason: '',
+    };
     this.lastStrikeCooling = null;
     this.toastTimer = 0;
     this.hintTimer = 0;
@@ -32,6 +43,7 @@ export class UI {
     this.el = {
       scrap: document.getElementById('hud-scrap'),
       water: document.getElementById('hud-water'),
+      food: document.getElementById('hud-food'),
       kills: document.getElementById('hud-kills'),
       hpFill: document.getElementById('hp-fill'),
       hpText: document.getElementById('hp-text'),
@@ -919,9 +931,17 @@ export class UI {
         card.classList.toggle('cant', Number(card.dataset.cost) > state.scrap);
       });
     }
-    if (state.water !== this.last.water) {
+    const waterCap = state.waterCap || state.scrapCap || 0;
+    if (state.water !== this.last.water || waterCap !== this.last.waterCap) {
       this.last.water = state.water;
-      this.el.water.textContent = String(state.water);
+      this.last.waterCap = waterCap;
+      this.el.water.textContent = `${state.water}/${waterCap}`;
+    }
+    const foodCap = state.foodCap || state.scrapCap || 0;
+    if (state.food !== this.last.food || foodCap !== this.last.foodCap) {
+      this.last.food = state.food;
+      this.last.foodCap = foodCap;
+      this.el.food.textContent = `${state.food}/${foodCap}`;
     }
     if (state.kills !== this.last.kills) {
       this.last.kills = state.kills;

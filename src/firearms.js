@@ -15,7 +15,10 @@ const BUILDING_HEIGHT = {
   campfire: 0.2,
   catcher: 1.8,
   house: 3.2,
-  tower: 5.5,
+  tower: 1.15,
+  scavenger: 2.0,
+  well: 2.2,
+  farm: 1.2,
   chapel: 5.0,
 };
 
@@ -71,6 +74,7 @@ export class Firearms {
     // at the muzzle, so the visual matches the gun.
     const actorY = actor.rig?.group?.position?.y ?? actor.y ?? 0;
     _origin.set(actor.x, actorY + 1.25, actor.z);
+    const ignoreBuilding = shot.ignoreBuilding || actor.ignoreBuilding || null;
 
     let aimX = shot.aimPoint?.x;
     let aimY = shot.aimPoint?.y;
@@ -108,7 +112,7 @@ export class Firearms {
             _pellet.x, _pellet.y, _pellet.z,
             weapon.range,
           );
-      const staticHit = this.raycastStatic(_origin, _pellet, weapon.range);
+      const staticHit = this.raycastStatic(_origin, _pellet, weapon.range, ignoreBuilding);
       const targetT = targetHit ? targetHit.t : Infinity;
       const enemyT = enemyHit ? enemyHit.t : Infinity;
       const staticT = staticHit ? staticHit.t : Infinity;
@@ -229,7 +233,7 @@ export class Firearms {
   }
 
   /** A ray against buildings, obstacles and the height field. */
-  raycastStatic(origin, dir, maxDist) {
+  raycastStatic(origin, dir, maxDist, ignoreBuilding = null) {
     let bestT = maxDist;
     let bestSurface = null;
     let hasHit = false;
@@ -268,7 +272,7 @@ export class Firearms {
     };
 
     for (const b of this.settlement.buildings) {
-      if (!b) continue;
+      if (!b || b === ignoreBuilding) continue;
       const top = (b.y || 0) + (BUILDING_HEIGHT[b.type] ?? 2.5);
       const surface = b.type === 'tower' || b.type === 'barricade' ? 'wood' : 'stone';
       testCircle(b.x, b.z, b.radius, top, surface);
@@ -301,13 +305,13 @@ export class Firearms {
   }
 
   /** True when no static blocker or terrain sits between the two points. */
-  hasLineOfSight(x1, y1, z1, x2, y2, z2) {
+  hasLineOfSight(x1, y1, z1, x2, y2, z2, ignoreBuilding = null) {
     _origin.set(x1, y1, z1);
     _dir.set(x2 - x1, y2 - y1, z2 - z1);
     const len = _dir.length();
     if (len < 0.001) return true;
     _dir.multiplyScalar(1 / len);
-    return !this.raycastStatic(_origin, _dir, len);
+    return !this.raycastStatic(_origin, _dir, len, ignoreBuilding);
   }
 
   applySpread(dir, degrees) {

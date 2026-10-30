@@ -238,39 +238,73 @@ function chapel() {
   return bakeBaseAO(merge(p), 0.6, 0.3);
 }
 
-function tower() {
-  const p = [baseDisc(1.45)];
-  const lean = 0.18;
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      p.push(
-        box(0.16, 3.0, 0.16, PALETTE.woodDark, sx * 0.64, 1.5, sz * 0.64, -sz * lean, 0, sx * lean)
-      );
+function guardPost() {
+  const sand = '#a3875e';
+  const sandDark = '#806a4a';
+  const wood = '#6b4a2e';
+  const woodDark = '#4e3522';
+  const metal = '#777a78';
+  const rust = '#8a4f35';
+  const tarp = '#7c6447';
+  const stone = '#b6a184';
+  const p = [baseDisc(1.6)];
+
+  // A dug-in pad, not a tower: low sandbags, a gun rest and a scrap blast shield.
+  p.push(box(2.35, 0.14, 2.35, '#7d6649', 0, 0.07, 0));
+  p.push(box(2.0, 0.1, 2.0, '#5f4a35', 0, 0.16, 0));
+  for (let i = -1; i <= 1; i++) {
+    p.push(box(1.5, 0.05, 0.28, '#6b4a2e', 0, 0.22, i * 0.32));
+  }
+
+  // Sandbag parapet: three rows on the back and sides, two at the front with a firing gap.
+  for (let row = 0; row < 3; row++) {
+    const y = 0.28 + row * 0.2;
+    for (let i = -2; i <= 2; i++) {
+      const x = i * 0.4 + (row % 2 ? 0.2 : 0);
+      p.push(box(0.38, 0.2, 0.32, row % 2 ? sand : sandDark, x, y, -0.88, 0, 0, 0));
+    }
+    for (const sx of [-1, 1]) {
+      for (let i = -1; i <= 1; i++) {
+        const z = i * 0.4 + (row % 2 ? 0.2 : 0);
+        p.push(box(0.3, 0.2, 0.38, row % 2 ? sandDark : sand, sx * 0.9, y, z, 0, 0, 0));
+      }
     }
   }
-  p.push(box(1.65, 0.14, 0.12, PALETTE.wood, 0, 1.2, 0.62, 0, 0, 0.02));
-  p.push(box(1.65, 0.12, 0.12, PALETTE.wood, 0, 2.1, -0.55, 0, 0, -0.02));
-  p.push(box(0.12, 0.12, 1.5, PALETTE.wood, 0.58, 1.65, 0, 0.02, 0, 0));
-  p.push(box(2.0, 0.18, 2.0, PALETTE.wood, 0, 3.0, 0));
-  p.push(box(2.02, 0.09, 0.12, PALETTE.metal, 0, 3.36, 0.94));
-  p.push(box(2.02, 0.09, 0.12, PALETTE.metal, 0, 3.36, -0.94));
-  p.push(box(0.12, 0.09, 2.02, PALETTE.metal, 0.94, 3.36, 0));
-  // roof
-  const roof = new THREE.ConeGeometry(1.55, 0.62, 4);
-  roof.rotateY(Math.PI / 4);
-  roof.translate(0, 3.95, 0);
-  p.push(paint(roof, PALETTE.tarp));
-  p.push(cyl(0.05, 0.05, 0.5, 4, PALETTE.metalLight, 0, 4.35, 0));
-  // ladder
-  for (let i = 0; i < 6; i++) {
-    p.push(box(0.52, 0.06, 0.08, PALETTE.metalLight, 0, 0.42 + i * 0.44, 1.02));
+  for (let row = 0; row < 2; row++) {
+    const y = 0.28 + row * 0.2;
+    for (let i = -2; i <= 2; i++) {
+      if (i === 0) continue;
+      const x = i * 0.4 + (row % 2 ? 0.2 : 0);
+      p.push(box(0.38, 0.2, 0.32, row % 2 ? sand : sandDark, x, y, 0.9, 0, 0, 0));
+    }
   }
-  p.push(box(0.07, 2.7, 0.08, PALETTE.metal, -0.23, 1.55, 1.02));
-  p.push(box(0.07, 2.7, 0.08, PALETTE.metal, 0.23, 1.55, 1.02));
-  // little lantern box
-  p.push(box(0.16, 0.2, 0.16, '#ffb35e', 0.6, 3.25, 0.6));
-  p.push(box(0.22, 0.06, 0.22, PALETTE.metal, 0.6, 3.39, 0.6));
-  return merge(p);
+
+  // Corrugated blast shield across the back, with a camo net over the rear half.
+  p.push(box(1.9, 1.1, 0.06, rust, 0, 0.85, -1.02, 0.12, 0, 0));
+  p.push(box(1.96, 0.07, 0.1, metal, 0, 1.43, -1.0));
+  p.push(box(2.0, 0.04, 1.0, tarp, 0, 1.52, -0.45, 0.12, 0, 0));
+  for (const sx of [-0.85, 0.85]) {
+    p.push(cyl(0.05, 0.06, 1.5, 5, woodDark, sx, 0.75, -0.82));
+  }
+
+  // Timber gun rest in the firing gap.
+  p.push(box(0.9, 0.1, 0.24, wood, 0, 1.02, 0.82));
+  p.push(box(0.08, 0.9, 0.08, woodDark, -0.4, 0.45, 0.82));
+  p.push(box(0.08, 0.9, 0.08, woodDark, 0.4, 0.45, 0.82));
+
+  // Ammo crate, field radio, lantern and a range card.
+  p.push(box(0.45, 0.3, 0.32, '#6d563f', 0.55, 0.31, -0.45, 0, 0.2, 0));
+  p.push(box(0.4, 0.05, 0.28, '#85663f', 0.55, 0.48, -0.45, 0, 0.2, 0));
+  p.push(box(0.22, 0.16, 0.16, '#3d4237', 0.55, 0.6, -0.45, 0, 0.2, 0));
+  p.push(cyl(0.03, 0.03, 0.55, 4, metal, 0.55, 0.87, -0.45));
+  p.push(box(0.16, 0.2, 0.16, '#ffb35e', -0.6, 1.15, -0.65));
+  p.push(box(0.22, 0.06, 0.22, metal, -0.6, 1.28, -0.65));
+  p.push(cyl(0.04, 0.05, 1.25, 4, woodDark, 0.92, 0.62, 0.35));
+  p.push(box(0.55, 0.32, 0.04, '#d8c8a8', 0.92, 1.2, 0.35, 0, 0.2, 0));
+  p.push(box(0.34, 0.03, 0.02, '#5d4631', 0.92, 1.23, 0.38, 0, 0.2, 0));
+  p.push(box(1.0, 0.1, 0.3, stone, 0, 0.05, 1.12));
+
+  return bakeBaseAO(merge(p), 0.5, 0.3);
 }
 
 function solarArray() {
@@ -461,6 +495,97 @@ function scavengerHut() {
   return bakeBaseAO(merge(p), 0.5, 0.3);
 }
 
+function wellWheel() {
+  const stone = '#b6a184';
+  const stoneDark = '#8f7c63';
+  const mud = '#c9a878';
+  const mudDark = '#a98a61';
+  const wood = '#6b4a2e';
+  const woodDark = '#4e3522';
+  const metal = '#777a78';
+  const water = '#4c7f86';
+  const tarp = '#7c6447';
+  const p = [baseDisc(1.9)];
+
+  p.push(cyl(1.55, 1.7, 0.18, 12, mudDark, 0, 0.09, 0));
+  // Stone well ring.
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    p.push(box(0.38, 0.42, 0.26, i % 2 ? stone : stoneDark, Math.cos(a) * 0.85, 0.32, Math.sin(a) * 0.85, 0, -a, 0));
+  }
+  p.push(cyl(0.62, 0.62, 0.05, 12, '#2a221b', 0, 0.5, 0));
+  p.push(cyl(0.52, 0.52, 0.02, 12, water, 0, 0.54, 0));
+
+  // Timber frame, axle and the hand-cranked wheel.
+  for (const sx of [-1, 1]) p.push(box(0.12, 1.75, 0.12, woodDark, sx, 0.92, 0));
+  p.push(cyl(0.09, 0.09, 2.15, 6, wood, 0, 1.74, 0, 0, 0, Math.PI / 2));
+  p.push(cyl(0.52, 0.52, 0.12, 12, wood, 0.35, 1.74, 0, 0, 0, Math.PI / 2));
+  p.push(cyl(0.4, 0.4, 0.13, 12, mudDark, 0.35, 1.74, 0, 0, 0, Math.PI / 2));
+  for (let i = 0; i < 6; i++) {
+    p.push(box(0.06, 0.92, 0.06, woodDark, 0.35, 1.74, 0, (i / 6) * Math.PI, 0, 0));
+  }
+  p.push(box(0.06, 0.34, 0.06, metal, 0.84, 1.43, 0.12));
+  p.push(cyl(0.015, 0.015, 0.65, 3, '#b9a17a', 0.2, 1.37, 0));
+  p.push(cyl(0.14, 0.17, 0.28, 8, woodDark, 0.2, 1.0, 0));
+
+  // Trough, spill and a small tarp awning.
+  p.push(box(1.3, 0.32, 0.55, wood, 1.55, 0.18, 0.65));
+  p.push(box(1.1, 0.05, 0.4, water, 1.55, 0.36, 0.65));
+  p.push(box(0.9, 0.02, 0.5, '#8a6a44', 1.15, 0.03, 1.0));
+  p.push(box(1.5, 0.05, 1.1, tarp, -0.45, 2.15, -0.35, 0.14, 0, 0));
+  for (const sx of [-1.05, 0.15]) p.push(cyl(0.05, 0.06, 2.1, 4, woodDark, sx, 1.05, -0.85));
+
+  return bakeBaseAO(merge(p), 0.55, 0.3);
+}
+
+function farmPlot() {
+  const soil = '#8a6a44';
+  const soilDark = '#6f5336';
+  const mud = '#c9a878';
+  const mudDark = '#a98a61';
+  const wood = '#6b4a2e';
+  const woodDark = '#4e3522';
+  const metal = '#777a78';
+  const water = '#4c7f86';
+  const tarp = '#7c6447';
+  const straw = '#b0a574';
+  const p = [baseDisc(2.95)];
+
+  // Packed plot and a low mud-brick border.
+  p.push(box(4.4, 0.12, 4.0, soil, 0, 0.06, 0));
+  for (const sx of [-1, 1]) p.push(box(0.16, 0.34, 4.25, mud, sx * 2.22, 0.17, 0));
+  for (const sz of [-1, 1]) p.push(box(4.45, 0.34, 0.16, mudDark, 0, 0.17, sz * 2.02));
+
+  // Tilled rows with dry stalks.
+  for (let r = -1; r <= 1; r++) {
+    const z = r * 1.05;
+    p.push(box(3.9, 0.08, 0.5, soilDark, -0.1, 0.13, z));
+    for (let i = -5; i <= 5; i++) {
+      const x = i * 0.33;
+      p.push(box(0.03, 0.28, 0.03, straw, x, 0.27, z + 0.08, 0, 0, 0));
+      if (i % 2 === 0) p.push(box(0.03, 0.22, 0.03, straw, x + 0.1, 0.24, z - 0.1, 0.2, 0, 0.1));
+    }
+  }
+
+  // Scrap irrigation channel and a water barrel.
+  p.push(box(0.2, 0.08, 4.0, metal, 2.1, 0.22, 0));
+  p.push(box(0.14, 0.03, 3.9, water, 2.1, 0.27, 0));
+  p.push(cyl(0.35, 0.38, 0.8, 10, woodDark, -2.05, 0.45, 1.35));
+  p.push(cyl(0.36, 0.36, 0.04, 10, water, -2.05, 0.86, 1.35));
+
+  // Scarecrow, sacks and a hoe.
+  p.push(cyl(0.06, 0.08, 1.85, 5, wood, 0.1, 0.95, -1.55));
+  p.push(box(1.15, 0.08, 0.08, woodDark, 0.1, 1.5, -1.55));
+  p.push(box(0.5, 0.55, 0.18, tarp, 0.1, 1.38, -1.55));
+  p.push(box(0.3, 0.3, 0.3, '#c8b58a', 0.1, 1.82, -1.55));
+  p.push(box(0.6, 0.4, 0.45, '#b6a184', 1.9, 0.28, -1.2, 0, 0.2, 0));
+  p.push(box(0.5, 0.34, 0.4, '#9b7a4e', 1.55, 0.25, -1.5, 0, -0.3, 0));
+  p.push(cyl(0.03, 0.04, 1.1, 4, woodDark, -1.55, 0.6, 0.65, 0, 0, 0.6));
+  p.push(box(0.2, 0.08, 0.05, metal, -1.85, 0.28, 0.9, 0, 0.2, 0));
+
+  return bakeBaseAO(merge(p), 0.55, 0.3);
+}
+
 export const BUILDINGS = [
   {
     id: 'barricade',
@@ -511,6 +636,24 @@ export const BUILDINGS = [
     geometry: null,
   },
   {
+    id: 'well',
+    name: 'WELL WHEEL',
+    cost: 20,
+    radius: 1.9,
+    desc: 'Assign a water carrier.',
+    job: { role: 'water', label: 'WATER CARRIER', slots: 1, radius: 2.6, post: { x: 2.2, z: 0.4 }, output: '1 WATER / 4S' },
+    geometry: null,
+  },
+  {
+    id: 'farm',
+    name: 'FARM',
+    cost: 24,
+    radius: 3.0,
+    desc: 'Assign farmers. Uses water.',
+    job: { role: 'farmer', label: 'FARMER', slots: 2, radius: 3.2, post: { x: 0, z: 3.3 }, output: '1 FOOD / 7S', waterUse: '1 / 20S' },
+    geometry: null,
+  },
+  {
     id: 'solar',
     name: 'SOLAR ARRAY',
     cost: 14,
@@ -557,10 +700,10 @@ export const BUILDINGS = [
   },
   {
     id: 'tower',
-    name: 'WATCHTOWER',
+    name: 'GUARD POST',
     cost: 20,
     radius: 1.65,
-    desc: 'Auto-fires within 13m.',
+    desc: 'Assign a gunner. +6m, cover.',
     geometry: null,
   },
   {
@@ -580,12 +723,14 @@ const GEO_BUILDERS = {
   house: adobeHouse,
   warehouse,
   scavenger: scavengerHut,
+  well: wellWheel,
+  farm: farmPlot,
   solar: solarArray,
   pole: powerPole,
   battery: batteryBank,
   light: yardLight,
   turret: vickersBase,
-  tower,
+  tower: guardPost,
   chapel,
 };
 
@@ -980,14 +1125,14 @@ export class Settlement {
 
     if (def.id === 'tower') {
       const glow = new THREE.Sprite(this.towerGlowMat);
-      glow.position.set(0.6, 3.35, 0.6);
-      glow.scale.setScalar(1.35);
+      glow.position.set(0.6, 1.5, 0.6);
+      glow.scale.setScalar(1.0);
       model.add(glow);
       building.glow = glow;
     }
 
     const hpWidth = Math.max(1.6, def.radius * 1.5);
-    const hpY = def.id === 'pole' ? 4.2 : def.id === 'tower' ? 5.0 : def.id === 'light' ? 3.8 : Math.max(4.0, def.radius * 0.7 + 3.2);
+    const hpY = def.id === 'pole' ? 4.2 : def.id === 'tower' ? 2.4 : def.id === 'light' ? 3.8 : Math.max(4.0, def.radius * 0.7 + 3.2);
     const hpBg = new THREE.Mesh(
       new THREE.BoxGeometry(hpWidth, 0.1, 0.3),
       new THREE.MeshBasicMaterial({ color: 0x2b2117, transparent: true, opacity: 0.82, depthWrite: false, depthTest: false }),
@@ -1182,7 +1327,11 @@ export class Settlement {
   syncStorage() {
     const cap = this.storageCap();
     this.state.scrapCap = cap;
+    this.state.waterCap = cap;
+    this.state.foodCap = cap;
     if (this.state.scrap > cap) this.state.scrap = cap;
+    if (this.state.water > cap) this.state.water = cap;
+    if (this.state.food > cap) this.state.food = cap;
     return cap;
   }
 

@@ -1,9 +1,9 @@
 # Workplaces, jobs and the settlement economy
 
-**Status:** Phase **5a is implemented** (free builder role, Scavenger Hut, two slots, work loop,
-assignment, saved roles). 5b (Well Wheel, Farm, needs) and 5c (Workshop, ammo, recruitment) are
-still design. Numbers are provisional; we are still in the testing phase, so costs, rates and even
-the job names will move.
+**Status:** Phases **5a and 5b are implemented** (free builder role, Scavenger Hut, Well Wheel,
+Farm, daily needs, food/water HUD, saved roles and needs). **5c** (Workshop, ammo, recruitment,
+morale) is still design. Numbers are provisional; we are still in the testing phase, so costs, rates
+and even the job names will move.
 
 This is the detailed design behind `docs/GAME_PLAN.md`. The short version: **assign a survivor to a
 building, not to a task.** The building gives them a repeatable job. Manual orders still exist, but
@@ -104,26 +104,28 @@ layout free and avoids a building that exists only to hold one worker.
   Unreachable piles are skipped for 10 s instead of retrying every frame.
 - The hut is a workplace, not an extra stockpile; scrap still goes to the warehouse.
 
-### Well Wheel — water without a river
+### Well Wheel — water without a river — **implemented in 5b**
 
 A water wheel needs flowing water. The map is a desert, so the coherent version is a **well wheel**:
 a hand-cranked wheel over a dug well, built from mud brick, timber and a scavenged axle. If we later
 add a river/oasis, a true water wheel can be a second variant.
 
-- Cost: 20 scrap; radius 1.8; well, wheel, trough; mud and scrap.
+- Cost: 20 scrap; radius 1.9; stone well ring, timber axle, scavenged wheel rim, trough; mud and
+  scrap.
 - Slots: 1 water carrier.
-- Loop: stand at the wheel and turn it; produces **1 water / 4 s** while staffed.
+- Loop: stand at the wheel and turn it; produces **1 water / 4 s** while staffed and in position.
 - The existing **Rain Catcher** stays as a passive, slower early source (no worker); the Well Wheel is
   the reliable staffed upgrade. This gives the player a choice instead of replacing a building.
 - If the stockpile is full, the worker stops (`STORAGE FULL`).
 
-### Farm — food
+### Farm — food — **implemented in 5b**
 
-- Cost: 24 scrap; radius 3.0; a mud-brick plot with scrap irrigation channels and a small scarecrow.
+- Cost: 24 scrap; radius 3.0; a mud-brick plot with scrap irrigation channels, dry stalks, a
+  scarecrow, sacks and a water barrel.
 - Slots: 2 farmers.
 - Loop: tend the plot; produces **1 food / 7 s per farmer**.
 - Consumes **1 water / 20 s** while working; no water = `NO WATER`, production stops.
-- Food is stored in the warehouse; units eat from it (see needs).
+- Food is stored in the warehouse; survivors eat from it at dawn (see needs).
 
 ### Workshop — ammo and components
 
@@ -163,26 +165,25 @@ add a river/oasis, a true water wheel can be a second variant.
 | **Ammo** | Workshop | firearms | pistol rounds / rifle rounds / shells |
 | **Components** | Workshop, ruins | solar, battery, relay | rare tech resource |
 
-- The **warehouse** stores all resources; its capacity is shared or per-resource (design choice:
-  shared cap for simplicity, with a per-resource soft cap later).
+- The **warehouse** stores all resources; scrap, water and food currently share the same numeric
+  capacity (`storageCap()` copied into each cap), with separate pools. A true single pool or
+  per-resource caps remain a later choice.
 - Hauling still happens physically: a scavenger carries scrap to the warehouse; the workshop draws
   from the warehouse instantly when it is staffed (no worker hauling each round).
 - HUD chips show scrap, water, food, ammo and the warehouse fill. A resource at zero turns red.
 
 ---
 
-## 5. Needs, days and recruitment
+## 5. Needs, days and recruitment — **needs implemented in 5b**
 
-- One **day** = one 6-minute day/night cycle for the prototype. A day counter and a short dawn report
-  (`DAY 3 · 4 survivors · food 8 · water 6`).
-- Each survivor consumes **1 food + 1 water per day** (or a continuous drain; a per-day tick is easier
-  to read).
-- If either is missing: speed −20% and a morale warning; after **2 consecutive days** the survivor
-  leaves (walks off the map) unless fed. No instant death.
-- Surplus food/water and a free house slot attract a new survivor at dawn every **2–3 days**, up to a
-  population cap raised by houses.
-- The player starts with **3 survivors** and enough stores for ~2 days; the first decisions are a
-  Scavenger Hut and a well/farm.
+- One **day** = one 6-minute day/night cycle for the prototype. A day counter and a dawn line
+  (`DAY 3 · 4 SURVIVORS · FOOD 8 · WATER 6`) are live.
+- Each living survivor consumes **1 food + 1 water at dawn**. **Implemented.**
+- If either is missing: speed −20%; after **2 consecutive unfed dawns** the survivor leaves (removed
+  from the roster, hidden, saved as left). No instant death. **Implemented.**
+- Surplus food/water and a free house slot attracting a new survivor every **2–3 days** is 5c.
+- The player starts with **3 survivors**, **4 water and 4 food**; the first decisions are a Scavenger
+  Hut and a well/farm.
 - Recruitment is a reward for a working economy, not a random gift.
 
 ---
@@ -277,8 +278,9 @@ Changes:
 - `Settlement.place` no longer auto-assigns; a **builder-role** unit picks up the site. The unit card
   can set/clear the builder role. Implemented in 5a.
 - `Armory` ammo purchases draw from the workshop stockpile; the workshop recipe is the primary source.
-- Save schema: **v5** adds survivor roles, workplace assignments and survivor positions (shipped in
-  5a). Resources, needs, recipes and the day counter still need adding in 5b/5c.
+- Save schema: **v5** adds survivor roles, workplace assignments, positions, hunger/thirst and the
+  left state (shipped in 5a/5b). Recipes, recruitment and a stored day counter still need 5c; the
+  day is currently derived from `state.time`.
 - The **building card** replaces building contextual orders for assignment/repair/man/wire; unit
   orders remain for move/attack/gather.
 

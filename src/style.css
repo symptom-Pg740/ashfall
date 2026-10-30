@@ -1243,7 +1243,8 @@ body.build-open .actions {
   .brand {
     display: none;
   }
-  #ammo-chip {
+  #ammo-chip,
+  #kills-chip {
     display: none;
   }
   .top-actions {
@@ -2227,4 +2228,35 @@ body.build-open .building-card {
 .unit-control.alt:hover {
   color: var(--amber-hot);
   border-color: var(--line-bright);
+}
+
+/* Keep the new food chip from pushing the top actions off a phone. */
+@media (max-width: 620px) {
+  .res-chip {
+    min-width: 48px;
+    padding: 2px 4px 3px;
+    column-gap: 3px;
+  }
+  .res-chip svg {
+    width: 13px;
+    height: 13px;
+  }
+  .res-chip b {
+    font-size: 11px;
+  }
+  .fs-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .fs-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+  .top-actions {
+    gap: 3px;
+  }
+  .perf-btn {
+    padding: 0 5px;
+    font-size: 7px;
+  }
 }

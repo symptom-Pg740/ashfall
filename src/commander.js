@@ -141,7 +141,7 @@ export class Commander {
     if (unit.isLeader || unit === this.player.possessedUnit) {
       return this.mode === 'direct' ? 'UNDER YOUR CONTROL' : 'TAKE CONTROL TO MOVE';
     }
-    if (unit.manning) return 'ON THE TOWER';
+    if (unit.manning) return 'ON THE GUARD POST';
     if (unit.attention && !unit.job) return unit.attention;
     const job = unit.job;
     if (!job) {
@@ -157,7 +157,7 @@ export class Commander {
       if (job.phase === 'return') return `HAULING ${unit.carry}`;
       return 'TO THE PILE';
     }
-    if (job.type === 'man') return 'TO THE TOWER';
+    if (job.type === 'man') return 'TO THE GUARD POST';
     if (job.type === 'repair') {
       return job.building && Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) < job.building.radius + 1.6
         ? `REPAIRING ${job.building.def.name}`
@@ -172,7 +172,9 @@ export class Commander {
   }
 
   roster() {
-    return this.units().map((u) => {
+    return this.units()
+      .filter((u) => u.isLeader || !u.left)
+      .map((u) => {
       const v = this.view(u);
       return {
         key: v.key,
@@ -416,7 +418,7 @@ export class Commander {
   orderManTower(unit, tower) {
     this.campFolk.issueJob(unit, { type: 'man', tower });
     this.marker(tower.x, tower.z, '#8fb0c2');
-    this.ui.toast(`${unit.name} → WATCHTOWER`);
+    this.ui.toast(`${unit.name} → GUARD POST`);
     this.refresh(unit);
   }
 
