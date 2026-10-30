@@ -57,7 +57,8 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Strike / fire | `STRIKE` / `FIRE` button | `Space` |
 | Gather scrap | `GATHER` button (appears near a pile) | `E` |
 | Open build tray | `BUILD` | `B` |
-| Pick structure | Tap a card / swipe the tray | `1`–`6` |
+| Pick structure | Tap a card / swipe the tray | `1`–`9` |
+| Place a site | pan the camera, pick a structure, tap the ground anywhere in camp | same |
 | Aim placement | Tap / drag the ground | Move mouse, click ground |
 | Confirm / cancel | `PLACE` / `CANCEL` | `Enter` / `Esc` |
 | Wardrobe | `OUTFIT` | `O` |
@@ -89,8 +90,9 @@ reliable way to select a unit when the camp is crowded.
    shards; each gives **6–12 scrap**. In command mode, select a survivor and tap a pile: they gather
    it and haul it back to the nearest **Warehouse**, or to you if there is none.
 2. Build a **Warehouse** (22) early: **+120 storage** and the hauling drop point. The crates inside
-   fill as scrap accumulates. Then a **Campfire** (8) to heal inside its light, or a **Barricade** (4)
-   for solid cover.
+   fill as scrap accumulates. Placing a structure marks a **site**; the nearest free survivor is
+   assigned automatically, walks there and builds it. Then a **Campfire** (8) to heal inside its
+   light, or a **Barricade** (4) for solid cover.
 3. Power the camp: a **Solar Array** (14), a **Power Pole** (3), a **Battery Bank** (16) and a **Yard
    Light** (8). Wires cost scrap per metre. By day the panels charge the battery; by night the light
    drains it. The clock in the lower-right shows the time of day.
@@ -147,8 +149,8 @@ The graph keeps the last ~45 seconds.
   slope, moisture and roads; grass and shrubs sway in a vertex shader. Rocks use a cracked-rock
   albedo + normal set; houses use plaster detail and baked base AO.
 - **Continue a run** — seed + player state + equipment + buildings + scrap + ammo/magazines + weapon
-  upgrades + production timers + power links are auto-saved to localStorage (schema `v: 3`; runs
-  from `v: 1`/`v: 2` migrate in place). Reload shows **CONTINUE**; **NEW RUN** clears the save, and
+  upgrades + production timers + power links + construction sites are auto-saved to localStorage
+  (schema `v: 4`; runs from `v: 1`–`v: 3` migrate in place). Reload shows **CONTINUE**; **NEW RUN** clears the save, and
   PERF has **RESET SAVE**.
 - **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
   ring and contextual orders: tap an enemy to engage, a scrap pile to gather/haul, or the ground to
@@ -158,6 +160,12 @@ The graph keeps the last ~45 seconds.
   80; each warehouse adds 120. Gatherers haul to the nearest warehouse (or to you if there is none)
   and wait at the door when it is full. The HUD shows `stored/capacity`, and the build costs are the
   sink.
+- **Construction jobs** — a placed structure is a **site**, not an instant building: a pad, scaffold
+  and progress bar. The nearest free survivor is auto-assigned (or select a unit and tap the site),
+  walks there with the nav grid and builds it over time. The real model only appears and becomes
+  active on completion; storage, power, production, healing and defence ignore unfinished sites.
+  Placement is **anywhere in the camp** — pan the camera first, then choose a structure; it is no
+  longer tied to the player's position.
 - **Day/night and power (Phase 3)** — a 6-minute cycle drives the sun/moon, sky, fog, shadows and a
   solar output curve. **Solar arrays** generate 2.2 power, **poles** carry it 12 m, **battery banks**
   store 30 and **yard lights** burn 0.5 at night. A placed power building auto-wires to the nearest
@@ -336,10 +344,9 @@ chain. The turret only engages non-humans; human raids are your units' problem.
   deferring (audio tails/occlusion, animation, wounds, needs, weather, destruction), with cost and
   priority, so it is not lost.
 
-**Phases 1–4 are in:** command/possession, warehouse hauling, day/night power, and the defences
-(Vickers turret + watchtower gunner + A* unit movement). The next slice is **Phase 4b**: raids that
-target the warehouse and power grid, plus day/night raid composition, before the Phase 5 economy
-work.
+**Phases 1–4 are in, plus construction jobs:** buildings are placed anywhere in the camp and built
+by units, not the avatar. The next slice is **Phase 4b**: raids that target the warehouse and power
+grid, plus day/night raid composition, before the Phase 5 economy work.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgotten work.
@@ -351,10 +358,13 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 7 gates, not forgott
 - Not yet profiled on a physical phone.
 - Command mode, the warehouse, the power chain and defences are first slices. Wires auto-link (no
   manual LINK mode), there is no occlusion, and turret belts reload themselves.
-- Tower manning and turret state are not saved; reload returns them to idle.
+- Tower manning, turret belts and builder assignments are not saved; reload leaves towers and sites
+  idle, and construction sites keep their progress but need a new builder.
 - Raiders do not yet target the warehouse or power infrastructure, and night raids are not yet
   differentiated.
 - The 1 m nav grid is coarse; very narrow gaps can still be unreachable.
+- Construction cannot be cancelled or refunded yet, and there is no building damage or repair.
+- A site with no free survivor waits; there is no job queue or auto-reassign after a reload.
 - The watchtower still auto-fires until Phase 4 gives it an assigned gunner.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question.

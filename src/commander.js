@@ -151,6 +151,11 @@ export class Commander {
       return 'TO THE PILE';
     }
     if (job.type === 'man') return 'TO THE TOWER';
+    if (job.type === 'build') {
+      return job.building && Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) < job.building.radius + 1.6
+        ? `BUILDING ${job.building.def.name}`
+        : `TO THE ${job.building?.def.name || 'SITE'}`;
+    }
     return 'WORKING';
   }
 
@@ -355,6 +360,39 @@ export class Commander {
     return best;
   }
 
+  orderBuild(unit, building) {
+    if (!unit || unit.isLeader || unit.dead) {
+      this.ui.hint('SELECT A SURVIVOR TO BUILD', 1800);
+      return;
+    }
+    if (!building || building.built) return;
+    this.campFolk.issueJob(unit, { type: 'build', building });
+    this.marker(building.x, building.z, '#ffc37a');
+    this.ui.toast(`${unit.name} → BUILD ${building.def.name}`);
+    this.refresh(unit);
+  }
+
+  /** Find the nearest free survivor for a freshly placed site. */
+  autoAssignBuild(building) {
+    if (!building || building.built) return null;
+    let best = null;
+    let bestD = Infinity;
+    for (const p of this.campFolk.people) {
+      if (p.dead || p.possessed || p.manning || p.job) continue;
+      const d = Math.hypot(p.rig.group.position.x - building.x, p.rig.group.position.z - building.z);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    if (!best) {
+      this.ui.hint('NO FREE BUILDER · SELECT A UNIT AND TAP THE SITE', 2600);
+      return null;
+    }
+    this.orderBuild(best, building);
+    return best;
+  }
+
   orderManTower(unit, tower) {
     this.campFolk.issueJob(unit, { type: 'man', tower });
     this.marker(tower.x, tower.z, '#8fb0c2');
@@ -419,6 +457,10 @@ export class Commander {
     }
 
     const building = this.pickBuilding(clientX, clientY);
+    if (building && !building.built) {
+      this.orderBuild(this.selected, building);
+      return;
+    }
     if (building && building.type === 'tower') {
       if (this.selected.isLeader) {
         this.ui.hint('TAKE CONTROL OF A SURVIVOR TO MAN THE TOWER', 2000);

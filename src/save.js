@@ -5,8 +5,9 @@ export const SAVE_KEY = 'ashfall-save-v1';
  *  1 — scrap/water/kills/health/time, equipment, buildings, scrap field, timers
  *  2 — adds `ammo`, `mags` and `upgrades` (the armory economy)
  *  3 — adds `power` links, building ids and battery charge
+ *  4 — adds construction sites (`built`, `buildProgress`)
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 let suppressed = false;
 
@@ -17,7 +18,7 @@ export function readSave() {
     if (!raw) return null;
     const data = JSON.parse(raw);
     if (!data || !Number.isFinite(data.seed)) return null;
-    if (data.v !== 1 && data.v !== 2 && data.v !== SAVE_VERSION) return null;
+    if (data.v !== 1 && data.v !== 2 && data.v !== 3 && data.v !== SAVE_VERSION) return null;
     // v1 runs simply have no armory block; `loadGame` fills the starter ammo.
     data.v = SAVE_VERSION;
     return data;

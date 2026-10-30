@@ -5,7 +5,6 @@ import { buildAdobeHouse } from './kit.js';
 import { makeRng, deriveSeed, hash32, WORLD_SEED } from './rng.js';
 import { makeDetailSet } from './textures.js';
 
-const BUILD_RANGE = 11.5;
 const CAMP_RADIUS = 46;
 const GRID = 1;
 
@@ -669,7 +668,7 @@ export class Settlement {
     }
   }
 
-  begin(typeId, player) {
+  begin(typeId, origin) {
     const def = BUILDINGS.find((b) => b.id === typeId);
     if (!def) return;
     this.selected = def;
@@ -680,9 +679,9 @@ export class Settlement {
     this.ring.visible = true;
     this.ring.geometry.dispose();
     this.ring.geometry = new THREE.RingGeometry(def.radius - 0.12, def.radius, 30);
-    const fwd = player.heading;
+    const fwd = origin.heading || 0;
     const spawnDist = Math.max(3.4, def.radius + 1.1);
-    this.moveGhost(player.x + Math.sin(fwd) * spawnDist, player.z + Math.cos(fwd) * spawnDist, player);
+    this.moveGhost(origin.x + Math.sin(fwd) * spawnDist, origin.z + Math.cos(fwd) * spawnDist, origin);
   }
 
   cancel() {
@@ -694,28 +693,17 @@ export class Settlement {
     this.ring.visible = false;
   }
 
-  moveGhost(x, z, player) {
+  moveGhost(x, z, origin) {
     if (!this.placing) return;
-    const snappedX = Math.round(x / GRID) * GRID;
-    const snappedZ = Math.round(z / GRID) * GRID;
-    const dx = snappedX - player.x;
-    const dz = snappedZ - player.z;
-    const dist = Math.hypot(dx, dz);
-    let gx = snappedX;
-    let gz = snappedZ;
-    if (dist > BUILD_RANGE) {
-      gx = player.x + (dx / dist) * BUILD_RANGE;
-      gz = player.z + (dz / dist) * BUILD_RANGE;
-      gx = Math.round(gx / GRID) * GRID;
-      gz = Math.round(gz / GRID) * GRID;
-    }
+    const gx = Math.round(x / GRID) * GRID;
+    const gz = Math.round(z / GRID) * GRID;
     const y = heightAt(gx, gz);
     this.ghost.position.set(gx, y + 0.02, gz);
     this.ring.position.set(gx, y + 0.06, gz);
-    this.validate(player);
+    this.validate(origin);
   }
 
-  validate(player) {
+  validate(origin) {
     const def = this.selected;
     if (!def) {
       this.canPlace = false;
@@ -723,13 +711,10 @@ export class Settlement {
     }
     const gx = this.ghost.position.x;
     const gz = this.ghost.position.z;
-    const dist = Math.hypot(gx - player.x, gz - player.z);
     let reason = '';
 
     if (def.cost > this.state.scrap) reason = 'NOT ENOUGH SCRAP';
-    else if (Math.hypot(gx, gz) > CAMP_RADIUS) reason = 'OUTSIDE SAFE RANGE';
-    else if (dist > BUILD_RANGE) reason = 'TOO FAR AWAY';
-    else if (dist < def.radius + 0.3) reason = 'TOO CLOSE TO YOU';
+    else if (Math.hypot(gx, gz) > CAMP_RADIUS) reason = 'OUTSIDE THE CAMP';
     else if (slopeAt(gx, gz, 1.1) > 0.26) reason = 'UNEVEN GROUND';
     else {
       for (const b of this.buildings) {
@@ -757,10 +742,12 @@ export class Settlement {
   }
 
   /** Create one building at a world position. Shared by placement and save restore. */
-  createBuilding(def, x, z, id = null) {
+  createBuilding(def, x, z, id = null, built = true, progress = 1) {
     const y = heightAt(x, z);
     const group = new THREE.Group();
     group.position.set(x, y, z);
+    const model = new THREE.Group();
+    group.add(model);
 
     let geo = def.geometry;
     if (def.id === 'house') {
@@ -775,7 +762,7 @@ export class Settlement {
     mesh.material.opacity = 1;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    group.add(mesh);
+    model.add(mesh);
 
     mesh.geometry.computeBoundingSphere();
     group.updateMatrixWorld(true);
@@ -792,8 +779,13 @@ export class Settlement {
       y,
       radius: def.radius,
       group,
+      model,
       mesh,
       sphere,
+      built,
+      buildProgress: built ? 1 : Math.max(0, Math.min(1, progress)),
+      buildTime: def.buildTime || 2 + def.cost * 0.16,
+      site: null,
       occluded: false,
       cooldown: Math.random() * 0.5,
       phase: Math.random() * 6.28,
@@ -821,7 +813,7 @@ export class Settlement {
         crate.rotation.y = (cx * 7 + cz * 3) % 0.35;
         crate.castShadow = false;
         crate.receiveShadow = true;
-        group.add(crate);
+        model.add(crate);
         building.crates.push(crate);
       }
     }
@@ -833,7 +825,7 @@ export class Settlement {
       const headGroup = new THREE.Group();
       headGroup.position.set(0, 1.14, 0);
       headGroup.add(head);
-      group.add(headGroup);
+      model.add(headGroup);
       building.head = headGroup;
       building.turretYaw = Math.atan2(-x, -z);
       building.arcCenter = building.turretYaw;
@@ -845,7 +837,7 @@ export class Settlement {
       building.lampMat = new THREE.MeshBasicMaterial({ color: 0x5a1e1e });
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.11), building.lampMat);
       lamp.position.set(0.3, 1.17, 0.28);
-      group.add(lamp);
+      model.add(lamp);
       building.lamp = lamp;
     }
 
@@ -854,41 +846,41 @@ export class Settlement {
       glow.position.set(0, 2.7, 0.02);
       glow.scale.setScalar(1.5);
       glow.visible = false;
-      group.add(glow);
+      model.add(glow);
       building.lamp = glow;
       const lampLight = new THREE.PointLight(0xffd7a0, 0, 10, 1.7);
       lampLight.position.set(0, 2.6, 0);
       lampLight.castShadow = false;
-      group.add(lampLight);
+      model.add(lampLight);
       building.lampLight = lampLight;
     }
 
     if (def.id === 'campfire') {
       const flame = new THREE.Mesh(this.flameGeo, this.flameMat);
       flame.position.set(0, 0.58, 0);
-      group.add(flame);
+      model.add(flame);
       building.flame = flame;
 
       const core = new THREE.Mesh(this.coreGeo, this.coreMat);
       core.position.set(0, 0.56, 0.04);
-      group.add(core);
+      model.add(core);
       building.core = core;
 
       const pool = new THREE.Mesh(this.poolGeo, this.poolMat);
       pool.position.set(0, 0.06, 0);
       pool.scale.setScalar(4.4);
-      group.add(pool);
+      model.add(pool);
 
       const glow = new THREE.Sprite(this.glowMat);
       glow.position.set(0, 0.95, 0);
       glow.scale.setScalar(3.4);
-      group.add(glow);
+      model.add(glow);
       building.glow = glow;
 
       const fireLight = new THREE.PointLight(0xffa45e, 4.5, 9, 1.6);
       fireLight.position.set(0, 1.15, 0);
       fireLight.castShadow = false;
-      group.add(fireLight);
+      model.add(fireLight);
       building.fireLight = fireLight;
     }
 
@@ -896,13 +888,79 @@ export class Settlement {
       const glow = new THREE.Sprite(this.towerGlowMat);
       glow.position.set(0.6, 3.35, 0.6);
       glow.scale.setScalar(1.35);
-      group.add(glow);
+      model.add(glow);
       building.glow = glow;
     }
+
+    building.site = this.makeSite(def);
+    group.add(building.site.group);
+    building.model.visible = !!building.built;
+    building.site.group.visible = !building.built;
 
     this.scene.add(group);
     this.buildings.push(building);
     return building;
+  }
+
+  /** A pad, scaffold and progress bar shown while a building is a construction site. */
+  makeSite(def) {
+    const radius = def.radius;
+    const group = new THREE.Group();
+    const padMat = new THREE.MeshLambertMaterial({ color: 0x8f7552 });
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.9, radius * 0.96, 0.06, 12), padMat);
+    pad.position.y = 0.03;
+    pad.receiveShadow = true;
+    group.add(pad);
+
+    const wood = new THREE.MeshLambertMaterial({ color: 0x6b4a2e });
+    const postGeo = new THREE.BoxGeometry(0.08, 1.15, 0.08);
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const post = new THREE.Mesh(postGeo, wood);
+        post.position.set(sx * radius * 0.58, 0.58, sz * radius * 0.58);
+        post.castShadow = true;
+        group.add(post);
+      }
+    }
+    const beamGeo = new THREE.BoxGeometry(radius * 1.25, 0.08, 0.08);
+    for (const sz of [-1, 1]) {
+      const beam = new THREE.Mesh(beamGeo, wood);
+      beam.position.set(0, 1.12, sz * radius * 0.58);
+      group.add(beam);
+    }
+    // material pile
+    const pile = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.22, 0.4), new THREE.MeshLambertMaterial({ color: 0x8a6a42 }));
+    pile.position.set(radius * 0.65, 0.11, -radius * 0.2);
+    pile.rotation.y = 0.3;
+    group.add(pile);
+
+    const width = Math.max(2.0, radius * 1.8);
+    const back = new THREE.Mesh(
+      new THREE.BoxGeometry(width, 0.12, 0.34),
+      new THREE.MeshBasicMaterial({ color: 0x2b2117, transparent: true, opacity: 0.82, depthWrite: false }),
+    );
+    back.position.set(0, 1.72, 0);
+    group.add(back);
+    const bar = new THREE.Mesh(
+      new THREE.BoxGeometry(width, 0.14, 0.36),
+      new THREE.MeshBasicMaterial({ color: 0xffb066, toneMapped: false, depthWrite: false }),
+    );
+    bar.position.set(0, 1.74, 0);
+    bar.scale.x = 0.001;
+    group.add(bar);
+
+    return { group, bar, width };
+  }
+
+  /** Turn a site into a finished building. Returns false if it was already done. */
+  completeBuilding(b) {
+    if (!b || b.built) return false;
+    b.built = true;
+    b.buildProgress = 1;
+    b.model.visible = true;
+    if (b.site) b.site.group.visible = false;
+    this.syncStorage();
+    return true;
   }
 
   /** Recreate saved buildings without charging scrap or playing placement effects. */
@@ -911,7 +969,15 @@ export class Settlement {
     for (const item of items) {
       const def = BUILDINGS.find((b) => b.id === item.type);
       if (def) {
-        const building = this.createBuilding(def, item.x, item.z, Number.isFinite(item.id) ? item.id : null);
+        const built = item.built !== false;
+        const building = this.createBuilding(
+          def,
+          item.x,
+          item.z,
+          Number.isFinite(item.id) ? item.id : null,
+          built,
+          Number.isFinite(item.buildProgress) ? item.buildProgress : 1,
+        );
         building.charge = Number.isFinite(item.charge) ? item.charge : 0;
       }
     }
@@ -926,6 +992,8 @@ export class Settlement {
         x: b.x,
         z: b.z,
         charge: b.charge || 0,
+        built: b.built !== false,
+        buildProgress: b.buildProgress ?? 1,
       })),
       prodTimer: this.prodTimer,
       houseTimer: this.houseTimer,
@@ -940,7 +1008,7 @@ export class Settlement {
     const def = this.selected;
     const x = this.ghost.position.x;
     const z = this.ghost.position.z;
-    const building = this.createBuilding(def, x, z);
+    const building = this.createBuilding(def, x, z, null, false, 0);
     this.syncStorage();
     const y = building.y;
     this.particles.burst(x, y + 0.4, z, '#b09572', 18, 3.2);
@@ -957,9 +1025,11 @@ export class Settlement {
     return { ok: true, cost: def.cost, building };
   }
 
-  count(typeId) {
+  count(typeId, onlyBuilt = true) {
     let n = 0;
-    for (const b of this.buildings) if (b.type === typeId) n++;
+    for (const b of this.buildings) {
+      if (b.type === typeId && (!onlyBuilt || b.built)) n++;
+    }
     return n;
   }
 
@@ -979,7 +1049,7 @@ export class Settlement {
     let best = null;
     let bestD = Infinity;
     for (const b of this.buildings) {
-      if (b.type !== type) continue;
+      if (b.type !== type || !b.built) continue;
       const d = Math.hypot(b.x - x, b.z - z);
       if (d < bestD) {
         bestD = d;
@@ -991,7 +1061,7 @@ export class Settlement {
 
   isNearCampfire(x, z, radius = 5) {
     for (const b of this.buildings) {
-      if (b.type !== 'campfire') continue;
+      if (b.type !== 'campfire' || !b.built) continue;
       if (Math.hypot(b.x - x, b.z - z) < radius) return true;
     }
     return false;
@@ -999,7 +1069,7 @@ export class Settlement {
 
   isNearChapel(x, z, radius = 7.5) {
     for (const b of this.buildings) {
-      if (b.type !== 'chapel') continue;
+      if (b.type !== 'chapel' || !b.built) continue;
       if (Math.hypot(b.x - x, b.z - z) < radius) return true;
     }
     return false;
@@ -1010,7 +1080,7 @@ export class Settlement {
   }
 
   updateTurret(b, dt, enemies) {
-    if (!b.head) return;
+    if (!b.head || !b.built) return;
     const powered = !!b.powered;
     if (b.lampMat) b.lampMat.color.setHex(powered ? 0x2f7a45 : 0x5a1e1e);
     if (!powered) {
@@ -1188,7 +1258,7 @@ export class Settlement {
     // Vickers turrets: powered, ghoul-only, burst fire.
     if (enemies) {
       for (const b of this.buildings) {
-        if (b.type === 'turret') this.updateTurret(b, dt, enemies);
+        if (b.type === 'turret' && b.built) this.updateTurret(b, dt, enemies);
       }
     }
 
@@ -1203,10 +1273,18 @@ export class Settlement {
       }
     }
 
+    // construction progress bars
+    for (const b of this.buildings) {
+      if (b.built || !b.site?.bar) continue;
+      const p = Math.max(0, Math.min(1, b.buildProgress || 0));
+      b.site.bar.scale.x = Math.max(0.001, p);
+      b.site.bar.position.x = -b.site.width * 0.5 * (1 - p);
+    }
+
     // warehouse fill
     const fill = Math.min(1, this.state.scrap / Math.max(1, this.storageCap()));
     for (const b of this.buildings) {
-      if (!b.crates) continue;
+      if (!b.crates || !b.built) continue;
       const level = Math.round(b.crates.length * fill);
       if (level !== b._crateLevel) {
         b._crateLevel = level;

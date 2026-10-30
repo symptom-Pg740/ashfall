@@ -43,7 +43,7 @@ export class PowerNetwork {
   }
 
   nodes() {
-    return this.settlement.buildings.filter((b) => b.def?.power);
+    return this.settlement.buildings.filter((b) => b.def?.power && b.built);
   }
 
   /** A point that breaks line of sight to the player, used while reloading. */
@@ -71,9 +71,33 @@ export class PowerNetwork {
 
   attach(building) {
     if (!building?.def?.power) return false;
-    const other = this.nearestNode(building);
-    if (!other) return false;
-    return this.connect(building, other);
+    const kind = building.def.power.kind;
+    const within = this.nodes()
+      .filter((b) => b !== building)
+      .map((b) => ({ b, d: Math.hypot(b.x - building.x, b.z - building.z) }))
+      .filter((n) => n.d <= SPAN);
+    if (!within.length) return false;
+
+    const backbone = within
+      .filter((n) => n.b.def.power.kind !== 'consumer')
+      .sort((a, c) => a.d - c.d)[0];
+    // A new backbone node also picks up the nearest consumer so a pole can bridge a turret that
+    // was completed before the pole.
+    const consumer = kind === 'consumer'
+      ? null
+      : within
+          .filter((n) => n.b.def.power.kind === 'consumer')
+          .sort((a, c) => a.d - c.d)[0];
+
+    let linked = false;
+    if (backbone) linked = this.connect(building, backbone.b) || linked;
+    if (consumer) linked = this.connect(building, consumer.b) || linked;
+    if (!linked && kind === 'consumer') {
+      // Last resort: a consumer can wire to a nearby consumer if no backbone exists.
+      const any = within.sort((a, c) => a.d - c.d)[0];
+      if (any) linked = this.connect(building, any.b) || linked;
+    }
+    return linked;
   }
 
   connect(a, b) {

@@ -9,8 +9,9 @@ This document is the working plan. `docs/REALISM.md` is the separate backlog of 
 they are not lost while the systems work happens.
 
 **Status:** Phases 1–4 first slices shipped (command/possession; warehouse and hauling; day/night
-and power; Vickers turret + watchtower gunner + nav grid). Raid composition and infrastructure
-targeting are next. See §6 for the gate notes.
+and power; Vickers turret + watchtower gunner + nav grid), plus **construction jobs** (build sites
+anywhere, units finish them). Raid composition and infrastructure targeting are next. See §6 for the
+gate notes.
 
 ---
 
@@ -320,7 +321,15 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 - Gate: a gatherer walks node → warehouse and deposits without input; the warehouse visibly fills;
   a full warehouse holds the load and releases it after the player spends. **Passed** (100→109
   hauled, full at 200 held 9 until 150 was left, then 159).
-- Deliberately not yet: per-resource warehouses, hauling between warehouses, a nav mesh.
+- **Construction jobs (added after Phase 4):** placing a structure creates a site (pad, scaffold,
+  progress bar) anywhere in the camp, with no player range. The nearest free survivor is auto-assigned
+  (or the player selects one and taps the site), walks with the nav grid, and builds over
+  `2 + cost × 0.16` seconds. The real model only appears and activates on completion; storage, power,
+  production, healing and defence ignore unfinished sites. Saves store `built` and
+  `buildProgress` (schema v4). Verified: barricade site → Mara auto-assigned → built → model/site
+  swap; far warehouse site 12.9 m away → cap 80 → 200 on completion; solar + pole + turret sites
+  auto-wired on completion (2.2 output, 1.2 demand, turret powered).
+- Deliberately not yet: per-resource warehouses, hauling between warehouses, cancel/refund.
 
 ### Phase 3 — Day/night and power — **implemented (first slice)**
 

@@ -18,6 +18,7 @@ export class CampFolk {
     this.firearms = null;
     this.onKill = null;
     this.onScrap = null;
+    this.onBuildComplete = null;
     this.scrapField = options.scrapField || null;
     this.dropPoint = options.dropPoint || null;
     this.obstacles = options.obstacles || [];
@@ -187,7 +188,7 @@ export class CampFolk {
   }
 
   mountTower(person, tower) {
-    if (!person || !tower || !person.weapon) return false;
+    if (!person || !tower || !tower.built || !person.weapon) return false;
     if (tower.manned && tower.manned !== person) return false;
     if (person.manning) this.releaseTower(person);
     tower.manned = person;
@@ -401,13 +402,31 @@ export class CampFolk {
       return null;
     }
 
+    if (j.type === 'build') {
+      const b = j.building;
+      if (!b || b.built) {
+        p.job = null;
+        return null;
+      }
+      if (distTo(b.x, b.z) > b.radius + 1.5) {
+        return { x: b.x, z: b.z };
+      }
+      b.buildProgress = Math.min(1, (b.buildProgress || 0) + dt / Math.max(0.5, b.buildTime));
+      if (b.buildProgress >= 1) {
+        p.job = null;
+        p.holdTimer = 2;
+        this.onBuildComplete?.(b);
+      }
+      return null;
+    }
+
     if (j.type === 'man') {
       const tower = j.tower;
       if (!p.weapon) {
         p.job = null;
         return null;
       }
-      if (!tower || (tower.manned && tower.manned !== p)) {
+      if (!tower || !tower.built || (tower.manned && tower.manned !== p)) {
         p.job = null;
         return null;
       }
@@ -587,7 +606,7 @@ export class CampFolk {
         let tx = jobTarget.x;
         let tz = jobTarget.z;
         const type = p.job?.type;
-        if (this.nav && (type === 'move' || type === 'gather' || type === 'man')) {
+        if (this.nav && (type === 'move' || type === 'gather' || type === 'build' || type === 'man')) {
           const key = `${Math.round(jobTarget.x * 2)}:${Math.round(jobTarget.z * 2)}`;
           p.pathTimer -= dt;
           if (p.pathKey !== key || p.pathTimer <= 0) {
@@ -632,6 +651,10 @@ export class CampFolk {
             lookX = node.x;
             lookZ = node.z;
           }
+        } else if (j?.type === 'build' && j.building) {
+          p.heading = Math.atan2(j.building.x - pos.x, j.building.z - pos.z);
+          lookX = j.building.x;
+          lookZ = j.building.z;
         }
         p.phase += dt * 1.2;
       } else if (toPlayer < 4.5) {

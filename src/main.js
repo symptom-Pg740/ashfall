@@ -306,6 +306,19 @@ campFolk.attachCombat({
   onDown: (name) => ui.toast(`${name} DOWN — RESPAWNING`, true),
 });
 raiders.attachCombat({ registry, firearms });
+campFolk.onBuildComplete = (building) => {
+  if (!settlement.completeBuilding(building)) return;
+  power.attach(building);
+  if (building.type === 'chapel') {
+    state.maxHealth += 25;
+    state.health = Math.min(state.maxHealth, state.health + 25);
+  }
+  particles.burst(building.x, building.y + 1, building.z, '#ffc37a', 18, 3);
+  cameraShake = Math.max(cameraShake, 0.14);
+  ui.toast(`${building.def.name} COMPLETE`);
+  ui.updateHUD(state);
+  saveGame();
+};
 campFolk.onTowerManned = (person) => ui.toast(`${person.name} ON THE TOWER`);
 campFolk.onTowerReleased = (person) => ui.toast(`${person.name} OFF THE TOWER`);
 campFolk.onScrap = (value, person) => {
@@ -555,12 +568,11 @@ function selectBuilding(idOrIndex) {
   if (!def) return;
   if (!ui.buildOpen) ui.showBuildMenu(true);
   settlement.cancel();
-  settlement.begin(def.id, player);
-  recenterCamera();
+  settlement.begin(def.id, { x: focus.x, z: focus.z, heading: player.heading });
   ui.setSelectedBuilding(def.id);
   ui.showPlacement(true, def);
   ui.setPlaceStatus(settlement.canPlace, settlement.reason);
-  ui.hint(`${def.name} · ${def.cost} SCRAP · TAP THE GROUND TO AIM`, 3000);
+  ui.hint(`${def.name} · ${def.cost} SCRAP · AIM ANYWHERE · A BUILDER WILL WALK TO THE SITE`, 3600);
 }
 
 function cancelPlacement() {
@@ -581,20 +593,12 @@ function doPlace() {
     return;
   }
   state.scrap -= res.cost;
-  power.attach(res.building);
-  if (res.building.type === 'chapel') {
-    state.maxHealth += 25;
-    state.health = Math.min(state.maxHealth, state.health + 25);
-    ui.toast('SANCTUARY · +25 MAX VITALITY');
-  } else if (res.building.type === 'warehouse') {
-    ui.toast('WAREHOUSE · +120 STORAGE');
-  } else {
-    state.health = Math.min(state.maxHealth, state.health + 2);
-    ui.toast(`${res.building.def.name} RAISED`);
-  }
+  const builder = commander.autoAssignBuild(res.building);
+  ui.toast(`${res.building.def.name} SITE${builder ? ` · ${builder.name} EN ROUTE` : ' · ASSIGN A BUILDER'}`);
   ui.updateHUD(state);
-  ui.setPlaceStatus(settlement.canPlace, settlement.reason);
   cameraShake = Math.max(cameraShake, 0.12);
+  // One site per pick: the red ghost ring was confusing next to the new scaffold.
+  cancelPlacement();
   saveGame();
 }
 
@@ -789,7 +793,7 @@ function saveGame() {
   // the write instead of saving the leader on the wrong tile; release/down saves immediately.
   if (player.possessedUnit) return;
   writeSave({
-    v: 3,
+    v: 4,
     seed: WORLD_SEED,
     savedAt: Date.now(),
     state: {
