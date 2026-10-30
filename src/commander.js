@@ -52,6 +52,7 @@ export class Commander {
     this.onSave = onSave || (() => {});
     this.mode = 'command';
     this.selected = null;
+    this.buildingCard = null;
     this.ray = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
     this.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -200,6 +201,7 @@ export class Commander {
 
   select(unit) {
     if (!unit || this.state.dead) return;
+    this.buildingCard?.close();
     const same = this.selected && this.keyOf(this.selected) === this.keyOf(unit);
     this.selected = unit;
     this._lastKey = this.keyOf(unit);
@@ -218,6 +220,7 @@ export class Commander {
 
   clear() {
     if (this.mode === 'direct') this.release();
+    this.buildingCard?.close();
     this.selected = null;
     this.ring.visible = false;
     this.ui.hideUnitCard();
@@ -350,14 +353,17 @@ export class Commander {
 
   pickBuilding(clientX, clientY) {
     let best = null;
-    let bestD = PICK_UNIT * PICK_UNIT;
+    let bestD = Infinity;
     for (const b of this.getSettlement()?.buildings || []) {
       const s = this.screenOf(b.x, b.y + Math.min(1.3, b.radius * 0.6), b.z);
       if (!s.on) continue;
       const dx = s.x - clientX;
       const dy = s.y - clientY;
       const d = dx * dx + dy * dy;
-      if (d < bestD) {
+      // Small nodes (poles, lights) get a smaller touch target, otherwise tapping the ground next
+      // to one opens its card by accident.
+      const limit = Math.max(16, Math.min(PICK_UNIT, 12 + (b.radius || 1) * 8));
+      if (d < limit * limit && d < bestD) {
         bestD = d;
         best = b;
       }
@@ -442,13 +448,26 @@ export class Commander {
       this.state.dead ||
       this.ui.buildOpen ||
       this.ui.wardrobeOpen ||
-      this.ui.perfOpen
+      this.ui.perfOpen ||
+      this.ui.wireActive
     ) {
       return;
     }
+    // A tap outside an open building card dismisses it without also issuing an order.
+    if (this.buildingCard?.open) {
+      this.buildingCard.close();
+      return;
+    }
+
     const unit = this.pickUnit(clientX, clientY);
     if (unit) {
       this.select(unit);
+      return;
+    }
+
+    const building = this.pickBuilding(clientX, clientY);
+    if (building) {
+      this.openBuilding(building);
       return;
     }
 
@@ -473,46 +492,22 @@ export class Commander {
       return;
     }
 
-    const building = this.pickBuilding(clientX, clientY);
-    if (building && !building.built) {
-      this.orderBuild(this.selected, building);
-      return;
-    }
-    if (building && building.type === 'tower' && building.built) {
-      if (this.selected.isLeader) {
-        this.ui.hint('TAKE CONTROL OF A SURVIVOR TO MAN THE TOWER', 2000);
-        return;
-      }
-      if (this.selected.manning === building) {
-        this.campFolk.releaseTower(this.selected);
-        this.marker(building.x, building.z, '#8fb0c2');
-        this.ui.toast(`${this.selected.name} → GROUND`);
-        this.refresh(this.selected);
-        return;
-      }
-      if (!this.selected.weapon) {
-        if (building.hp < building.maxHp) this.orderRepair(this.selected, building);
-        else this.ui.toast(`${this.selected.name} IS UNARMED`, true);
-        return;
-      }
-      if (building.manned) {
-        this.ui.toast('TOWER ALREADY MANNED', true);
-        return;
-      }
-      this.orderManTower(this.selected, building);
-      return;
-    }
-    if (building && building.built && !building.destroyed && building.hp < building.maxHp) {
-      this.orderRepair(this.selected, building);
-      return;
-    }
-
     const node = this.scrapField.nearest(ground.x, ground.z, PICK_SCRAP);
     if (node >= 0) {
       this.orderGather(this.selected, node);
       return;
     }
     this.orderMove(this.selected, ground.x, ground.z);
+  }
+
+  openBuilding(building) {
+    if (!building || building.destroyed) return;
+    if (!this.buildingCard) {
+      this.ui.toast('STRUCTURE CARD UNAVAILABLE', true);
+      return;
+    }
+    this.buildingCard.openFor(building);
+    this.ring.visible = false;
   }
 
   orderMove(unit, x, z) {

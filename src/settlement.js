@@ -455,7 +455,7 @@ export const BUILDINGS = [
     name: 'POWER POLE',
     cost: 3,
     radius: 0.8,
-    desc: 'Carries power 12m.',
+    desc: 'Carries power 14m.',
     power: { kind: 'relay', attach: 3.25 },
     geometry: null,
   },
@@ -832,17 +832,37 @@ export class Settlement {
       model.add(headGroup);
       building.head = headGroup;
       building.turretYaw = Math.atan2(-x, -z);
-      building.arcCenter = building.turretYaw;
       building.burstLeft = 0;
       building.burstTimer = 0;
       building.cooldown = 0;
       building.mag = 250;
       building.reload = 0;
+      building._targets = 0;
+      building._clearLine = false;
       building.lampMat = new THREE.MeshBasicMaterial({ color: 0x5a1e1e });
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.11, 0.11), building.lampMat);
       lamp.position.set(0.3, 1.17, 0.28);
       model.add(lamp);
       building.lamp = lamp;
+
+      // The card opens this ring so "it does nothing" has a visible explanation.
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(17.82, 18, 80),
+        new THREE.MeshBasicMaterial({
+          color: 0xd8a45e,
+          transparent: true,
+          opacity: 0.34,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.06;
+      ring.visible = false;
+      ring.renderOrder = 6;
+      model.add(ring);
+      building.rangeRing = ring;
     }
 
     if (def.id === 'light') {
@@ -1136,6 +1156,8 @@ export class Settlement {
     if (b.lampMat) b.lampMat.color.setHex(powered ? 0x2f7a45 : 0x5a1e1e);
     if (!powered) {
       b.burstLeft = 0;
+      b._targets = 0;
+      b._clearLine = false;
       return;
     }
     if (b.reload > 0) {
@@ -1144,8 +1166,8 @@ export class Settlement {
     }
     b.cooldown = Math.max(0, b.cooldown - dt);
 
-    // The turret only sees a 220° arc. Pick the closest ghoul inside that arc with a clear line,
-    // rather than the closest overall (which may be behind the tripod).
+    // 360° traverse. The old 220° arc was invisible and clamped at placement; it is the main reason
+    // a turret could sit next to a ghoul and never turn. A tripod-mounted Vickers can traverse fully.
     const candidates = [];
     for (let i = 0; i < enemies.pool.length; i++) {
       const e = enemies.pool[i];
@@ -1154,28 +1176,32 @@ export class Settlement {
       const dz = e.z - b.z;
       const d = Math.hypot(dx, dz);
       if (d > 18 || d < 0.4) continue;
+      // Only non-humans are valid targets by design; the enemy pool is ghouls.
       const yaw = Math.atan2(dx, dz);
-      let arcDiff = yaw - b.arcCenter;
-      while (arcDiff > Math.PI) arcDiff -= Math.PI * 2;
-      while (arcDiff < -Math.PI) arcDiff += Math.PI * 2;
-      if (Math.abs(arcDiff) > 1.92) continue;
       candidates.push({ i, e, d, yaw });
     }
+    b._targets = candidates.length;
     if (!candidates.length) {
       b.burstLeft = 0;
+      b._clearLine = false;
       return;
     }
     candidates.sort((a, c) => a.d - c.d);
 
-    const my = b.y + 1.14;
+    // The sight ray must start outside the turret's own footprint: `raycastStatic` treats every
+    // building as a cylinder, so a ray from the centre hits the turret itself and every shot is
+    // "blocked". Start 1.9 m out, at gun height.
+    const sightY = b.y + 1.45;
+    const sightOut = 1.9;
     let chosen = null;
     for (const c of candidates) {
-      const mx = b.x + Math.sin(c.yaw) * 1.3;
-      const mz = b.z + Math.cos(c.yaw) * 1.3;
-      if (this.los && !this.los(mx, my, mz, c.e.x, c.e.y + 0.75, c.e.z)) continue;
+      const sx = b.x + Math.sin(c.yaw) * sightOut;
+      const sz = b.z + Math.cos(c.yaw) * sightOut;
+      if (this.los && !this.los(sx, sightY, sz, c.e.x, c.e.y + 0.75, c.e.z)) continue;
       chosen = c;
       break;
     }
+    b._clearLine = !!chosen;
     if (!chosen) {
       b.burstLeft = 0;
       return;
@@ -1190,8 +1216,9 @@ export class Settlement {
 
     const e = chosen.e;
     const index = chosen.i;
-    const mx = b.x + Math.sin(b.turretYaw) * 1.3;
-    const mz = b.z + Math.cos(b.turretYaw) * 1.3;
+    const mx = b.x + Math.sin(b.turretYaw) * 1.35;
+    const mz = b.z + Math.cos(b.turretYaw) * 1.35;
+    const my = b.y + 1.14;
 
     if (b.burstLeft <= 0) {
       if (b.cooldown <= 0 && b.mag > 0 && b.reload <= 0) {

@@ -18,6 +18,8 @@ import { Armory } from './armory.js';
 import { AudioFx } from './audio.js';
 import { DayCycle } from './daycycle.js';
 import { PowerNetwork } from './power.js';
+import { BuildingCard } from './buildingcard.js';
+import { WireTool } from './wire.js';
 import { NavGrid } from './nav.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { readSave, writeSave, clearSave } from './save.js';
@@ -258,6 +260,31 @@ const settlement = new Settlement({
   obstacles: wasteland.obstacles,
 });
 const power = new PowerNetwork({ scene, settlement, state, ui });
+const buildingCard = new BuildingCard({
+  ui,
+  settlement,
+  power,
+  campFolk,
+  state,
+  getSelected: () => commander.selected,
+  screenOf: (x, y, z) => commander.screenOf(x, y, z),
+  onSave: () => saveGame(),
+});
+const wire = new WireTool({
+  scene,
+  canvas,
+  getCamera: () => activeCamera,
+  power,
+  ui,
+  onConnect: (from, to, cost) => {
+    ui.toast(`WIRE · ${from.def.name} → ${to.def.name} · ${cost} SCRAP`);
+    saveGame();
+    buildingCard.openFor(from);
+  },
+});
+buildingCard.wire = wire;
+buildingCard.commander = commander;
+commander.buildingCard = buildingCard;
 const nav = new NavGrid({ settlement, wasteland });
 campFolk.nav = nav;
 const perf = new Perf(renderer);
@@ -309,6 +336,7 @@ raiders.attachCombat({ registry, firearms });
 raiders.settlement = settlement;
 settlement.onBuildingDestroyed = (building) => {
   power.removeBuilding(building);
+  if (buildingCard.building === building) buildingCard.close();
   if (building.manned) {
     campFolk.down(building.manned);
     building.manned = null;
@@ -332,14 +360,14 @@ campFolk.onBuildingRepaired = (building) => {
 };
 campFolk.onBuildComplete = (building) => {
   if (!settlement.completeBuilding(building)) return;
-  power.attach(building);
+  const wired = power.attach(building);
   if (building.type === 'chapel') {
     state.maxHealth += 25;
     state.health = Math.min(state.maxHealth, state.health + 25);
   }
   particles.burst(building.x, building.y + 1, building.z, '#ffc37a', 18, 3);
   cameraShake = Math.max(cameraShake, 0.14);
-  ui.toast(`${building.def.name} COMPLETE`);
+  ui.toast(`${building.def.name} COMPLETE${building.def.power ? (wired ? ' · WIRED' : ' · NEEDS A WIRE') : ''}`);
   ui.updateHUD(state);
   saveGame();
 };
@@ -380,13 +408,20 @@ const input = new Input(canvas, activeCamera, {
     viewZoomTarget = THREE.MathUtils.clamp(viewZoomTarget * factor, 0.8, 2.2);
   },
   cancel: () => {
-    if (settlement.placing) cancelPlacement();
+    if (wire.active) wire.cancel();
+    else if (settlement.placing) cancelPlacement();
     else if (ui.buildOpen) closeBuild();
     else if (ui.perfOpen) ui.togglePerf(false);
     else if (ui.wardrobeOpen) ui.toggleWardrobe(false);
+    else if (buildingCard.open) buildingCard.close();
     else if (commander.selected) commander.clear();
   },
   isPlacing: () => settlement.placing,
+  isWiring: () => wire.active,
+  wireDown: (x, y) => wire.pointerDown(x, y),
+  wireMove: (x, y) => wire.pointerMove(x, y),
+  wireUp: (x, y) => wire.pointerUp(x, y),
+  wireAbort: () => wire.abortDrag(),
   playerY: () => player.pos.y,
   aim: (x, z) => {
     if (!settlement.placing) return;
@@ -413,6 +448,8 @@ window.__ashfall = {
   raiders,
   commander,
   power,
+  buildingCard,
+  wire,
   nav,
   settlement,
   player,
@@ -465,6 +502,9 @@ ui.on('started', () => {
 ui.on('unitControl', () => commander.toggleControl());
 ui.on('unitClose', () => commander.clear());
 ui.on('rosterSelect', (key) => commander.selectKey(key));
+ui.on('buildingAction', (id) => buildingCard.action(id));
+ui.on('buildingClose', () => buildingCard.close());
+ui.on('wireCancel', () => wire.cancel());
 ui.on('buildToggle', toggleBuild);
 ui.on('buildClose', closeBuild);
 ui.on('buildSelect', selectBuilding);
@@ -573,6 +613,8 @@ function toggleBuild() {
     closeBuild();
     return;
   }
+  wire.cancel(true);
+  buildingCard.close();
   if (commander.mode === 'command') commander.clear();
   settlement.cancel();
   ui.showBuildMenu(true);
@@ -1273,6 +1315,7 @@ function loop(now) {
   campFolk.update(dt, state.time, player, settlement.buildings);
   raiders.update(dt, state.time, player);
   commander.update(dt);
+  buildingCard.update(dt);
   power.update(dt, dayInfo.daylight);
   // Damage and passive regen change health outside the event-driven HUD paths.
   if (now - lastUIUpdate > 120) {

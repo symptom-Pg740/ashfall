@@ -10,10 +10,10 @@ This document is the working plan. `docs/ECONOMY.md` is the detailed workplace/e
 backlog. We are still in the **testing phase**: the economy numbers, building names and even the
 assignment model can change after playtests. Keep new systems data-driven and save-migrated.
 
-**Status:** Phases 1–4b first slices shipped (command/possession; warehouse and hauling; day/night
+**Status:** Phases 1–4c first slices shipped (command/possession; warehouse and hauling; day/night
 and power; Vickers turret + watchtower gunner + nav grid; construction jobs; raids against the grid,
-building HP/damage/repair). The next slice is **Phase 4c — building management and power UX**, then
-world scale/navigation, then workplaces. See §6.
+building HP/damage/repair; floating building card, manual wiring and the 360° turret fix). The next
+slice is **Phase 4d — world scale and navigation**, then workplaces. See §6.
 
 ---
 
@@ -287,14 +287,15 @@ place. See [ECONOMY.md](ECONOMY.md) for the full workplace model.
 - **Targeting rule:** only non-human creatures (ghouls, future beasts). It ignores raiders, camp folk
   and the player — the lore is that the scavenged fire-control can tell "not human" but not "friendly
   human".
-- **360° traverse standard.** The current invisible 220° arc is the most likely reason the turret
-  "does nothing": it is clamped to a fixed facing chosen at placement. A Vickers on a tripod can
-  traverse fully; use 360° and show a range ring. If a limited arc is reintroduced later, it must be
-  visible at placement with a rotate control.
+- **360° traverse standard.** The invisible 220° arc was removed in Phase 4c: it was clamped to a
+  fixed facing chosen at placement and was the main reason the turret "did nothing". A Vickers on a
+  tripod can traverse fully; the card shows the range ring. If a limited arc is reintroduced later,
+  it must be visible at placement with a rotate control.
 - 18 m range, 8-round bursts at ~450 rpm, 6 damage per round, 1.5 s between bursts, 250-round belt,
   4 s reload. Power draw 1.2 while active.
-- Sight origin is raised to the gun height; low props should not blind it. It still needs a clear
-  line to the ghoul.
+- The sight ray starts **outside the turret's own footprint** (1.9 m out, at gun height), otherwise
+  the static-building raycast treats the turret as its own blocker. It still needs a clear line to
+  the ghoul.
 - A red/green lamp shows power and engagement. The building card shows `POWER`, `AMMO`, `RANGE`,
   `TARGETS: GHOULS ONLY` and the current target count, so "not working" is diagnosable. Brass and
   muzzle FX reuse the existing systems.
@@ -479,17 +480,20 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
 
 - Six-minute day/night cycle: sun/moon direction, sky gradient, fog, ambient/fill, exposure and the
   solar curve. A clock sits in the HUD's power panel.
-- Solar array (2.2), power pole (12 m span), battery bank (30) and yard light (0.5 at night).
-- Placing a power building auto-wires it to the nearest node within 12 m for scrap; wires sag and
-  change colour when energised. The HUD shows output/demand and a battery bar.
+- Solar array (2.2), power pole (14 m span, four ports), battery bank (30) and yard light (0.5 at
+  night).
+- Placing a power building auto-wires it to the nearest node with a free port within 14 m for scrap;
+  wires sag and change colour when energised. The HUD shows output/demand and a battery bar.
 - Gate: panels charge a battery by day; at night the light runs from the battery and drains it; an
   empty battery leaves the light off; wires are visible and costed. **Passed** (30 stored at noon,
   battery 29.4 and the lamp on at 00:04, 27.4 after 4 s; empty battery → light off).
-- Deliberately not yet: manual LINK mode, wire damage, indoor power, turret consumers.
+- Deliberately not yet: wire damage, indoor power, turret consumers. Manual LINK mode arrived in
+  Phase 4c.
 
 ### Phase 4 — Defences — **implemented (first slice)**
 
-- Vickers turret (26 scrap, 1.2 power, 220° arc, 18 m, 8-round bursts, 250 belt, 4 s reload).
+- Vickers turret (26 scrap, 1.2 power, 18 m, 8-round bursts, 250 belt, 4 s reload). The 220° arc was
+  removed in Phase 4c; it now traverses 360°.
   Target selection walks the ghoul pool only; raiders/camp/player are invisible to it. The head
   turns, the lamp goes green/red with power, and bursts use the shared tracer/FX/audio.
 - Watchtower auto-fire removed. An armed survivor ordered to the tower walks there via A*, mounts
@@ -518,23 +522,29 @@ Each phase is a playable slice with a gate. Do not start the next phase until th
   152 warehouse HP; pole/tower destruction cleared 1 link/wire and downed the gunner; repair 136 →
   149 and climbing; raid banners RAIDERS/GHOULS; scheduled 13:45 raiders vs 22:25 ghouls).
 
-### Phase 4c — Building management and power UX — **next**
+### Phase 4c — Building management and power UX — **implemented (first slice)**
 
-- **Building card** anchored above the tapped structure: name, HP, built/power state, attention
-  reason, job slots, `ASSIGN`, `LINK`, `REPAIR`, `MAN/RELEASE`, `RECIPE`, close.
-- **Manual wire mode** with pole ports (4 per pole), range ring, drag-to-connect (tap fallback),
-  span cost, red invalid line with a reason, and a powered-wire glow. Auto-link becomes a fallback,
-  never the only path.
-- **Turret fixes:** 360° traverse (the invisible 220° arc is the likely "not working" cause), raised
-  sight line, range/target status on the card (`TARGETS: GHOULS ONLY`, power, ammo, targets in
-  range), and a clear powered/unpowered lamp. Keep the lore: it never targets humans.
+- **Building card** anchored above the tapped structure: name, HP, build progress, power state and
+  port count, attention reason, status rows and actions. It closes on an outside tap or the X.
+- **Manual wire mode** with pole ports (4 per pole), range ring, node markers (green valid / red with
+  a reason), drag-to-connect with a tap fallback, live span/cost feedback and an explicit cancel.
+  Auto-link on completion is a fallback and filters out nodes whose ports are full.
+- **Turret fixes:** 360° traverse, sight ray starting outside its own footprint (the real
+  "never fires" bug — the turret blocked its own line-of-sight), 18 m range ring, and card rows for
+  `TARGETS: GHOULS ONLY`, targets in range, belt/reload, `POWERED`/`NO SOURCE`/`NOT WIRED`, plus a
+  blocked-line message. Lore unchanged: it never targets humans.
 - **Building selection** is unambiguous: tapping a structure opens its card; contextual orders stay
-  for units, ground, enemies and resources.
-- Gate: connect a turret to a solar array by dragging a wire, watch it shoot ghouls from all sides,
-  disconnect the wire and see why it stops; assign/release a tower gunner from the card.
-- Not yet: workplace loops, needs, recipes (Phase 5).
+  for units, ground, enemies and resources. `REPAIR`, `BUILD`, `ASSIGN` and `RELEASE` moved into the
+  card.
+- Gate: connect a turret to a source by dragging a wire, watch it traverse and fire on ghouls,
+  leave it unpowered or fill its ports and read the reason; assign/release a tower gunner from the
+  card. **Passed** (wire 5.4 m/3 scrap, status and cost shown before release; turret fired on the
+  previously blind side after the self-LOS fix; a full-port node marks red and the card reads
+  `PORTS 2/2`; tower `ASSIGN` mounted Mara and `RELEASE` returned her).
+- Not yet: wire removal, workplace job slots (the card has the surface and the rows ready), needs,
+  recipes, construction cancel/refund.
 
-### Phase 4d — World scale and navigation
+### Phase 4d — World scale and navigation — **next**
 
 - Expand the playable area to ~2× the current radius (target 180–200 m across); move the camera pan
   limit, camp radius, nav grid and power span with it.
@@ -609,13 +619,13 @@ Resolved in this pass:
 3. **Ammo:** **workshop only.** The armory scrap purchase is removed; the workshop recipe is the only
    source and the armory shows the stock. Running dry is a real failure state.
 4. **Building interaction:** tapping a building opens its **card**; contextual orders stay for
-   ground/enemies/resources. Settled.
+   ground/enemies/resources. Settled and implemented in 4c.
+5. **Turret arc:** **360°**, implemented in 4c. The invisible 220° arc was the main cause of the
+   "not working" report; a limited arc may return only with a visible placement preview and rotate
+   control.
 
 Still open:
 
-5. **Turret arc:** 360° standard, or a limited arc with a visible placement preview and rotation?
-   Recommendation: 360° now; the invisible 220° arc is the likely cause of the current "not working"
-   report. Reintroduce limits only with an arc preview and a control.
 6. **Map size:** ~180 m or ~220 m across for the first expansion? Recommendation: 180–200 m, then
    measure; chunk streaming is Phase 7.
 7. **Day length / upkeep:** one 6-minute cycle = one day, or two cycles? Recommendation: one cycle
@@ -633,16 +643,16 @@ Still open:
 
 ## 9. Immediate next slice
 
-Phases 1–4b are in. The next slice is **Phase 4c — building management and power UX**:
+Phases 1–4c are in. The next slice is **Phase 4d — world scale and navigation**:
 
-1. A floating **building card** anchored above the tapped structure, with HP, power, attention,
-   job slots and actions.
-2. **Manual wire mode** with pole ports, range ring and drag-to-connect; auto-link only as a
-   fallback. No silent wire failures.
-3. **Turret fixes:** 360° traverse, raised sight, card status (`TARGETS: GHOULS ONLY`, power, ammo,
-   targets in range), and a clear power/engagement lamp.
-4. Building taps open the card; contextual orders remain for units, ground, enemies and resources.
-5. Then Phase 4d (map + nav), then Phase 5 (workplaces/economy).
+1. Expand the playable area to ~180–200 m across and move the camera, nav grid, camp radius and
+   power span with it.
+2. Cut scatter density 40–60 % and enforce spacing, with clear approach lanes around the camp.
+3. Navigation: clearance-aware cells, path smoothing/lookahead, stuck detection and replanning, unit
+   separation, `NO PATH` reporting and a debug path overlay.
+4. Keep the hard rules: ghouls attack only living things; raiders attack infrastructure; player
+   buildings stay mud + scrap.
+5. Then Phase 5 (workplaces/economy).
 
-The next visible milestone: **tap a turret, drag a wire from it to a pole, watch it shoot ghouls
-from any direction, then disconnect the wire and read exactly why it stopped.**
+The next visible milestone: **a unit crosses the expanded camp, around a ruin cluster, without
+sticking — and reports `NO PATH` instead of wandering when it cannot.**

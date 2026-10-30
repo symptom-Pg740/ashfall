@@ -11,7 +11,7 @@ import * as THREE from 'three';
  * order. Anything left charges the batteries; a shortfall leaves the lowest-priority consumers dark.
  */
 
-const SPAN = 12;
+const SPAN = 14;
 const WIRE_COST_PER_M = 0.4;
 
 const _wireMat = new THREE.MeshBasicMaterial({ color: 0x2a2119 });
@@ -51,12 +51,44 @@ export class PowerNetwork {
     return a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
   }
 
+  maxPorts(building) {
+    const kind = building?.def?.power?.kind;
+    if (kind === 'relay') return 4;
+    if (kind === 'source' || kind === 'storage' || kind === 'consumer') return 2;
+    return 0;
+  }
+
+  linksAt(building) {
+    if (!building) return 0;
+    let n = 0;
+    for (const l of this.links) if (l.a === building.id || l.b === building.id) n++;
+    return n;
+  }
+
+  /** Whether a manual wire is legal, and why not. */
+  canConnect(a, b) {
+    if (!a || !b || a === b) return { ok: false, reason: 'PICK TWO STRUCTURES' };
+    if (!a.built || !b.built || a.destroyed || b.destroyed) return { ok: false, reason: 'SITE NOT READY' };
+    if (!a.def?.power || !b.def?.power) return { ok: false, reason: 'NOT A POWER NODE' };
+    const d = Math.hypot(a.x - b.x, a.z - b.z);
+    if (d > SPAN) return { ok: false, reason: `OUT OF RANGE (${d.toFixed(0)}m)` };
+    if (this.links.some((l) => this.key(l.a, l.b) === this.key(a, b))) {
+      return { ok: false, reason: 'ALREADY LINKED' };
+    }
+    if (this.linksAt(a) >= this.maxPorts(a)) return { ok: false, reason: `${a.def.name} PORTS FULL` };
+    if (this.linksAt(b) >= this.maxPorts(b)) return { ok: false, reason: `${b.def.name} PORTS FULL` };
+    const cost = Math.max(1, Math.ceil(d * WIRE_COST_PER_M));
+    if (this.state.scrap < cost) return { ok: false, reason: `NEED ${cost} SCRAP`, cost };
+    return { ok: true, reason: '', cost, distance: d };
+  }
+
   /** The best node to wire a newly placed building to, preferring the backbone over consumers. */
   nearestNode(b) {
     let best = null;
     let bestScore = Infinity;
     for (const other of this.nodes()) {
       if (other === b) continue;
+      if (this.linksAt(other) >= this.maxPorts(other)) continue;
       const d = Math.hypot(other.x - b.x, other.z - b.z);
       if (d > SPAN) continue;
       const kind = other.def.power.kind;
@@ -74,6 +106,7 @@ export class PowerNetwork {
     const kind = building.def.power.kind;
     const within = this.nodes()
       .filter((b) => b !== building)
+      .filter((b) => this.linksAt(b) < this.maxPorts(b))
       .map((b) => ({ b, d: Math.hypot(b.x - building.x, b.z - building.z) }))
       .filter((n) => n.d <= SPAN);
     if (!within.length) return false;
@@ -100,22 +133,17 @@ export class PowerNetwork {
     return linked;
   }
 
-  connect(a, b) {
-    if (!a || !b || a === b) return false;
-    const d = Math.hypot(a.x - b.x, a.z - b.z);
-    if (d > SPAN) return false;
-    const key = this.key(a, b);
-    if (this.links.some((l) => this.key(l.a, l.b) === key)) return false;
-    const cost = Math.max(1, Math.ceil(d * WIRE_COST_PER_M));
-    if (this.state.scrap < cost) {
-      this.ui.hint('NOT ENOUGH SCRAP FOR THE WIRE', 1800);
+  connect(a, b, quiet = false) {
+    const check = this.canConnect(a, b);
+    if (!check.ok) {
+      if (!quiet) this.ui.toast(check.reason, true);
       return false;
     }
-    this.state.scrap -= cost;
+    this.state.scrap -= check.cost;
     this.links.push({ a: a.id, b: b.id });
     this.addWire(a, b);
     this.ui.updateHUD(this.state);
-    this.ui.toast(`WIRE · ${cost} SCRAP`);
+    if (!quiet) this.ui.toast(`WIRE · ${check.cost} SCRAP`);
     return true;
   }
 

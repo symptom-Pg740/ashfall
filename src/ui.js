@@ -12,6 +12,8 @@ export class UI {
     this.perfOpen = false;
     this.buildOpen = false;
     this.wardrobeOpen = false;
+    this.buildingCardOpen = false;
+    this.wireActive = false;
     this.perfLastHistory = 0;
     this.lastAmmo = '';
     this.lastArmed = null;
@@ -76,6 +78,23 @@ export class UI {
       gridPower: document.getElementById('grid-power'),
       gridBarFill: document.getElementById('grid-bar-fill'),
       gridNote: document.getElementById('grid-note'),
+      buildingCard: document.getElementById('building-card'),
+      bcardName: document.getElementById('bcard-name'),
+      bcardState: document.getElementById('bcard-state'),
+      bcardHp: document.getElementById('bcard-hp'),
+      bcardHpFill: document.getElementById('bcard-hp-fill'),
+      bcardPower: document.getElementById('bcard-power'),
+      bcardNote: document.getElementById('bcard-note'),
+      bcardRows: document.getElementById('bcard-rows'),
+      bcardProgress: document.getElementById('bcard-progress'),
+      bcardProgressFill: document.getElementById('bcard-progress-fill'),
+      bcardActions: document.getElementById('bcard-actions'),
+      bcardClose: document.getElementById('bcard-close'),
+      wireHud: document.getElementById('wire-hud'),
+      wireStatus: document.getElementById('wire-status'),
+      wireLayer: document.getElementById('wire-layer'),
+      wireLine: document.getElementById('wire-line'),
+      wireCancel: document.getElementById('wire-cancel'),
       unitClose: document.getElementById('unit-close'),
       wardrobeClose: document.getElementById('wardrobe-close'),
       ammo: document.getElementById('hud-ammo'),
@@ -198,6 +217,16 @@ export class UI {
       e.preventDefault();
       e.stopPropagation();
       this.cb.unitClose?.();
+    });
+    this.el.bcardClose?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.cb.buildingClose?.();
+    });
+    this.el.wireCancel?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.cb.wireCancel?.();
     });
     this.el.wardrobeClose.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -385,6 +414,127 @@ export class UI {
 
   hideUnitCard() {
     this.el.unitCard?.classList.add('hidden');
+  }
+
+  // -------------------------------------------------------------------------
+  // building card
+  // -------------------------------------------------------------------------
+
+  showBuildingCard(view) {
+    const card = this.el.buildingCard;
+    if (!card || !view) return;
+    this.buildingCardOpen = true;
+    card.classList.remove('hidden');
+    card.classList.toggle('site', view.progress != null);
+    card.classList.toggle('bad', !!view.noteBad);
+    this.el.bcardName.textContent = view.name;
+    this.el.bcardState.textContent = view.state;
+    this.el.bcardHp.textContent = `${view.hp}/${view.maxHp}`;
+    this.el.bcardHpFill.style.width = `${view.hpPct}%`;
+    this.el.bcardPower.textContent = view.power || '';
+    this.el.bcardPower.classList.toggle('hidden', !view.power);
+    this.el.bcardNote.textContent = view.note || '';
+
+    if (this.el.bcardProgress) {
+      const show = view.progress != null;
+      this.el.bcardProgress.classList.toggle('hidden', !show);
+      if (show) this.el.bcardProgressFill.style.width = `${view.progress}%`;
+    }
+
+    if (this.el.bcardRows) {
+      this.el.bcardRows.innerHTML = '';
+      for (const row of view.rows) {
+        const line = document.createElement('div');
+        line.className = 'bcard-row';
+        const label = document.createElement('span');
+        label.textContent = row.label;
+        const value = document.createElement('b');
+        value.textContent = row.value;
+        line.append(label, value);
+        this.el.bcardRows.appendChild(line);
+      }
+    }
+
+    if (this.el.bcardActions) {
+      this.el.bcardActions.innerHTML = '';
+      for (const action of view.actions) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `bcard-action ${action.kind || 'ghost'}`;
+        btn.textContent = action.label;
+        btn.disabled = !!action.disabled;
+        btn.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (btn.disabled) return;
+          this.cb.buildingAction?.(action.id);
+        });
+        this.el.bcardActions.appendChild(btn);
+      }
+    }
+  }
+
+  placeBuildingCard(clientX, clientY) {
+    const card = this.el.buildingCard;
+    if (!card || card.classList.contains('hidden')) return;
+    const w = card.offsetWidth || 214;
+    const h = card.offsetHeight || 150;
+    const margin = 8;
+    const left = Math.max(margin + w / 2, Math.min(window.innerWidth - margin - w / 2, clientX));
+    let below = false;
+    let top = clientY - 14;
+    if (top - h < margin) {
+      below = true;
+      top = clientY + 14;
+    }
+    if (below) top = Math.min(top, window.innerHeight - margin - h);
+    card.classList.toggle('below', below);
+    card.style.left = `${left.toFixed(1)}px`;
+    card.style.top = `${Math.max(margin, top).toFixed(1)}px`;
+  }
+
+  hideBuildingCard() {
+    this.buildingCardOpen = false;
+    this.el.buildingCard?.classList.add('hidden');
+  }
+
+  // -------------------------------------------------------------------------
+  // manual wiring
+  // -------------------------------------------------------------------------
+
+  showWire(active, building = null) {
+    this.wireActive = !!active;
+    document.body.classList.toggle('wiring', !!active);
+    this.el.wireHud?.classList.toggle('hidden', !active);
+    this.el.wireLayer?.classList.toggle('hidden', !active);
+    if (active && building) {
+      this.updateWireStatus(`DRAG FROM ${building.def.name} TO A HIGHLIGHTED NODE`, 'idle');
+    }
+    if (!active) this.clearWireLine();
+  }
+
+  updateWireStatus(text, tone = 'idle') {
+    const el = this.el.wireStatus;
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle('ok', tone === 'ok');
+    el.classList.toggle('bad', tone === 'bad');
+  }
+
+  setWireLine(x1, y1, x2, y2, tone = null) {
+    const line = this.el.wireLine;
+    if (!line) return;
+    line.setAttribute('x1', x1.toFixed(1));
+    line.setAttribute('y1', y1.toFixed(1));
+    line.setAttribute('x2', x2.toFixed(1));
+    line.setAttribute('y2', y2.toFixed(1));
+    line.classList.toggle('ok', tone === 'ok');
+    line.classList.toggle('bad', tone === 'bad');
+    line.classList.remove('hidden');
+  }
+
+  clearWireLine() {
+    this.el.wireLine?.classList.add('hidden');
   }
 
   setRoster(units = []) {

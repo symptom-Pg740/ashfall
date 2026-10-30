@@ -152,6 +152,16 @@ export class Input {
 
     this.canvas.addEventListener('pointerdown', (e) => {
       if (!this.enabled) return;
+      if (this.cb.isWiring?.()) {
+        e.preventDefault();
+        try {
+          this.canvas.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
+        this.cb.wireDown?.(e.clientX, e.clientY);
+        return;
+      }
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
         this.canvas.setPointerCapture(e.pointerId);
@@ -178,6 +188,11 @@ export class Input {
     });
     this.canvas.addEventListener('pointermove', (e) => {
       if (!this.enabled) return;
+      if (this.cb.isWiring?.()) {
+        e.preventDefault();
+        this.cb.wireMove?.(e.clientX, e.clientY);
+        return;
+      }
       if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
       // Two-finger pinch zoom. It takes priority over pan/aim.
@@ -208,7 +223,12 @@ export class Input {
         aim(e.clientX, e.clientY);
       }
     });
-    const endDrag = (e) => {
+    const endDrag = (e, aborted = false) => {
+      if (this.cb.isWiring?.()) {
+        if (aborted) this.cb.wireAbort?.();
+        else this.cb.wireUp?.(e.clientX, e.clientY);
+        return;
+      }
       const wasSingle = this.pointers.size <= 1;
       const tap = this.tapStart;
       this.pointers.delete(e.pointerId);
@@ -235,8 +255,8 @@ export class Input {
       }
     };
     this.canvas.addEventListener('pointerup', endDrag);
-    this.canvas.addEventListener('pointercancel', endDrag);
-    this.canvas.addEventListener('lostpointercapture', endDrag);
+    this.canvas.addEventListener('pointercancel', (e) => endDrag(e, true));
+    this.canvas.addEventListener('lostpointercapture', (e) => endDrag(e, true));
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 

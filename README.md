@@ -51,9 +51,13 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Select a survivor | tap the unit or its roster button | click the unit |
 | Order | with a unit selected, tap enemy / scrap / ground | click the target |
 | Take / release control | `TAKE CONTROL` / `RELEASE` | same buttons |
-| Man the watchtower | select an armed survivor, tap the tower | same |
-| Release the tower | tap the tower again, or order the gunner away | same |
-| Repair a structure | select a survivor, tap the damaged building | same |
+| Open a structure card | tap any building | click the building |
+| Build a site | site card → `BUILD` | same |
+| Man the watchtower | tower card → `ASSIGN` | same |
+| Release the tower | tower card → `RELEASE` | same |
+| Repair a structure | damaged building's card → `REPAIR` | same |
+| Link power | power building's card → `LINK`, drag or tap a ringed node | same |
+| Cancel wiring | `CANCEL` | `Esc` |
 | Move (direct mode) | Left stick | `WASD` / arrows |
 | Strike / fire | `STRIKE` / `FIRE` button | `Space` |
 | Gather scrap | `GATHER` button (appears near a pile) | `E` |
@@ -151,8 +155,8 @@ The graph keeps the last ~45 seconds.
   albedo + normal set; houses use plaster detail and baked base AO.
 - **Continue a run** — seed + player state + equipment + buildings + scrap + ammo/magazines + weapon
   upgrades + production timers + power links + construction sites are auto-saved to localStorage
-  (schema `v: 4`; runs from `v: 1`–`v: 3` migrate in place). Reload shows **CONTINUE**; **NEW RUN** clears the save, and
-  PERF has **RESET SAVE**.
+  (schema `v: 4`; runs from `v: 1`–`v: 3` migrate in place). Reload shows **CONTINUE**; **NEW RUN**
+  clears the save, and PERF has **RESET SAVE**.
 - **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
   ring and contextual orders: tap an enemy to engage, a scrap pile to gather/haul, or the ground to
   move. `TAKE CONTROL` possesses any survivor (joystick, camera follow, that unit's weapon and HP);
@@ -162,30 +166,40 @@ The graph keeps the last ~45 seconds.
   and wait at the door when it is full. The HUD shows `stored/capacity`, and the build costs are the
   sink.
 - **Construction jobs** — a placed structure is a **site**, not an instant building: a pad, scaffold
-  and progress bar. The nearest free survivor is auto-assigned (or select a unit and tap the site),
-  walks there with the nav grid and builds it over time. The real model only appears and becomes
-  active on completion; storage, power, production, healing and defence ignore unfinished sites.
-  Placement is **anywhere in the camp** — pan the camera first, then choose a structure; it is no
-  longer tied to the player's position.
+  and progress bar. Tapping the site opens its **building card**, which shows the progress and lets
+  you press **BUILD** (the nearest free survivor is still auto-assigned on placement as a
+  transition). The builder walks there with the nav grid and finishes it over time. The real model
+  only appears and becomes active on completion; storage, power, production, healing and defence
+  ignore unfinished sites. Placement is **anywhere in the camp** — pan the camera first, then choose
+  a structure; it is no longer tied to the player's position.
 - **Raids, damage and repair (Phase 4b)** — raids now alternate by time of day: **raiders by day,
   ghouls by night**, with the banner showing which. Raiders are on a mission: they walk to the nearest
   **warehouse or power building**, shoot it, and only break off for a unit within 14 m. Structures
   have HP, a floating damage bar and smoke at low health. A destroyed structure disappears, cuts its
   power links, drops warehouse capacity, takes a chapel's vitality with it and downs a tower gunner.
-  Select a survivor and tap a damaged structure to **repair** it at 14 HP/s.
+  Tap a damaged structure, then **REPAIR** on its card, to fix it at 14 HP/s.
 - **Day/night and power (Phase 3)** — a 6-minute cycle drives the sun/moon, sky, fog, shadows and a
-  solar output curve. **Solar arrays** generate 2.2 power, **poles** carry it 12 m, **battery banks**
-  store 30 and **yard lights** burn 0.5 at night. A placed power building auto-wires to the nearest
-  node in range for scrap; the wires sag and glow when energised. The HUD shows the clock,
-  output/demand and battery charge. At night the lights run on batteries; empty batteries leave the
-  camp dark.
-- **Defences (Phase 4)** — the **Vickers turret** is a power consumer (1.2) with a 220° arc, 18 m
-  range and 8-round bursts (the next pass replaces the hidden arc with a visible 360° traverse). It
-  only sees **non-human creatures**, so raiders are ignored by design.
-  The **watchtower no longer auto-fires**: select an armed survivor and tap the tower to assign a
-  gunner; the gunner gains +6 m range and 40% cover, and can be released by tapping the tower again
-  or ordering them away. A 1 m A* navigation grid routes ordered units around houses and rock
-  clusters.
+  solar output curve. **Solar arrays** generate 2.2 power, **poles** carry it **14 m with four
+  connection ports**, **battery banks** store 30 and **yard lights** burn 0.5 at night. Wires sag and
+  glow when energised, and the HUD shows the clock, output/demand and battery charge. At night the
+  lights run on batteries; empty batteries leave the camp dark.
+- **Building card and manual wiring (Phase 4c)** — tap any structure to open a card anchored above
+  it: HP, build progress, power state and port count, attention reason, job/status rows and actions.
+  `LINK` enters wire mode: nearby power nodes are ringed green (valid) or red (why not), a range ring
+  shows the 14 m span, and you drag or tap to connect; the line shows the span and scrap cost before
+  you release. Failed wires explain themselves. Auto-link on completion remains a convenience
+  fallback, never the only path. The card's `REPAIR`, `BUILD`, `ASSIGN` and `RELEASE` actions replace
+  the old tap-a-building contextual guesses; contextual orders remain for units, enemies, resources
+  and movement.
+- **Defences (Phase 4)** — the **Vickers turret** is a power consumer (1.2) with a **360° traverse**
+  (the old hidden 220° arc was removed), 18 m range and 8-round bursts. Its card shows power, belt,
+  `TARGETS: GHOULS ONLY`, how many are in range and whether the line of fire is blocked, and opening
+  the card draws the range ring. It only sees **non-human creatures**, so raiders are ignored by
+  design. The turret's line of sight now starts outside its own footprint, so it no longer blocks
+  itself.
+  The **watchtower no longer auto-fires**: open the tower card and press `ASSIGN` to put an armed
+  survivor on watch; the gunner gains +6 m range and 40% cover, and `RELEASE` sends them back down.
+  A 1 m A* navigation grid routes ordered units around houses and rock clusters.
 - **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
   jitter. The player is a skinned R4 character: the MakeHuman `hm08` head (CC0) with a procedural
   hair shell, eyes and brows, on a slim 20-bone skinned body with automatic weights, two-bone foot
@@ -359,10 +373,11 @@ language.
   old-world ruins; salvaged tech on camp-made mounts.
 - **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
 
-**Phases 1–4b are in, plus construction jobs:** buildings are placed anywhere in the camp and built
-by units; raids alternate between daytime raiders and night ghouls, and raiders go for the warehouse
-and the grid. The next slice is **Phase 4c** — the floating building card, manual wire dragging with
-pole ports, and the turret fix — then Phase 4d (bigger map + navigation) and Phase 5 (workplaces).
+**Phases 1–4c are in:** buildings are placed anywhere in the camp and built by units; the floating
+building card, manual wire dragging with pole ports and the 360° turret fix are shipped; raids
+alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid.
+The next slice is **Phase 4d** — a larger world with spread-out scatter and better navigation — then
+Phase 5 (workplaces).
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgotten work.
@@ -372,21 +387,25 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
 ## Known limitations
 
 - Not yet profiled on a physical phone.
-- Command mode, the warehouse, the power chain and defences are first slices. Wires auto-link (manual
-  LINK mode is next), there is no occlusion, and turret belts reload themselves.
-- Tower manning, turret belts and builder assignments are not saved; reload leaves towers and sites
-  idle, and construction sites keep their progress but need a new builder.
-- Building HP is saved, but repair is free and has no engineer role yet.
-- Ghouls still target units, not buildings; mixed raider/ghoul assaults are not implemented.
-- Raiders do not yet target the warehouse or power infrastructure, and night raids are not yet
-  differentiated.
+- Command mode, the warehouse, the power chain and defences are first slices. Manual LINK mode is in;
+  auto-link on completion is only a fallback. There is no occlusion, and turret belts reload
+  themselves.
+- The turret card reports power, belt, targets and line of sight, but the turret still has no
+  assigned gunner or ammo economy; it reloads its own 250-round belt.
+- Tower manning, turret belts, the selected building and active wire mode are not saved; reload
+  leaves towers idle, and construction sites keep their progress but need a new builder.
+- Building HP is saved and repair works, but repair is free and there is no engineer role yet.
+- Ghouls target living things only and never damage buildings; mixed raider/ghoul assaults are not
+  implemented.
 - The 1 m nav grid is coarse; very narrow gaps can still be unreachable.
-- Construction cannot be cancelled or refunded yet, and there is no building damage or repair.
-- A site with no free survivor waits; there is no job queue or auto-reassign after a reload.
-- The watchtower still auto-fires until Phase 4 gives it an assigned gunner.
+- Construction cannot be cancelled or refunded yet, and a wire cannot be removed (destroying an
+  endpoint still removes its wires).
+- A site with no free survivor waits; there is no job queue or auto-reassign after a reload. The
+  auto-assign on placement is transitional until the free builder role (Phase 5).
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is the main open performance question.
-- Circle collisions; no navmesh/pathfinding. Ghouls and raiders can catch on large wreckage.
+- Circle collisions over a 1 m A* grid. Dense wreckage can still catch a unit; Phase 4d improves
+  clearance, path following and stuck recovery.
 - Water is produced but has no sink/economy yet.
 - No building removal or rotation; weapon upgrades exist but there is no settlement tech tree.
 - Ghouls, hostile rifle raiders and the camp guard only; pistol, pipe rifle and sawn-off.
