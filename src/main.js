@@ -623,7 +623,7 @@ ui.on('started', () => {
   input.setEnabled(true);
   spawnAt = resumedGame ? Math.max(spawnAt, state.time + 8) : state.time + 45;
   spawnWarned = false;
-  ui.hint('GOAL · BUILD A WORKSHOP · CRAFT 6 COMPONENTS · RAISE THE RELAY', 6500);
+  ui.hint('GOAL · BUILD A WORKSHOP · CRAFT 8 COMPONENTS · RAISE THE RELAY', 6500);
   ui.toast('THE WASTES ARE LISTENING');
   last = performance.now();
 });
@@ -710,7 +710,7 @@ function applyQuality(name, silent = false) {
   if (!QUALITY[name]) return;
   perf.setQuality(name);
   const q = QUALITY[name];
-  wasteland.grass.count = Math.min(wasteland.grass.instanceMatrix.count, q.grass);
+  if (wasteland.setGrassQuality) wasteland.setGrassQuality(q.grass);
   particles.setEmberCount(q.embers);
   scene.fog.density = ui.toggleState.fog ? q.fogDensity : 0.0001;
   enemies.maxActive = q.enemies;
@@ -720,7 +720,32 @@ function applyQuality(name, silent = false) {
   ui.setQuality(name);
   ui.setToggle('adaptive', perf.adaptive);
   ui.setToggle('shadows', q.shadows);
-  if (!silent) ui.toast(`QUALITY · ${name.toUpperCase()}`);
+  if (!silent) {
+    ui.toast(`QUALITY · ${name.toUpperCase()}`);
+    try {
+      localStorage.setItem('ashfall-quality', name);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function pickQuality(coarse) {
+  const params = new URLSearchParams(window.location.search);
+  const forced = params.get('quality');
+  if (QUALITY[forced]) return forced;
+  try {
+    const saved = localStorage.getItem('ashfall-quality');
+    if (QUALITY[saved]) return saved;
+  } catch {
+    /* ignore */
+  }
+  const memory = navigator.deviceMemory || 4;
+  const cores = navigator.hardwareConcurrency || 4;
+  if (coarse && (memory <= 3 || cores <= 4)) return 'low';
+  if (coarse) return 'balanced';
+  if (memory >= 8 && cores >= 8) return 'high';
+  return 'balanced';
 }
 
 // ---------------------------------------------------------------------------
@@ -1359,8 +1384,8 @@ function activateRelay(relay) {
   run.waveTimer = 20;
   run.powerWarned = false;
   raidActive = false;
-  raiders.spawnWave(3, relay.x, relay.z, 28);
-  enemies.spawn(4, relay.x, relay.z, 24);
+  raiders.spawnWave(4, relay.x, relay.z, 28);
+  enemies.spawn(5, relay.x, relay.z, 24);
   ui.setRaid(assaultRemaining(), 'assault');
   ui.hint('RELAY ONLINE · HOLD FOR 90 SECONDS', 4200);
   ui.toast('RELAY ACTIVATED');
@@ -1384,10 +1409,10 @@ function updateFinalAssault(dt) {
   run.waveTimer -= dt;
   if (run.waveTimer <= 0 && run.hold > 10) {
     run.wave++;
-    run.waveTimer = 22;
+    run.waveTimer = 20;
     const raiderCount = Math.min(2, 5 - raiders.activeCount);
     if (raiderCount > 0) raiders.spawnWave(raiderCount, relay.x, relay.z, 26);
-    enemies.spawn(2 + Math.min(4, Math.floor(run.wave / 2)), relay.x, relay.z, 26);
+    enemies.spawn(3 + Math.min(4, Math.floor(run.wave / 2)), relay.x, relay.z, 26);
     ui.hint(`WAVE ${run.wave} · HOLD THE RELAY`, 2400);
   }
   ui.setRaid(assaultRemaining(), 'assault');
@@ -1719,7 +1744,8 @@ function loop(now) {
 // ---------------------------------------------------------------------------
 
 const coarse = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
-applyQuality(coarse ? 'balanced' : 'high', true);
+const initialQuality = pickQuality(coarse);
+applyQuality(initialQuality, true);
 ui.setToggle('adaptive', perf.adaptive);
 ui.setToggle('fog', true);
 ui.setToggle('grass', true);
@@ -1734,7 +1760,7 @@ ui.setSeed(WORLD_SEED);
 input.camera = activeCamera;
 ui.updateHUD(state);
 updateObjective();
-ui.setQuality(coarse ? 'balanced' : 'high');
+ui.setQuality(initialQuality);
 
 if (new URLSearchParams(window.location.search).has('fresh')) clearSave(false);
 resumedGame = loadGame();

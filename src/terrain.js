@@ -7,7 +7,7 @@ export const WORLD_RADIUS = 92;
 /** Actors are clamped just inside the playable disc; the nav grid ends here too. */
 export const PLAY_RADIUS = 90;
 export const TERRAIN_SIZE = 300;
-const SEGMENTS = 176;
+const SEGMENTS = 144;
 const WORLD_EXTENT = 300;
 
 /** Baked once at module load; every system samples the same field. */

@@ -144,12 +144,12 @@ add a river/oasis, a true water wheel can be a second variant.
 
 ### Relay project — the run objective
 
-- Cost: **30 scrap + 6 components**; radius 2.0; salvaged lattice mast, dish, batteries and a
+- Cost: **40 scrap + 8 components**; 520 HP; radius 2.0; salvaged lattice mast, dish, batteries and a
   sandbagged operator pit on a camp-made plinth.
 - Power consumer: 0.8, priority 6. It must be linked to the grid before activation.
-- The objective strip walks the camp through Workshop → 6 components → Relay → power → activate.
+- The objective strip walks the camp through Workshop → 8 components → Relay → power → activate.
 - `ACTIVATE` starts a **90-second hold**. Raiders prioritise the relay and campfire; ghouls press
-  the player; waves arrive about every 22 s. The hold pauses if the relay loses power.
+  the player; waves arrive about every 20 s. The hold pauses if the relay loses power.
 - Win by holding with the relay alive; lose if the campfire is destroyed, the relay falls during
   the assault, or every survivor leaves. The end screen reports day/survivors/kills and offers a new
   run.

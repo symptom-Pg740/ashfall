@@ -162,6 +162,11 @@ The graph keeps the last ~45 seconds.
   soft clearance field, and uses binary-heap A* with a direct-line fast path. Units replan once when
   wedged, then report `NO PATH` instead of walking into scenery; camp folk also separate from each
   other. `PATHS` in the perf panel (or `?paths=1`) draws the live paths.
+- **Performance (Phase 7)** — grass and rocks are split into 55 m instanced chunks so the main and
+  shadow passes can cull off-screen scatter; the terrain is 144 segments over 300 m. Quality tiers
+  auto-select from touch/cores/memory (low / balanced / high), respect a saved manual choice and can
+  be forced with `?quality=`. Headless high runs ~322k triangles / 91 calls; low ~199k / 60 calls.
+  Full world streaming is deliberately deferred — see [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 - **Procedural props** — rocks, dead trees, saguaro cacti, desert shrubs, broken ruins, wrecked cars,
   a bus landmark, an **abandoned adobe ruin with a piano**, a camp banner, scrap piles, planks,
   barrels, rubble, clustered dry grass and distant mesas. Placed with blue-noise scatter masked by
@@ -211,10 +216,10 @@ The graph keeps the last ~45 seconds.
   dawn, a camp with at least **2 spare food and water per survivor** and a free slot recruits a new
   survivor every **2–3 days**; recruits arrive as free scavengers.
 - **Relay protocol and a complete run (Phase 6)** — the permanent objective strip walks the camp
-  through **Workshop → components → Relay → power → activate**. The relay costs **30 scrap + 6
+  through **Workshop → components → Relay → power → activate**. The relay costs **40 scrap + 8
   components**, is a power consumer, and must be linked to the grid. `ACTIVATE` starts a **90-second
   final assault**: raiders focus the relay and campfire while ghoul waves press the player; the hold
-  pauses if the relay loses power, and new waves arrive every ~22 s. Win by holding with the relay
+  pauses if the relay loses power, and new waves arrive every ~20 s. Win by holding with the relay
   alive; lose if the campfire is destroyed, the relay falls during the assault, or every survivor
   leaves. The end screen reports day, survivors and kills with a `NEW RUN` button. Run state is saved
   and resumes mid-assault; ambient spawns pause during the final.
@@ -425,15 +430,19 @@ language.
 - **[docs/ART_DIRECTION.md](docs/ART_DIRECTION.md)** — mud + scrap for the camp; concrete/glass for
   old-world ruins; salvaged tech on camp-made mounts.
 - **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
+- **[docs/PERFORMANCE.md](docs/PERFORMANCE.md)** — the 180 m map measurements, chunked prop
+  culling, quality tiers and the decision not to stream yet.
+- **[docs/BALANCE.md](docs/BALANCE.md)** — current economy/assault numbers and what to watch in a
+  playtest.
 
-**Phases 1–6 are in:** buildings are placed anywhere in the camp and built by units; the floating
+**Phases 1–7 are in:** buildings are placed anywhere in the camp and built by units; the floating
 building card, manual wire dragging with pole ports and the 360° turret fix are shipped; raids
 alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid;
 the world is a 180 m disc with spread-out scatter and clearance-aware navigation that reports
 `NO PATH`; the builder role, Scavenger Hut, Well Wheel, Farm, Workshop, daily needs, ammo crafting,
-recruitment and saved roles are live; and the relay objective now gives the run a 90-second final
-assault and a win/lose screen. The next slice is **Phase 7** — streaming/performance and a balance
-pass.
+recruitment and saved roles are live; and the relay objective gives the run a 90-second final
+assault and a win/lose screen. Phase 7 added chunked prop culling, device-tier quality and the first
+balance sheet. The next slice is **Phase 8** — art, realism and device polish.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgotten work.
@@ -455,14 +464,17 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
   implemented.
 - Navigation is a 1 m grid; gaps narrower than about two cells can still be unreachable, and very
   large detours cost a short A* search. The debug overlay and `NO PATH` report make this visible.
+- The 180 m world is not streamed; it is one terrain mesh plus culled instanced chunks. Revisit when
+  draw calls exceed ~180 or the map outgrows the single-mesh design (see PERFORMANCE.md).
 - Construction cannot be cancelled or refunded yet, and a wire cannot be removed (destroying an
   endpoint still removes its wires).
 - A site with no free builder waits; the free builder role picks up the queue automatically, but
   there is no reorder/priority for multiple sites beyond oldest-first. The Scavenger Hut, Well Wheel,
   Farm and Workshop are live; morale is still Phase 6/8.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
-- Shadow cost on older mobile GPUs is the main open performance question. The expanded world adds
-  terrain vertices and more instances; adaptive resolution is the current safety valve.
+- Shadow cost on older mobile GPUs is still the main unknown. Chunked prop culling, a 144-segment
+  terrain and the device-tier presets reduce the load, but a physical-phone profile is still needed;
+  adaptive resolution is the safety valve.
 - Circle collisions over a 1 m A* grid. Dense wreckage can still wedge a unit briefly, but it now
   replans and reports `NO PATH` instead of grinding forever.
 - Needs tick at dawn only; there is no continuous hunger drain or morale system yet (Phase 8).

@@ -16,8 +16,8 @@ building HP/damage/repair; floating building card, manual wiring and the 360° t
 world with spread-out scatter and clearance-aware navigation; free builder role, Scavenger Hut,
 workplace assignment and saved roles; Well Wheel, Farm, daily needs and the food/water HUD;
 Workshop-only ammo/components and dawn recruitment; relay objective, 90-second final assault and
-win/lose screens). The next slice is **Phase 7 — streaming/performance and the first full balance
-pass**. See §6.
+win/lose screens; chunked prop culling, device-tier quality and the first balance pass). The next
+slice is **Phase 8 — art, realism and device polish**. See §6.
 
 ---
 
@@ -631,12 +631,12 @@ Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
 
 ### Phase 6 — The relay objective and a complete run — **implemented (first slice)**
 
-- **Relay** building: 30 scrap + 6 components, radius 2.0, a power consumer (0.8, priority 6). A
+- **Relay** building: 40 scrap + 8 components, 520 HP, radius 2.0, a power consumer (0.8, priority 6). A
   salvaged lattice mast, dish, batteries and sandbagged operator pit on a camp-made plinth.
-- **Objective strip** always shows the next step: Workshop → craft 6 components → raise the relay →
+- **Objective strip** always shows the next step: Workshop → craft 8 components → raise the relay →
   power it → activate.
 - **Activation:** `ACTIVATE` in the relay card starts a **90-second hold**. Raiders prioritise the
-  relay and campfire; ghouls press the player; new waves arrive about every 22 s. The hold pauses if
+  relay and campfire; ghouls press the player; new waves arrive about every 20 s. The hold pauses if
   the relay loses power; relink it from the card.
 - **Win:** hold with the relay alive. **Lose:** campfire destroyed, relay destroyed during the
   assault, or every survivor leaves. The end screen reports day/survivors/kills and offers `NEW RUN`.
@@ -644,19 +644,29 @@ Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
   mid-assault reload resumes the hold and objective, though individual hostiles are not saved.
 - Ambient ghoul and raider spawns pause during the assault.
 - Gate: a new player can start, learn the loop, and either win or lose a run in 20–30 minutes.
-  **Mechanics passed** (relay link/activate, 7-hostile opening wave, power-loss pause, relay/campfire
+  **Mechanics passed** (relay link/activate, 9-hostile opening wave, power-loss pause, relay/campfire
   defeat, 90 s win and end-screen save/reload). **The full 20–30 minute pacing still needs a human
   playtest**; numbers are provisional.
 - Not yet: alternate endings, scripted tutorial beats beyond the objective strip, saves that restore
   the exact hostiles in a raid.
 
-### Phase 7 — Streaming, chunks and performance
+### Phase 7 — Streaming, chunks and performance — **implemented (first slice)**
 
-- Split the world into streamed chunks (terrain, props, nav, actors) when the expanded single-mesh
-  version is measurably at its limit; keep the deterministic seed and save compatibility.
-- LOD/batching/occlusion work, device-tier calibration.
+- **Measured the 180 m map before adding streaming.** High preset went from ~351k triangles / 78
+  calls to ~322k / 91; low is ~199k / 60 at 0.62 scale. Headless fps is not a phone signal.
+- **Chunked prop culling:** grass and rocks split into 55 m instanced chunks with their own bounding
+  spheres, culled in the main and shadow passes. Terrain reduced from 176 to 144 segments.
+- **Device tiers:** mobile ≤3 GB/4 cores → low, other mobile → balanced, desktop ≥8 GB/8 cores →
+  high; a manual choice persists, `?quality=` forces one. Adaptive resolution remains.
+- **Decision: no full streaming yet.** The map is one terrain mesh plus culled scatter; a streamed
+  chunk manager would add save/seam complexity for little gain at this size. Revisit triggers are in
+  [PERFORMANCE.md](PERFORMANCE.md).
+- **First balance pass:** relay is 40 scrap + 8 components / 520 HP; campfire 260 HP; the final
+  assault opens with 4 raiders + 5 ghouls and waves every 20 s. Economy and assault rationale are in
+  [BALANCE.md](BALANCE.md).
 - Gate: the expanded map holds 30/60 fps on the target phone profile without a load hitch at chunk
-  boundaries.
+  boundaries. **Not yet passed on a physical phone**; the headless counts and quality tiers are the
+  current evidence. Full 20–30 minute pacing still needs a human playtest.
 
 ### Phase 8 — Art, realism and polish
 
@@ -715,15 +725,15 @@ Still open:
 
 ## 9. Immediate next slice
 
-Phases 1–6 are in. The next slice is **Phase 7 — streaming, performance and balance**:
+Phases 1–7 are in. The next slice is **Phase 8 — art, realism and device polish**:
 
-1. Measure the expanded 180 m map on the low/target device profiles; decide whether chunk streaming
-   is actually needed before adding it.
-2. Profile draw calls, terrain/prop density and the final assault's 5 raiders + ghoul waves.
-3. Balance pass: relay/build costs, component rates, hold duration, wave pressure, food/water
-   production and recruitment cadence against a real 20–30 minute run.
-4. Onboarding polish: first-run beats for the workshop recipe, relay power and activation.
-5. Then Phase 8 — art/realism (morale, wounds, weather, audio tails/occlusion).
+1. Physical-device playtest on the target phone; confirm the Phase 7 quality tiers and 30/60 fps.
+2. Morale, wounds and weather; audio tails/occlusion and animation polish.
+3. Re-skin the current camp buildings to the mud/scrap guide and bring the relay/guard post detail up
+   to the same bar.
+4. Onboarding beats for a first-time player (workshop recipe, relay power, activation).
+5. Keep the balance sheet current after every playtest; the final assault and economy are still
+   provisional.
 
-The next visible milestone: **a first-time player reaches the relay, survives the final assault and
-wins a run in 20–30 minutes — or loses and understands exactly why.**
+The next visible milestone: **a first-time player wins or loses a 20–30 minute run on a phone, and
+the camp holds 30/60 fps with the final assault on screen.**

@@ -76,6 +76,62 @@ function finalize(mesh) {
   mesh.updateMatrix();
 }
 
+/**
+ * Split a static InstancedMesh into spatial chunks so the camera can frustum-cull the parts it
+ * cannot see. The map is only 180 m across, so full streaming is unnecessary; this keeps the
+ * single-mesh world while cutting the visible prop/shadow triangles by roughly half.
+ */
+function chunkStatic(mesh, scene, chunkSize = 55, minCount = 8) {
+  if (!mesh.isInstancedMesh || mesh.count < minCount) return [mesh];
+  const groups = new Map();
+  const m = new THREE.Matrix4();
+  const p = new THREE.Vector3();
+  for (let i = 0; i < mesh.count; i++) {
+    mesh.getMatrixAt(i, m);
+    p.setFromMatrixPosition(m);
+    const key = `${Math.floor((p.x + 160) / chunkSize)}:${Math.floor((p.z + 160) / chunkSize)}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = [];
+      groups.set(key, group);
+    }
+    group.push(i);
+  }
+  if (groups.size <= 1) return [mesh];
+
+  const chunks = [];
+  for (const indices of groups.values()) {
+    const chunk = new THREE.InstancedMesh(mesh.geometry, mesh.material, indices.length);
+    chunk.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    if (mesh.instanceColor) {
+      chunk.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(indices.length * 3), 3);
+    }
+    for (let j = 0; j < indices.length; j++) {
+      const i = indices[j];
+      mesh.getMatrixAt(i, m);
+      chunk.setMatrixAt(j, m);
+      if (mesh.instanceColor) {
+        mesh.getColorAt(i, tmpColor);
+        chunk.setColorAt(j, tmpColor);
+      }
+    }
+    chunk.castShadow = mesh.castShadow;
+    chunk.receiveShadow = mesh.receiveShadow;
+    chunk.frustumCulled = true;
+    chunk.renderOrder = mesh.renderOrder;
+    chunk.userData.fullCount = indices.length;
+    chunk.matrixAutoUpdate = false;
+    chunk.updateMatrix();
+    chunk.instanceMatrix.needsUpdate = true;
+    if (chunk.instanceColor) chunk.instanceColor.needsUpdate = true;
+    chunk.computeBoundingSphere();
+    scene.add(chunk);
+    chunks.push(chunk);
+  }
+  scene.remove(mesh);
+  return chunks;
+}
+
 function tint(mesh, i, hex) {
   tmpColor.set(hex);
   mesh.setColorAt(i, tmpColor);
@@ -357,6 +413,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       tint(mesh, i, rng.pick(['#c4b9a2', '#95866e', '#7b6a55', '#6b6254']));
     }
     finalize(mesh);
+    mesh.userData.chunkable = true;
     scene.add(mesh);
     result.meshes.push(mesh);
   }
@@ -661,6 +718,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       tint(mesh, i, rng.pick(['#d4c9a2', '#b3b187', '#949a74', '#7c8862']));
     }
     finalize(mesh);
+    mesh.userData.chunkable = true;
     scene.add(mesh);
     result.grass = mesh;
     result.meshes.push(mesh);
@@ -742,6 +800,43 @@ export function createWasteland(scene, seed = 0x51a7) {
     result.grass.castShadow = false;
     result.grass.receiveShadow = true;
   }
+
+  // Split static instanced scatter into chunks for frustum/shadow culling.
+  const grassOriginal = result.grass;
+  const splitMeshes = [];
+  for (const mesh of result.meshes) {
+    if (mesh === grassOriginal) continue;
+    if (!mesh.isInstancedMesh || !mesh.userData.chunkable) {
+      splitMeshes.push(mesh);
+      continue;
+    }
+    splitMeshes.push(...chunkStatic(mesh, scene));
+  }
+  if (grassOriginal) {
+    const chunks = chunkStatic(grassOriginal, scene);
+    if (chunks.length === 1 && chunks[0] === grassOriginal) {
+      splitMeshes.push(grassOriginal);
+    } else {
+      const group = new THREE.Group();
+      group.name = 'grass-chunks';
+      for (const chunk of chunks) group.add(chunk);
+      scene.add(group);
+      result.grass = group;
+      splitMeshes.push(group);
+    }
+  }
+  result.meshes = splitMeshes;
+
+  result.setGrassQuality = (max) => {
+    const chunks = result.grass?.isGroup ? result.grass.children : result.grass ? [result.grass] : [];
+    const total = chunks.reduce((n, m) => n + (m.userData.fullCount || m.instanceMatrix.count), 0);
+    const ratio = total > 0 ? Math.min(1, max / total) : 1;
+    for (const chunk of chunks) {
+      const full = chunk.userData.fullCount || chunk.instanceMatrix.count;
+      chunk.count = Math.max(0, Math.min(full, Math.round(full * ratio)));
+      chunk.visible = chunk.count > 0;
+    }
+  };
 
   result.updateWind = (time) => {
     for (const m of windMaterials) {
