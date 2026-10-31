@@ -25,6 +25,7 @@ export class BuildingCard {
     this.onSave = onSave || (() => {});
     this.commander = null;
     this.wire = null;
+    this.trade = null;
     this.building = null;
     this._timer = 0;
     this._sig = '';
@@ -109,7 +110,7 @@ export class BuildingCard {
     let best = null;
     let bestD = Infinity;
     for (const p of this.campFolk.people) {
-      if (p.dead || p.possessed || p.manning || p.job) continue;
+      if (p.dead || p.possessed || p.onExpedition || p.manning || p.job) continue;
       if (armed && !p.weapon) continue;
       const d = Math.hypot(p.rig.group.position.x - this.building.x, p.rig.group.position.z - this.building.z);
       if (d < bestD) {
@@ -299,6 +300,16 @@ export class BuildingCard {
     } else if (def.id === 'warehouse') {
       rows.push({ label: 'STORED', value: `${this.state.scrap} / ${this.state.scrapCap || 0}` });
       note = 'SHARED STORE · SCRAP AND GOODS';
+    } else if (def.id === 'trade') {
+      const t = this.trade;
+      if (t?.arrived) {
+        rows.push({ label: 'CARAVAN', value: `HERE · ${Math.ceil(t.stay || 0)}S LEFT` });
+        rows.push({ label: 'VISIT', value: String(t.visit || 1) });
+        note = 'THE CARAVAN IS OPEN FOR TRADE';
+      } else {
+        rows.push({ label: 'CARAVAN', value: `IN ${Math.ceil(t?.timer || 0)}S` });
+        note = 'A CARAVAN ARRIVES PERIODICALLY · SURPLUS WATER AND FOOD BUY SCRAP';
+      }
     } else if (repairer) {
       rows.push({ label: 'REPAIR', value: repairer.name });
     }
@@ -317,6 +328,17 @@ export class BuildingCard {
       }
       if (def.id === 'workshop') {
         actions.push({ id: 'recipe', label: 'NEXT RECIPE', kind: 'ghost' });
+      }
+      if (def.id === 'trade' && this.trade?.arrived) {
+        this.trade.offers.forEach((offer, i) => {
+          const ok = this.trade.available(offer);
+          actions.push({
+            id: `trade:${i}`,
+            label: offer.used ? `${offer.name} · SOLD` : offer.label,
+            kind: ok ? 'primary' : 'ghost',
+            disabled: !ok,
+          });
+        });
       }
       if (def.id === 'relay' && b.powered && !this.run?.assault && !this.run?.over) {
         actions.push({ id: 'activate', label: 'ACTIVATE', kind: 'primary' });
@@ -412,7 +434,7 @@ export class BuildingCard {
     let best = null;
     let bestD = Infinity;
     for (const p of this.campFolk.people) {
-      if (p.dead || p.possessed || p.manning || p.home || p.job) continue;
+      if (p.dead || p.possessed || p.onExpedition || p.manning || p.home || p.job) continue;
       if (p.role === 'builder') continue;
       const d = Math.hypot(
         p.rig.group.position.x - this.building.x,
@@ -434,6 +456,11 @@ export class BuildingCard {
   action(id) {
     const b = this.building;
     if (!b || !this.commander) return;
+    if (id.startsWith('trade:')) {
+      const index = Number(id.split(':')[1]);
+      if (this.trade?.execute(index)) this.refresh(true);
+      return;
+    }
     if (id === 'activate' && b.def.id === 'relay') {
       this.onRelayActivate(b);
       this.refresh(true);

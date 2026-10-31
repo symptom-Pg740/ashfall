@@ -14,7 +14,7 @@ import { WORLD_RADIUS, PLAY_RADIUS } from './terrain.js';
  */
 
 const BOUNDS = WORLD_RADIUS;
-const CELL = 1;
+const CELL = BOUNDS > 220 ? 2 : 1;
 const SIZE = Math.floor((BOUNDS * 2) / CELL) + 1;
 const DIAG = Math.SQRT2;
 const CLEAR_LIMIT = 3;

@@ -15,7 +15,7 @@ const _pRay = new THREE.Vector3();
 const _pSeg = new THREE.Vector3();
 const _tmp = new THREE.Vector3();
 
-function ghoulGeometry() {
+export function ghoulGeometry() {
   const p = [];
   // legs
   p.push(box(0.17, 0.72, 0.2, '#41473a', -0.16, 0.37, 0));
@@ -79,6 +79,7 @@ export class Enemies {
         target: {
           id: `ghoul:${i}`,
           faction: 'hostile',
+          kind: 'ghoul',
           x: 0,
           y: 0,
           z: 0,
@@ -102,7 +103,7 @@ export class Enemies {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
-  spawn(count, aroundX = 0, aroundZ = 0, spread = 34) {
+  spawn(count, aroundX = 0, aroundZ = 0, spread = 34, opts = {}) {
     let spawned = 0;
     for (let n = 0; n < count; n++) {
       const e = this.pool.find((x) => !x.active);
@@ -117,14 +118,29 @@ export class Enemies {
       e.z = spawnZ * keep;
       e.y = heightAt(e.x, e.z);
       e.active = true;
-      e.hp = 46;
-      e.speed = this.rng.range(1.35, 1.95);
+      const level = opts.level ?? 1;
+      e.maxHp = Math.round(46 * (1 + 0.12 * (level - 1)));
+      e.hp = e.maxHp;
+      e.level = level;
+      e.damage = 4.5 * (1 + 0.1 * (level - 1));
+      e.speed = this.rng.range(1.35, 1.95) * (1 + 0.02 * (level - 1));
       e.phase = this.rng() * 6.28;
       e.attackCd = this.rng.range(0, 1);
       e.hitTimer = 0;
       e.knockX = 0;
       e.knockZ = 0;
-      e.scale = this.rng.range(1.0, 1.2);
+      e.scale = this.rng.range(1.0, 1.2) * (1 + 0.02 * (level - 1));
+      e.groupId = opts.groupId ?? null;
+      e.raidMode = opts.raidMode ?? !opts.groupId;
+      e.homeX = opts.homeX ?? aroundX;
+      e.homeZ = opts.homeZ ?? aroundZ;
+      e.aggro = opts.aggro ?? 12 + (level - 1);
+      e.leash = opts.leash ?? 36;
+      e.alerted = opts.alerted ?? !!e.raidMode;
+      e.returning = false;
+      e.wanderAngle = this.rng() * Math.PI * 2;
+      e.wanderTimer = this.rng() * 2;
+      e.yaw = this.rng() * Math.PI * 2;
       const i = this.pool.indexOf(e);
       _c.set(this.rng.pick(['#c3c6a1', '#a9ad8d', '#d2d0ac', '#9aa07c']));
       this.mesh.setColorAt(i, _c);
@@ -146,13 +162,78 @@ export class Enemies {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
+  /** Free a streamed encounter group back to the pool without killing it permanently. */
+  despawnGroup(id) {
+    let n = 0;
+    for (let i = 0; i < this.pool.length; i++) {
+      const e = this.pool[i];
+      if (!e.active || e.groupId !== id) continue;
+      e.active = false;
+      e.target.dead = true;
+      _o.position.set(0, -60, 0);
+      _o.scale.setScalar(0.0001);
+      _o.updateMatrix();
+      this.mesh.setMatrixAt(i, _o.matrix);
+      n++;
+    }
+    if (n) this.mesh.instanceMatrix.needsUpdate = true;
+    return n;
+  }
+
   get activeCount() {
     return this.pool.reduce((n, e) => n + (e.active ? 1 : 0), 0);
   }
 
-  update(dt, player, buildings, obstacles) {
+  /** One member seeing or being hit by a living unit wakes the whole encounter group. */
+  alertGroup(id) {
+    if (id == null) return;
+    for (const e of this.pool) {
+      if (!e.active || e.groupId !== id) continue;
+      e.alerted = true;
+      e.returning = false;
+    }
+  }
+
+  /**
+   * Nearest living target. In group mode the target must also be inside the group's home leash,
+   * which is what stops a patrol from following a survivor across the entire map.
+   */
+  nearestTarget(e, targets, maxDist, homeX = null, homeZ = null, homeLeash = Infinity) {
+    if (!targets) return null;
+    let best = null;
+    let bestD = maxDist * maxDist;
+    for (let i = 0; i < targets.length; i++) {
+      const other = targets[i];
+      if (!other || other.dead) continue;
+      if (homeX != null && Math.hypot(other.x - homeX, other.z - homeZ) > homeLeash) continue;
+      const dx = other.x - e.x;
+      const dz = other.z - e.z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        best = other;
+      }
+    }
+    return best;
+  }
+
+  /** A lazy wander point inside the encounter's home radius. */
+  idlePoint(e, dt) {
+    e.wanderTimer -= dt;
+    if (e.wanderTimer <= 0 || !Number.isFinite(e.wanderX)) {
+      e.wanderTimer = this.rng.range(2.5, 6);
+      const a = this.rng() * Math.PI * 2;
+      const r = this.rng() * 4.5;
+      e.wanderX = e.homeX + Math.cos(a) * r;
+      e.wanderZ = e.homeZ + Math.sin(a) * r;
+    }
+    return { x: e.wanderX, z: e.wanderZ };
+  }
+
+  update(dt, player, buildings, obstacles, getTargets = null) {
     const px = player.x;
     const pz = player.z;
+    const targets = getTargets ? getTargets() : null;
     let count = 0;
 
     for (let i = 0; i < POOL; i++) {
@@ -163,11 +244,50 @@ export class Enemies {
       e.attackCd = Math.max(0, e.attackCd - dt);
       e.hitTimer = Math.max(0, e.hitTimer - dt);
 
-      let dx = px - e.x;
-      let dz = pz - e.z;
+      // Encounter groups idle at their home until a living body enters the aggro ring. Camp-event
+      // ghouls are `raidMode` and keep the old relentless chase toward the camp.
+      let combatTarget = null;
+      let moveTarget = null;
+      const groupMode = e.groupId != null && !e.raidMode;
+      if (groupMode) {
+        if (!e.alerted) {
+          const seen = this.nearestTarget(e, targets, e.aggro);
+          if (seen) {
+            this.alertGroup(e.groupId);
+            combatTarget = seen;
+          } else {
+            moveTarget = this.idlePoint(e, dt);
+          }
+        }
+        if (e.alerted) {
+          combatTarget = this.nearestTarget(e, targets, Infinity, e.homeX, e.homeZ, e.leash);
+          if (!combatTarget) {
+            e.alerted = false;
+            e.returning = true;
+          }
+        }
+        if (e.returning && !e.alerted) {
+          if (Math.hypot(e.homeX - e.x, e.homeZ - e.z) < 1.6) {
+            e.returning = false;
+            e.hp = Math.min(e.maxHp, e.hp + 10 * dt);
+            moveTarget = null;
+          } else {
+            moveTarget = { x: e.homeX, z: e.homeZ };
+          }
+        }
+      } else if (targets) {
+        combatTarget = this.nearestTarget(e, targets, Infinity);
+        if (!combatTarget) moveTarget = { x: px, z: pz };
+      }
+
+      const tx = combatTarget ? combatTarget.x : moveTarget ? moveTarget.x : e.x;
+      const tz = combatTarget ? combatTarget.z : moveTarget ? moveTarget.z : e.z;
+      let dx = tx - e.x;
+      let dz = tz - e.z;
       let dist = Math.hypot(dx, dz);
       const nx = dist > 0.001 ? dx / dist : 0;
       const nz = dist > 0.001 ? dz / dist : 0;
+      const hasMove = !!combatTarget || !!moveTarget;
 
       // knockback
       e.x += e.knockX * dt;
@@ -175,12 +295,20 @@ export class Enemies {
       e.knockX *= Math.exp(-9 * dt);
       e.knockZ *= Math.exp(-9 * dt);
 
-      if (dist > 1.35) {
-        e.x += nx * e.speed * dt;
-        e.z += nz * e.speed * dt;
-      } else if (e.attackCd <= 0) {
+      if (hasMove && dist > (combatTarget ? 1.35 : 0.45)) {
+        const speed = combatTarget ? e.speed : e.speed * 0.45;
+        e.x += nx * speed * dt;
+        e.z += nz * speed * dt;
+      } else if (combatTarget && dist <= 1.35 && e.attackCd <= 0) {
         e.attackCd = this.rng.range(1.3, 1.8);
-        if (this.onPlayerHit) this.onPlayerHit(4.5, e);
+        if (combatTarget.hit) combatTarget.hit(e.damage, e.x, e.z);
+        else if (this.onPlayerHit) this.onPlayerHit(e.damage, e);
+      }
+
+      // A chasing group cannot be dragged past its home leash.
+      if (groupMode && e.alerted && Math.hypot(e.x - e.homeX, e.z - e.homeZ) > e.leash) {
+        e.alerted = false;
+        e.returning = true;
       }
 
       // separate the horde so it doesn't collapse into one silhouette
@@ -234,11 +362,12 @@ export class Enemies {
       }
 
       e.y = heightAt(e.x, e.z);
-      dx = px - e.x;
-      dz = pz - e.z;
+      dx = tx - e.x;
+      dz = tz - e.z;
       dist = Math.hypot(dx, dz);
-      const yaw = Math.atan2(dx, dz);
-      e.phase += dt * (6.2 + e.speed);
+      const yaw = hasMove && dist > 0.001 ? Math.atan2(dx, dz) : e.yaw || 0;
+      e.yaw = yaw;
+      e.phase += dt * (6.2 + e.speed * (hasMove ? 1 : 0.35));
 
       const hitPulse = e.hitTimer > 0 ? 1 + e.hitTimer * 0.55 : 1;
       const bob = Math.abs(Math.sin(e.phase)) * 0.045;
@@ -258,6 +387,11 @@ export class Enemies {
     if (!e || !e.active) return false;
     e.hp -= amount;
     e.hitTimer = 0.22;
+    if (e.groupId != null) {
+      e.alerted = true;
+      e.returning = false;
+      this.alertGroup(e.groupId);
+    }
     const dx = e.x - fromX;
     const dz = e.z - fromZ;
     const d = Math.hypot(dx, dz) || 1;
@@ -302,6 +436,10 @@ export class Enemies {
       t.y = e.y;
       t.z = e.z;
       t.hp = e.hp;
+      t.maxHp = e.maxHp || 46;
+      t.level = e.level || 1;
+      t.damage = e.damage || 4.5;
+      t.speed = e.speed || 1.5;
       t.radius = 0.32 * e.scale;
       t.height = 1.5 * e.scale;
       t.dead = false;

@@ -2,37 +2,117 @@ import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { makeRng } from './rng.js';
 import { box, cyl, dodeca, merge, PALETTE } from './geo.js';
+import { buildRuin, buildWreck } from './props.js';
 
 const _o = new THREE.Object3D();
+const _c = new THREE.Color();
 
-function buildPile() {
+/** A trader's scrap cache: crates, barrels and a tarpaulin. */
+function cacheGeometry() {
   const p = [];
-  p.push(box(1.35, 0.14, 1.1, '#4a4238', 0, 0.07, 0));
-  p.push(box(0.72, 0.34, 0.52, '#6d563f', -0.2, 0.26, 0.12, 0, 0.4, 0.04));
-  p.push(box(0.48, 0.28, 0.62, '#8b6745', 0.34, 0.2, -0.18, 0, -0.3, 0.1));
-  p.push(cyl(0.27, 0.27, 0.72, 8, '#7c4a32', 0.28, 0.45, 0.25, 0.15, 0, 1.35));
-  p.push(cyl(0.06, 0.06, 1.55, 5, '#5d4a3a', -0.4, 0.55, -0.28, Math.PI / 2, 0, 0.4));
-  p.push(box(0.34, 0.1, 0.5, '#8a7a5f', 0.42, 0.48, 0.35, 0.3, 0.8, 0.2));
-  p.push(dodeca(0.16, '#a68a63', -0.5, 0.42, 0.42, 0.4, 0.2, 0.8));
+  p.push(box(1.7, 0.12, 1.4, '#6d563f', 0, 0.06, 0));
+  p.push(box(0.78, 0.62, 0.62, '#8a6a42', -0.38, 0.38, -0.2, 0, 0.25, 0));
+  p.push(box(0.62, 0.5, 0.58, '#9b7447', 0.34, 0.32, -0.36, 0, -0.18, 0));
+  p.push(box(0.56, 0.42, 0.5, '#7c5a36', 0.08, 0.26, 0.34, 0, 0.5, 0));
+  p.push(cyl(0.28, 0.3, 0.78, 8, '#7c4a32', -0.48, 0.45, 0.42));
+  p.push(cyl(0.22, 0.24, 0.62, 8, '#8a5c40', 0.48, 0.38, 0.38));
+  p.push(box(1.25, 0.05, 1.0, '#7c6447', 0, 0.74, 0.02, 0.1, 0.2, 0));
+  p.push(cyl(0.035, 0.04, 1.1, 4, '#4e3522', -0.75, 0.55, -0.55));
+  p.push(cyl(0.035, 0.04, 1.1, 4, '#4e3522', 0.75, 0.55, 0.55));
   return merge(p);
 }
 
+const SITE = {
+  wreck: { geo: null, radius: 1.45, markerY: 1.7, value: [70, 115], scale: [0.65, 1.0] },
+  ruin: { geo: null, radius: 1.9, markerY: 2.4, value: [95, 155], scale: [0.42, 0.7] },
+  cache: { geo: null, radius: 0.85, markerY: 1.25, value: [45, 80], scale: [0.85, 1.25] },
+};
+
+/**
+ * Finite salvage sites.
+ *
+ * Every pile is a real place on the map — a car wreck, a collapsed ruin or a trader cache. It holds
+ * a fixed amount of scrap, yields 8–14 per trip, and never respawns. The only ways to get more scrap
+ * after the map is stripped are raider loot, recycling, and the caravan.
+ */
 export class ScrapField {
-  constructor(scene, seed = 0x5c4a9) {
+  constructor(scene, seed = 0x5c4a9, options = {}) {
+    this.scene = scene;
     this.rng = makeRng(seed);
-    this.count = 46;
+    this.count = 150;
     this.nodes = [];
     this.time = 0;
+    this.groups = {};
+    this.meshes = [];
+    this.obstacles = options.obstacles || [];
 
-    const geo = buildPile();
-    this.mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-    this.mesh = new THREE.InstancedMesh(geo, this.mat, this.count);
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.frustumCulled = false;
-    this.mesh.castShadow = true;
-    this.mesh.receiveShadow = true;
+    SITE.wreck.geo ||= buildWreck();
+    SITE.ruin.geo ||= buildRuin();
+    SITE.cache.geo ||= cacheGeometry();
 
-    const markGeo = new THREE.OctahedronGeometry(0.17, 0);
+    // Pick the sites first, so each InstancedMesh knows its slot count.
+    const obstacles = this.obstacles;
+    for (let i = 0; i < this.count; i++) {
+      let x = 0;
+      let z = 0;
+      let placed = false;
+      for (let tries = 0; tries < 30; tries++) {
+        const a = this.rng() * Math.PI * 2;
+        const r = this.rng.range(16, 380);
+        x = Math.cos(a) * r;
+        z = Math.sin(a) * r;
+        if (Math.hypot(x, z) < 14) continue;
+        if (this.nodes.some((n) => Math.hypot(n.x - x, n.z - z) < 11)) continue;
+        if (obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < (o.r || 0.5) + 1.4)) continue;
+        placed = true;
+        break;
+      }
+      if (!placed) continue;
+
+      const roll = this.rng();
+      const type = roll < 0.38 ? 'wreck' : roll < 0.72 ? 'cache' : 'ruin';
+      const spec = SITE[type];
+      const max = this.rng.int(spec.value[0], spec.value[1]);
+      const scale = this.rng.range(spec.scale[0], spec.scale[1]);
+      const node = {
+        x,
+        z,
+        y: heightAt(x, z),
+        type,
+        max,
+        remaining: max,
+        active: true,
+        phase: this.rng() * 6.28,
+        scale,
+        rot: this.rng() * 6.28,
+        slot: 0,
+      };
+      this.nodes.push(node);
+      obstacles.push({ x, z, r: spec.radius * scale });
+    }
+
+    for (const type of Object.keys(SITE)) {
+      const list = this.nodes.filter((n) => n.type === type);
+      if (!list.length) continue;
+      const spec = SITE[type];
+      const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+      const mesh = new THREE.InstancedMesh(spec.geo, mat, list.length);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.frustumCulled = false;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      for (let i = 0; i < list.length; i++) {
+        list[i].slot = i;
+        _c.set(this.rng.pick(['#c9b79a', '#a7957c', '#8c7d69']));
+        mesh.setColorAt(i, _c);
+      }
+      mesh.instanceColor.needsUpdate = true;
+      scene.add(mesh);
+      this.groups[type] = mesh;
+      this.meshes.push(mesh);
+    }
+
+    const markGeo = new THREE.OctahedronGeometry(0.2, 0);
     this.markMat = new THREE.MeshBasicMaterial({
       color: 0xffc37a,
       transparent: true,
@@ -40,52 +120,32 @@ export class ScrapField {
       toneMapped: false,
       depthWrite: false,
     });
-    this.markers = new THREE.InstancedMesh(markGeo, this.markMat, this.count);
+    this.markers = new THREE.InstancedMesh(markGeo, this.markMat, this.nodes.length);
     this.markers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.markers.frustumCulled = false;
-
-    const c = new THREE.Color();
-    for (let i = 0; i < this.count; i++) {
-      let x = 0;
-      let z = 0;
-      for (let tries = 0; tries < 40; tries++) {
-        const a = this.rng() * Math.PI * 2;
-        const r = this.rng.range(9, 82);
-        x = Math.cos(a) * r;
-        z = Math.sin(a) * r;
-        const tooClose = this.nodes.some((n) => Math.hypot(n.x - x, n.z - z) < 5);
-        if (!tooClose) break;
-      }
-      const node = {
-        x,
-        z,
-        y: heightAt(x, z),
-        active: true,
-        respawnAt: 0,
-        value: this.rng.int(6, 12),
-        phase: this.rng() * 6.28,
-        scale: this.rng.range(0.85, 1.2),
-        rot: this.rng() * 6.28,
-      };
-      this.nodes.push(node);
-      this.writePile(i, node);
-      c.set(this.rng.pick(['#c9b79a', '#a7957c', '#8c7d69']));
-      this.mesh.setColorAt(i, c);
+    for (let i = 0; i < this.nodes.length; i++) {
+      const n = this.nodes[i];
+      _c.set(n.type === 'ruin' ? '#d99a62' : n.type === 'wreck' ? '#e0b070' : '#c9c07a');
+      this.markers.setColorAt(i, _c);
     }
-    this.mesh.instanceColor.needsUpdate = true;
-    this.mesh.instanceMatrix.needsUpdate = true;
-    scene.add(this.mesh);
+    this.markers.instanceColor.needsUpdate = true;
     scene.add(this.markers);
 
+    for (const n of this.nodes) this.writeNode(n);
     this.updateMarkers(0, true);
   }
 
-  writePile(i, node) {
+  writeNode(node) {
+    const mesh = this.groups[node.type];
+    if (!mesh) return;
+    const ratio = node.max > 0 ? node.remaining / node.max : 0;
+    const scale = node.active ? node.scale * (0.72 + ratio * 0.28) : 0.0001;
     _o.position.set(node.x, node.y - 0.03, node.z);
     _o.rotation.set(0, node.rot, 0);
-    _o.scale.setScalar(node.active ? node.scale : 0.0001);
+    _o.scale.setScalar(scale);
     _o.updateMatrix();
-    this.mesh.setMatrixAt(i, _o.matrix);
+    mesh.setMatrixAt(node.slot, _o.matrix);
+    mesh.instanceMatrix.needsUpdate = true;
   }
 
   updateMarkers(time, force = false) {
@@ -94,7 +154,8 @@ export class ScrapField {
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
       const bob = Math.sin(time * 2.1 + n.phase) * 0.12;
-      _o.position.set(n.x, n.y + 1.35 + bob, n.z);
+      const spec = SITE[n.type];
+      _o.position.set(n.x, n.y + spec.markerY * n.scale + bob, n.z);
       _o.rotation.set(0.4, time * 1.2 + n.phase, 0);
       _o.scale.setScalar(n.active ? 1 : 0.0001);
       _o.updateMatrix();
@@ -104,7 +165,7 @@ export class ScrapField {
   }
 
   serialize() {
-    return this.nodes.map((n) => ({ a: n.active ? 1 : 0, r: Math.round(n.respawnAt * 10) / 10 }));
+    return this.nodes.map((n) => ({ a: n.active ? 1 : 0, r: Math.round(n.remaining) }));
   }
 
   restore(data) {
@@ -113,11 +174,11 @@ export class ScrapField {
       const saved = data[i];
       if (!saved) continue;
       const n = this.nodes[i];
-      n.active = !!saved.a;
-      n.respawnAt = Number.isFinite(saved.r) ? saved.r : 0;
-      this.writePile(i, n);
+      const remaining = Number.isFinite(saved.r) ? Math.max(0, Math.min(n.max, saved.r)) : n.max;
+      n.remaining = remaining;
+      n.active = !!saved.a && remaining > 0;
+      this.writeNode(n);
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
     this.updateMarkers(0, true);
   }
 
@@ -141,35 +202,25 @@ export class ScrapField {
   gather(index, time) {
     const n = this.nodes[index];
     if (!n || !n.active) return 0;
-    n.active = false;
-    n.respawnAt = time + 55;
-    this.writePile(index, n);
-    this.mesh.instanceMatrix.needsUpdate = true;
+    const chunk = Math.min(n.remaining, this.rng.int(8, 14));
+    n.remaining -= chunk;
+    if (n.remaining <= 0) {
+      n.remaining = 0;
+      n.active = false;
+    }
+    this.writeNode(n);
     this.updateMarkers(time, true);
-    return n.value;
+    return chunk;
   }
 
   update(time) {
-    let dirtyPiles = false;
-    for (let i = 0; i < this.nodes.length; i++) {
-      const n = this.nodes[i];
-      if (!n.active && time >= n.respawnAt) {
-        n.active = true;
-        this.writePile(i, n);
-        dirtyPiles = true;
-      }
-    }
-    if (dirtyPiles) {
-      this.mesh.instanceMatrix.needsUpdate = true;
-      this.updateMarkers(time, true);
-    } else {
-      this.updateMarkers(time);
-    }
+    this.updateMarkers(time);
   }
 
   setVisible(v) {
-    this.mesh.visible = v;
+    for (const mesh of this.meshes) mesh.visible = v;
     this.markers.visible = v;
+    this.visible = v;
   }
 
   get activeCount() {

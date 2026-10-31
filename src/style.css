@@ -1419,6 +1419,122 @@ body.build-open .actions {
   font-size: 9px;
 }
 
+.camp-panel {
+  width: min(380px, calc(100vw - 24px));
+}
+
+.camp-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.camp-summary > div {
+  padding: 6px 7px;
+  background: var(--panel-soft);
+  border: 1px solid rgba(138, 107, 66, 0.24);
+}
+
+.camp-summary small {
+  display: block;
+  font-size: 6px;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+}
+
+.camp-summary b {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--amber-hot);
+  font-variant-numeric: tabular-nums;
+}
+
+.camp-section {
+  margin-top: 12px;
+}
+
+.camp-section .group-label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.camp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.camp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(138, 107, 66, 0.26);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-align: left;
+  pointer-events: auto;
+}
+
+.camp-row:hover {
+  border-color: var(--amber);
+  background: rgba(58, 43, 26, 0.72);
+}
+
+.camp-row.selected {
+  border-color: var(--amber);
+  background: rgba(90, 62, 30, 0.55);
+}
+
+.camp-row.away {
+  opacity: 0.5;
+}
+
+.camp-row strong {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text);
+}
+
+.camp-row small {
+  display: block;
+  margin-top: 2px;
+  font-size: 6px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+.camp-row > span {
+  text-align: right;
+  color: var(--amber-hot);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.camp-empty {
+  padding: 7px 8px;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  border: 1px dashed rgba(138, 107, 66, 0.24);
+}
+
+#camp-launch {
+  margin-top: 12px;
+}
+
+#camp-launch:disabled {
+  opacity: 0.4;
+}
+
+
 .wardrobe-row small {
   color: var(--dim);
   font-size: 7px;
@@ -1806,6 +1922,95 @@ body.command-mode #gather-btn {
   height: 100%;
   background: linear-gradient(90deg, #b45c38, #f0a95e);
   transition: width 160ms ease;
+}
+
+.unit-level-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 7px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+}
+
+.unit-level-row b {
+  font-size: 10px;
+  color: var(--amber-hot);
+}
+
+.unit-xp {
+  height: 2px;
+  margin-top: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.unit-xp i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #7fbf6a, #d6e18a);
+  transition: width 160ms ease;
+}
+
+.unit-stats-line {
+  margin-top: 5px;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.unit-perk {
+  color: var(--amber) !important;
+  font-size: 7px !important;
+  letter-spacing: 0.06em !important;
+  margin: 3px 0 0 !important;
+  min-height: 0 !important;
+}
+
+.enemy-card {
+  position: absolute;
+  right: calc(14px + var(--safe-r));
+  top: calc(74px + var(--safe-t));
+  width: 210px;
+  padding: 8px 10px 9px;
+  pointer-events: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
+}
+
+.enemy-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(138, 107, 66, 0.3);
+}
+
+.enemy-card header > span {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--amber-hot);
+}
+
+.enemy-card header b {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+
+.enemy-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .unit-card p {

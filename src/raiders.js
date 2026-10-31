@@ -3,14 +3,30 @@ import { AimController } from './aim.js';
 import { WEAPONS } from './weapons.js';
 import { heightAt, PLAY_RADIUS } from './terrain.js';
 import { deriveSeed, makeRng, damp } from './rng.js';
-import { shortestAngle } from './actors.js';
 
-const POOL = 5;
+const POOL = 10;
+
+/** What a raider will carry off, and how much one trip is worth. */
+const LOOT = {
+  warehouse: { kind: 'scrap', min: 10, max: 18, priority: 20 },
+  workshop: { kind: 'scrap', min: 6, max: 12, priority: 17 },
+  house: { kind: 'scrap', min: 6, max: 10, priority: 14 },
+  scavenger: { kind: 'scrap', min: 4, max: 8, priority: 12 },
+  farm: { kind: 'food', min: 4, max: 8, priority: 15 },
+  catcher: { kind: 'water', min: 4, max: 8, priority: 14 },
+  well: { kind: 'water', min: 4, max: 8, priority: 13 },
+  battery: { kind: 'scrap', min: 4, max: 8, priority: 11 },
+  solar: { kind: 'scrap', min: 4, max: 7, priority: 10 },
+  turret: { kind: 'scrap', min: 3, max: 6, priority: 8 },
+  tower: { kind: 'scrap', min: 3, max: 6, priority: 8 },
+  chapel: { kind: 'scrap', min: 3, max: 5, priority: 5 },
+  relay: { kind: 'scrap', min: 3, max: 5, priority: 4 },
+};
 
 /**
- * Hostile rifle raiders. They spawn at the edge of the camp, close to rifle range, auto-aim and
- * fire through the same AimController/Firearms path as the player and camp guard. The near rig is
- * skinned; a baked static tier covers the approach.
+ * Hostile rifle raiders. They are a smash-and-grab squad, not a extermination force: they walk in,
+ * loot the nearest useful structures, shoot only the defenders close enough to stop them, and run
+ * for the edge of the map once they have a load or take heavy casualties.
  */
 export class Raiders {
   constructor(scene, seed) {
@@ -21,7 +37,14 @@ export class Raiders {
     this.firearms = null;
     this.settlement = null;
     this.onKill = null;
+    this.onLoot = null;
+    this.onRetreat = null;
+    this.onEscape = null;
     this.baseAngle = this.rng() * Math.PI * 2;
+    this._waveSize = 0;
+    this._retreatAnnounced = false;
+    this.lootedValue = 0;
+    this.escaped = 0;
 
     for (let i = 0; i < POOL; i++) {
       const rng = makeRng(deriveSeed(`raider:${i}`));
@@ -52,9 +75,10 @@ export class Raiders {
       }
 
       const weapon = WEAPONS.rifle;
+      const speed = rng.range(1.25, 1.6);
       const target = {
         id: `raider:${i}`,
-        faction: 'hostile',
+        faction: 'raider',
         kind: 'raider',
         x: 0, y: 0, z: 0,
         hp: 46, maxHp: 46,
@@ -62,7 +86,7 @@ export class Raiders {
         height: 1.8,
         dead: true,
         ref: i,
-        hit: (damage, fromX, fromZ, knock) => this.damage(i, damage),
+        hit: (damage) => this.damage(i, damage),
       };
 
       this.people.push({
@@ -79,25 +103,44 @@ export class Raiders {
         cooldown: 0,
         recoil: 0,
         aim: new AimController({
-          faction: 'hostile',
+          faction: 'raider',
           firePolicy: 'auto',
-          cone: 70,
-          turnRate: 320,
+          cone: 120,
+          turnRate: 300,
           fireGate: 3,
-          reaction: 0.35,
+          reaction: 0.3,
           range: weapon.range,
         }),
         aimActor: { x: 0, y: 0, z: 0, heading: 0 },
         heading: 0,
         isFar: true,
-        speed: rng.range(1.25, 1.6),
+        speed,
+        baseSpeed: speed,
         phase: rng() * 6.28,
-        reposition: null,
-        repositionTimer: 0,
         suppressed: 0,
-        objective: null,
-        seekingCover: false,
         slotAngle: (i / POOL) * Math.PI * 2,
+        // smash-and-grab state
+        flee: false,
+        loot: null,
+        lootTimer: 0,
+        lootCount: 0,
+        lootedIds: new Set(),
+        carry: 0,
+        raidTime: 0,
+        fleeTimer: 0,
+        jut: rng() * Math.PI * 2,
+        // encounter-group state (world guards are inert until someone enters their aggro ring)
+        raidMode: true,
+        groupId: null,
+        homeX: 0,
+        homeZ: 0,
+        aggro: 12,
+        leash: 34,
+        alerted: true,
+        returning: false,
+        wanderTimer: 0,
+        wanderX: 0,
+        wanderZ: 0,
       });
     }
   }
@@ -111,8 +154,13 @@ export class Raiders {
     }
   }
 
-  spawnWave(count, aroundX, aroundZ, distance = 30) {
+  spawnWave(count, aroundX, aroundZ, distance = 30, opts = {}) {
     let spawned = 0;
+    const raidMode = opts.raidMode ?? true;
+    if (raidMode) {
+      this._retreatAnnounced = false;
+      this.lootedValue = 0;
+    }
     for (let n = 0; n < count; n++) {
       const p = this.people.find((r) => !r.active);
       if (!p) break;
@@ -126,7 +174,12 @@ export class Raiders {
       const z = spawnZ * keep;
       p.active = true;
       p.dead = false;
+      const policy = opts.level ?? 1;
+      p.level = policy;
+      p.maxHp = Math.round(46 * (1 + 0.12 * (policy - 1)));
       p.hp = p.maxHp;
+      p.damageScale = 1 + 0.07 * (policy - 1);
+      p.speed = p.baseSpeed * (1 + 0.02 * (policy - 1));
       p.aim.target = null;
       p.aim._initialised = false;
       p.mag = p.weapon.magazine;
@@ -141,14 +194,47 @@ export class Raiders {
       if (p.farTier) p.farTier.visible = false;
       p.isFar = false;
       p.phase = this.rng() * 6.28;
-      p.reposition = null;
-      p.repositionTimer = 0;
       p.suppressed = 0;
-      p.seekingCover = false;
-      p.objective = null;
+      p.flee = false;
+      p.loot = null;
+      p.lootTimer = 0;
+      p.lootCount = 0;
+      p.lootedIds.clear();
+      p.carry = 0;
+      p.raidTime = 0;
+      p.fleeTimer = 0;
+      p.raidMode = raidMode;
+      p.groupId = opts.groupId ?? null;
+      p.homeX = opts.homeX ?? aroundX;
+      p.homeZ = opts.homeZ ?? aroundZ;
+      p.aggro = opts.aggro ?? 12;
+      p.leash = opts.leash ?? 34;
+      p.alerted = opts.alerted ?? raidMode;
+      p.returning = false;
+      p.wanderTimer = 0;
+      p.wanderX = x;
+      p.wanderZ = z;
       spawned++;
     }
+    if (raidMode) this._waveSize = spawned;
     return spawned;
+  }
+
+  /** Free a streamed encounter group back to the pool without killing it permanently. */
+  despawnGroup(id) {
+    let n = 0;
+    for (const p of this.people) {
+      if (!p.active || p.groupId !== id) continue;
+      p.active = false;
+      p.dead = true;
+      p.target.dead = true;
+      p.rig.group.visible = false;
+      if (p.farTier) p.farTier.visible = false;
+      p.aim.target = null;
+      p.aim.canFire = false;
+      n++;
+    }
+    return n;
   }
 
   forEachTarget(cb) {
@@ -159,6 +245,11 @@ export class Raiders {
       t.y = p.rig.group.position.y;
       t.z = p.rig.group.position.z;
       t.hp = p.hp;
+      t.maxHp = p.maxHp;
+      t.level = p.level || 1;
+      t.damage = p.weapon.damage * (p.damageScale || 1);
+      t.range = p.weapon.range;
+      t.speed = p.speed;
       t.dead = false;
       cb(t);
     }
@@ -181,10 +272,14 @@ export class Raiders {
       }
       return true;
     }
-    // Hit but alive: flinch into a new firing position and hold fire briefly.
-    p.suppressed = 1.5;
-    p.reposition = null;
-    p.repositionTimer = 0;
+    // Hit but alive: flinch and lose the taste for a fight. A wounded raider runs sooner.
+    p.suppressed = 1.2;
+    if (p.groupId != null) {
+      p.alerted = true;
+      p.returning = false;
+      this.alertGroup(p.groupId);
+    }
+    if (p.hp < p.maxHp * 0.35) p.flee = true;
     return false;
   }
 
@@ -192,70 +287,18 @@ export class Raiders {
     return this.people.reduce((n, p) => n + (p.active ? 1 : 0), 0);
   }
 
-  findFiringPosition(p, player) {
-    if (!this.firearms) return null;
-    const pos = p.rig.group.position;
-    const approach = Math.atan2(pos.z - player.z, pos.x - player.x);
-    // Squad spread: each raider prefers its own slice of the circle around the player.
-    const slot = this.baseAngle + p.slotAngle;
-    const base = approach + shortestAngle(approach, slot) * 0.6;
-    const eyeY = player.pos.y + 1.25;
-    for (let i = 0; i < 12; i++) {
-      const a = base + (this.rng() * 2 - 1) * Math.PI * 0.75;
-      const r = 9 + this.rng() * 6;
-      const x = player.x + Math.cos(a) * r;
-      const z = player.z + Math.sin(a) * r;
-      const y = heightAt(x, z);
-      if (this.firearms.hasLineOfSight(x, y + 1.45, z, player.x, eyeY, player.z)) {
-        return { x, z };
-      }
-    }
-    // Fallback: swing wide to one side and try again from there.
-    const a = base + (this.rng() < 0.5 ? 1 : -1) * Math.PI * 0.5;
-    const r = 10 + this.rng() * 4;
-    return { x: player.x + Math.cos(a) * r, z: player.z + Math.sin(a) * r };
-  }
-
-  /** A point that breaks line of sight to the player, used while reloading. */
-  findCoverPosition(p, player) {
-    if (!this.firearms) return null;
-    const pos = p.rig.group.position;
-    const eyeY = player.pos.y + 1.25;
-    let best = null;
-    let bestScore = -Infinity;
-    for (let i = 0; i < 16; i++) {
-      const a = this.rng() * Math.PI * 2;
-      const r = 8 + this.rng() * 8;
-      const x = player.x + Math.cos(a) * r;
-      const z = player.z + Math.sin(a) * r;
-      const y = heightAt(x, z);
-      if (this.firearms.hasLineOfSight(x, y + 1.45, z, player.x, eyeY, player.z)) continue;
-      const travel = Math.hypot(x - pos.x, z - pos.z);
-      // Close cover beats a long run, and ~12 m keeps the player in rifle range.
-      const score = -travel * 0.18 - Math.abs(r - 12) * 0.08 + this.rng() * 0.7;
-      if (score > bestScore) {
-        bestScore = score;
-        best = { x, z };
-      }
-    }
-    return best || this.findFiringPosition(p, player);
-  }
-
-  chooseObjective(p) {
-    const buildings = this.settlement?.buildings || [];
+  /** Pick the richest reachable structure this raider has not already emptied. */
+  chooseLoot(p) {
     const pos = p.rig.group.position;
     let best = null;
     let bestScore = Infinity;
-    for (const b of buildings) {
+    for (const b of this.settlement?.buildings || []) {
       if (!b.built || b.destroyed) continue;
+      const info = LOOT[b.type];
+      if (!info) continue;
+      if (p.lootedIds.has(b.id)) continue;
       const d = Math.hypot(b.x - pos.x, b.z - pos.z);
-      let priority = 4;
-      if (b.type === 'relay') priority = 55;
-      else if (b.type === 'campfire') priority = 42;
-      else if (b.type === 'warehouse') priority = 30;
-      else if (b.def?.power) priority = 26;
-      else if (b.type === 'turret' || b.type === 'tower') priority = 22;
-      const score = d - priority;
+      const score = d - info.priority;
       if (score < bestScore) {
         bestScore = score;
         best = b;
@@ -264,27 +307,224 @@ export class Raiders {
     return best;
   }
 
-  shootBuilding(p) {
-    const b = p.objective;
-    if (!b || !b.built || b.destroyed) return;
+  /** Empty a structure, report the loss, then decide whether the squad has had enough. */
+  takeLoot(p, building) {
+    const info = LOOT[building.type];
+    if (!info) return;
+    const amount = Math.round(this.rng.range(info.min, info.max));
+    p.lootedIds.add(building.id);
+    p.carry += amount;
+    p.lootCount++;
+    this.lootedValue += amount;
+    building.hp = Math.max(1, building.hp - 4);
+    this.onLoot?.(info.kind, amount, building);
+    p.loot = null;
+    p.lootTimer = 0;
+    if (p.lootCount >= 2 || p.raidTime > 32) this.startFlee(p);
+  }
+
+  /** One guard seeing or taking a hit wakes the whole world encounter group. */
+  alertGroup(id) {
+    if (id == null) return;
+    for (const p of this.people) {
+      if (!p.active || p.groupId !== id) continue;
+      p.alerted = true;
+      p.returning = false;
+    }
+  }
+
+  nearestTarget(p, targets, maxDist, homeX = null, homeZ = null, homeLeash = Infinity) {
+    if (!targets) return null;
     const pos = p.rig.group.position;
-    const shot = this.firearms.fire(
-      { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'hostile' },
-      { weapon: p.weapon, aimPoint: { x: b.x, y: b.y + 1.0, z: b.z } },
-    );
-    p.mag--;
-    p.cooldown = 60 / p.weapon.rpm;
-    p.recoil = 1;
-    if (p.mag <= 0) p.reloadTimer = p.weapon.reload;
-    this.settlement?.damageBuilding(b, 14);
-    if (shot.killed) this.onKill?.(shot.x, shot.z);
+    let best = null;
+    let bestD = maxDist * maxDist;
+    for (let i = 0; i < targets.length; i++) {
+      const other = targets[i];
+      if (!other || other.dead) continue;
+      if (other.faction === 'raider') continue;
+      if (homeX != null && Math.hypot(other.x - homeX, other.z - homeZ) > homeLeash) continue;
+      const dx = other.x - pos.x;
+      const dz = other.z - pos.z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        best = other;
+      }
+    }
+    return best;
+  }
+
+  /** World raiders guard a site. They do not loot the player's camp unless spawned as a raid. */
+  updateGuard(p, dt, player, targets) {
+    const pos = p.rig.group.position;
+    let moving = false;
+    const startX = pos.x;
+    const startZ = pos.z;
+
+    if (!p.alerted && !p.returning) {
+      const seen = this.nearestTarget(p, targets, p.aggro);
+      if (seen) {
+        this.alertGroup(p.groupId);
+        p.alerted = true;
+      } else {
+        p.wanderTimer -= dt;
+        if (p.wanderTimer <= 0) {
+          p.wanderTimer = this.rng.range(2.5, 6);
+          const a = this.rng() * Math.PI * 2;
+          const r = this.rng() * 4.5;
+          p.wanderX = p.homeX + Math.cos(a) * r;
+          p.wanderZ = p.homeZ + Math.sin(a) * r;
+        }
+        const dx = p.wanderX - pos.x;
+        const dz = p.wanderZ - pos.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 0.5) {
+          this.moveToward(p, p.wanderX, p.wanderZ, dt, 0.4);
+          moving = true;
+        } else {
+          p.phase += dt * 0.8;
+        }
+        pos.y = heightAt(pos.x, pos.z);
+        this.applyGuardPose(p, dt, moving);
+        return;
+      }
+    }
+
+    if (p.returning) {
+      const dh = Math.hypot(p.homeX - pos.x, p.homeZ - pos.z);
+      if (dh < 1.2) {
+        p.returning = false;
+        p.alerted = false;
+        p.hp = Math.min(p.maxHp, p.hp + 6 * dt);
+        p.aim.target = null;
+      } else {
+        this.moveToward(p, p.homeX, p.homeZ, dt, 1.0);
+        moving = true;
+      }
+      pos.y = heightAt(pos.x, pos.z);
+      this.applyGuardPose(p, dt, moving);
+      return;
+    }
+
+    let target = p.aim.target;
+    if (!target || target.dead) target = null;
+    if (target && Math.hypot(target.x - p.homeX, target.z - p.homeZ) > p.leash) target = null;
+    if (!target) target = this.nearestTarget(p, targets, Infinity, p.homeX, p.homeZ, p.leash);
+    if (!target) {
+      p.lostTimer = (p.lostTimer || 0) + dt;
+      if (p.lostTimer > 2) {
+        p.alerted = false;
+        p.returning = true;
+        p.lostTimer = 0;
+        p.aim.target = null;
+      }
+    } else {
+      p.lostTimer = 0;
+      const dx = target.x - pos.x;
+      const dz = target.z - pos.z;
+      const d = Math.hypot(dx, dz) || 1;
+      p.heading = Math.atan2(dx, dz);
+      if (d > 12) {
+        this.moveToward(p, target.x, target.z, dt, 1.05);
+        moving = true;
+      } else {
+        p.phase += dt * 1.1;
+        if (p.suppressed <= 0 && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
+          this.shoot(p);
+        }
+      }
+      if (Math.hypot(pos.x - p.homeX, pos.z - p.homeZ) > p.leash) {
+        p.alerted = false;
+        p.returning = true;
+        p.aim.target = null;
+      }
+    }
+
+    pos.y = heightAt(pos.x, pos.z);
+    this.applyGuardPose(p, dt, moving);
+  }
+
+  applyGuardPose(p, dt, moving) {
+    let diff = p.heading - p.rig.group.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    p.rig.group.rotation.y += diff * (1 - Math.exp(-8 * dt));
+    if (!p.isFar) {
+      p.rig.setPose(dt, moving, p.phase);
+      p.rig.applyWeaponPose(p.aim.pitch, p.recoil, p.reloadTimer > 0, true);
+    }
+  }
+
+
+  startFlee(p) {
+    if (p.flee) return;
+    p.flee = true;
+    p.fleeTimer = 0;
+    p.aim.target = null;
+  }
+
+  moveToward(p, x, z, dt, speedScale = 1) {
+    const pos = p.rig.group.position;
+    const dx = x - pos.x;
+    const dz = z - pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.001) return 0;
+    const step = Math.min(p.speed * speedScale * dt, d);
+    pos.x += (dx / d) * step;
+    pos.z += (dz / d) * step;
+    p.heading = Math.atan2(dx, dz);
+    p.phase += dt * (5 + p.speed);
+    return d;
+  }
+
+  updateFlee(p, dt, player) {
+    const pos = p.rig.group.position;
+    p.fleeTimer += dt;
+    // Run outward, with a little fan-out so the squad does not stack in one line.
+    const dx = pos.x - player.x;
+    const dz = pos.z - player.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const a = Math.atan2(dx / d, dz / d) + Math.sin(p.jut + p.fleeTimer * 0.7) * 0.35;
+    const ex = pos.x + Math.sin(a) * 6;
+    const ez = pos.z + Math.cos(a) * 6;
+    p.heading = Math.atan2(dx, dz);
+    this.moveToward(p, ex, ez, dt, 1.45);
+    pos.y = heightAt(pos.x, pos.z);
+
+    // Keep shooting only at a defender close enough to intercept the escape.
+    const target = p.aim.target;
+    if (target && Math.hypot(target.x - pos.x, target.z - pos.z) <= 9 && p.aim.canFire) {
+      if (p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) this.shoot(p);
+    }
+
+    if (Math.hypot(pos.x, pos.z) > PLAY_RADIUS - 5 || p.fleeTimer > 30) {
+      p.active = false;
+      p.dead = true;
+      p.target.dead = true;
+      p.rig.group.visible = false;
+      if (p.farTier) p.farTier.visible = false;
+      p.aim.target = null;
+      p.aim.canFire = false;
+      this.escaped++;
+      this.onEscape?.(p.carry || 0);
+      return;
+    }
+
+    let diff = p.heading - p.rig.group.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    p.rig.group.rotation.y += diff * (1 - Math.exp(-8 * dt));
+    if (!p.isFar) {
+      p.rig.setPose(dt, true, p.phase);
+      p.rig.applyWeaponPose(p.aim.pitch, p.recoil, p.reloadTimer > 0, true);
+    }
   }
 
   shoot(p) {
     const pos = p.rig.group.position;
     const shot = this.firearms.fire(
-      { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'hostile' },
-      { weapon: p.weapon, aimPoint: p.aim.targetPoint },
+      { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'raider' },
+      { weapon: p.weapon, aimPoint: p.aim.targetPoint, damage: p.weapon.damage * (p.damageScale || 1) },
     );
     p.mag--;
     p.cooldown = 60 / p.weapon.rpm;
@@ -293,7 +533,16 @@ export class Raiders {
     if (shot.killed) this.onKill?.(shot.x, shot.z);
   }
 
-  update(dt, time, player) {
+  update(dt, time, player, getTargets = null) {
+    const targets = getTargets ? getTargets() : null;
+    const alive = this.activeCount;
+    const heavyLosses = this._waveSize >= 2 && alive > 0 && alive <= Math.floor(this._waveSize * 0.5);
+    if (heavyLosses && !this._retreatAnnounced) {
+      this._retreatAnnounced = true;
+      this.onRetreat?.(alive, this._waveSize);
+      for (const p of this.people) if (p.active) this.startFlee(p);
+    }
+
     for (const p of this.people) {
       if (!p.active) continue;
       const pos = p.rig.group.position;
@@ -310,17 +559,10 @@ export class Raiders {
 
       p.cooldown = Math.max(0, p.cooldown - dt);
       p.recoil = damp(p.recoil, 0, 12, dt);
+      p.suppressed = Math.max(0, p.suppressed - dt);
       if (p.reloadTimer > 0) {
         p.reloadTimer = Math.max(0, p.reloadTimer - dt);
-        if (p.reloadTimer === 0) {
-          p.mag = p.weapon.magazine;
-          p.seekingCover = false;
-        } else if (!p.seekingCover) {
-          // Reloading in the open is a death sentence: step behind something until the mag is in.
-          p.seekingCover = true;
-          p.reposition = this.findCoverPosition(p, player);
-          p.repositionTimer = p.weapon.reload + 0.4;
-        }
+        if (p.reloadTimer === 0) p.mag = p.weapon.magazine;
       }
 
       p.aimActor.x = pos.x;
@@ -328,84 +570,57 @@ export class Raiders {
       p.aimActor.z = pos.z;
       p.aimActor.heading = p.rig.group.rotation.y;
       p.aim.update(dt, p.aimActor, this.registry, p.weapon);
+      p.raidTime += dt;
 
-      p.suppressed = Math.max(0, p.suppressed - dt);
+      if (!p.raidMode) {
+        this.updateGuard(p, dt, player, targets);
+        continue;
+      }
 
-      if (!p.objective || p.objective.destroyed || !p.objective.built) {
-        p.objective = this.chooseObjective(p);
+      if (p.flee) {
+        this.updateFlee(p, dt, player);
+        continue;
       }
-      let target = p.aim.target;
-      // Raiders are on a mission: they only break off for a unit that is close enough to threaten
-      // them. A gunner in a distant guard post can therefore keep shooting while they work.
-      if (target && p.objective) {
-        const td = Math.hypot(target.x - pos.x, target.z - pos.z);
-        if (td > 14) target = null;
-      }
-      const obj = target ? null : p.objective;
-      let moving = false;
-      if (target && !p.reposition) {
+
+      const startX = pos.x;
+      const startZ = pos.z;
+
+      // Only a defender close enough to physically stop the looting draws fire. Distant guards
+      // are ignored; this is the difference between a raid and a battle to the death.
+      let threat = p.aim.target;
+      const threatDist = threat ? Math.hypot(threat.x - pos.x, threat.z - pos.z) : Infinity;
+      if (threat && threatDist > 11) threat = null;
+      if (threat) {
         p.heading = p.aim.aimYaw;
-        p.repositionTimer = 0;
-        p.phase += dt * 1.2;
-      } else {
-        const dx = player.x - pos.x;
-        const dz = player.z - pos.z;
-        const dist = Math.hypot(dx, dz) || 1;
-        p.repositionTimer = Math.max(0, p.repositionTimer - dt);
-
-        if (!p.reposition && p.suppressed > 0) {
-          p.reposition = this.findFiringPosition(p, player);
-          p.repositionTimer = 1.6;
+        p.phase += dt * 1.1;
+        p.rig.lookAt(p.aim.targetPoint.x, p.aim.targetPoint.z, dt);
+        if (p.suppressed <= 0 && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
+          this.shoot(p);
         }
-
-        if (p.reposition) {
-          const rx = p.reposition.x - pos.x;
-          const rz = p.reposition.z - pos.z;
-          const rd = Math.hypot(rx, rz);
-          if (rd > 0.6 && p.repositionTimer > 0) {
-            const step = Math.min(p.speed * dt, rd);
-            pos.x += (rx / rd) * step;
-            pos.z += (rz / rd) * step;
-            p.heading = Math.atan2(rx, rz);
-            moving = true;
-            p.phase += dt * (5 + p.speed);
-          } else {
-            p.reposition = null;
-            p.repositionTimer = 0;
-          }
-        } else if (obj) {
-          const bx = obj.x - pos.x;
-          const bz = obj.z - pos.z;
-          const bd = Math.hypot(bx, bz) || 1;
-          const edgeX = obj.x + ((pos.x - obj.x) / bd) * (obj.radius + 0.7);
-          const edgeZ = obj.z + ((pos.z - obj.z) / bd) * (obj.radius + 0.7);
-          const los = this.firearms
-            ? this.firearms.hasLineOfSight(pos.x, pos.y + 1.25, pos.z, edgeX, obj.y + 1.0, edgeZ)
-            : true;
-          p.heading = Math.atan2(bx, bz);
-          if (bd > 10.5 || !los) {
-            const step = Math.min(p.speed * dt, Math.max(0, bd - 8));
-            pos.x += (bx / bd) * step;
-            pos.z += (bz / bd) * step;
-            moving = true;
-            p.phase += dt * (5 + p.speed);
-          } else {
-            p.phase += dt * 1.2;
-            if (p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) this.shootBuilding(p);
-          }
-        } else if (dist > 18) {
-          const step = Math.min(p.speed * dt, dist - 18);
-          pos.x += (dx / dist) * step;
-          pos.z += (dz / dist) * step;
-          p.heading = Math.atan2(dx, dz);
-          moving = true;
-          p.phase += dt * (5 + p.speed);
+      } else {
+        if (!p.loot || !p.loot.built || p.loot.destroyed || p.lootedIds.has(p.loot.id)) {
+          p.loot = this.chooseLoot(p);
+          p.lootTimer = 0;
+        }
+        if (!p.loot) {
+          this.startFlee(p);
+          continue;
+        }
+        const b = p.loot;
+        const dx = b.x - pos.x;
+        const dz = b.z - pos.z;
+        const bd = Math.hypot(dx, dz) || 1;
+        const reach = b.radius + 1.3;
+        if (bd > reach) {
+          const edgeX = b.x - (dx / bd) * reach;
+          const edgeZ = b.z - (dz / bd) * reach;
+          this.moveToward(p, edgeX, edgeZ, dt, 1.1);
+          p.lootTimer = 0;
         } else {
-          // In range but no line of sight: move to a firing position around the player.
-          p.repositionTimer = 4.5 + this.rng() * 2;
-          p.reposition = this.findFiringPosition(p, player);
           p.heading = Math.atan2(dx, dz);
-          p.phase += dt * 1.2;
+          p.phase += dt * 1.1;
+          p.lootTimer += dt;
+          if (p.lootTimer >= 2.8) this.takeLoot(p, b);
         }
       }
 
@@ -416,12 +631,9 @@ export class Raiders {
       p.rig.group.rotation.y += diff * (1 - Math.exp(-8 * dt));
 
       if (!p.isFar) {
-        p.rig.setPose(dt, moving, p.phase);
+        const moved = Math.hypot(pos.x - startX, pos.z - startZ) > 0.002;
+        p.rig.setPose(dt, moved, p.phase);
         p.rig.applyWeaponPose(p.aim.pitch, p.recoil, p.reloadTimer > 0, true);
-      }
-
-      if (target && p.suppressed <= 0 && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
-        this.shoot(p);
       }
     }
   }

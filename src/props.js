@@ -115,6 +115,15 @@ function chunkStatic(mesh, scene, chunkSize = 55, minCount = 8) {
         chunk.setColorAt(j, tmpColor);
       }
     }
+    let sx = 0;
+    let sz = 0;
+    for (const i of indices) {
+      mesh.getMatrixAt(i, m);
+      p.setFromMatrixPosition(m);
+      sx += p.x;
+      sz += p.z;
+    }
+    chunk.userData.center = { x: sx / indices.length, z: sz / indices.length };
     chunk.castShadow = mesh.castShadow;
     chunk.receiveShadow = mesh.receiveShadow;
     chunk.frustumCulled = true;
@@ -162,7 +171,7 @@ function buildTree(rng) {
   return merge(parts);
 }
 
-function buildRuin() {
+export function buildRuin() {
   const p = [];
   p.push(box(5.4, 0.28, 4.6, PALETTE.concreteDark, 0, 0.14, 0));
   // broken corner walls
@@ -182,7 +191,7 @@ function buildRuin() {
   return merge(p);
 }
 
-function buildWreck() {
+export function buildWreck() {
   const p = [];
   p.push(box(2.0, 0.46, 4.3, PALETTE.rust, 0, 0.62, 0));
   p.push(box(1.72, 0.62, 1.95, PALETTE.rustDark, 0, 1.06, -0.25));
@@ -394,7 +403,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       minDist: 4.2,
       radius: WORLD_RADIUS - 1,
       inner: 16,
-      count: 190,
+      count: 1100,
       weight: (x, z) => {
         if (roadAt(x, z) > 0.55) return 0;
         return 0.12 + slopeAt(x, z, 1.4) * 2.2;
@@ -424,7 +433,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       minDist: 9,
       radius: WORLD_RADIUS - 2,
       inner: 14,
-      count: 52,
+      count: 320,
       weight: (x, z) => {
         if (slopeAt(x, z, 1.2) > 0.28) return 0;
         if (roadAt(x, z) > 0.4) return 0;
@@ -456,7 +465,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       minDist: 9,
       radius: WORLD_RADIUS - 3,
       inner: 14,
-      count: 44,
+      count: 260,
       weight: (x, z) => {
         if (slopeAt(x, z, 1.1) > 0.22) return 0;
         if (roadAt(x, z) > 0.38) return 0;
@@ -487,7 +496,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       minDist: 4.4,
       radius: WORLD_RADIUS - 2,
       inner: 8,
-      count: 130,
+      count: 780,
       weight: (x, z) => {
         if (slopeAt(x, z, 1.0) > 0.32) return 0;
         if (roadAt(x, z) > 0.45) return 0;
@@ -515,9 +524,9 @@ export function createWasteland(scene, seed = 0x51a7) {
   {
     const places = scatterDisc(rng, {
       minDist: 14,
-      radius: 74,
+      radius: 340,
       inner: 18,
-      count: 30,
+      count: 110,
       weight: (x, z) => {
         if (slopeAt(x, z, 2.5) > 0.2) return 0;
         if (roadAt(x, z) > 0.3) return 0;
@@ -546,9 +555,9 @@ export function createWasteland(scene, seed = 0x51a7) {
   {
     const places = scatterDisc(rng, {
       minDist: 20,
-      radius: 80,
+      radius: 360,
       inner: 18,
-      count: 9,
+      count: 52,
       weight: (x, z) => {
         if (slopeAt(x, z, 2) > 0.25) return 0;
         if (roadAt(x, z) > 0.5) return 0;
@@ -613,7 +622,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       minDist: 3.6,
       radius: WORLD_RADIUS,
       inner: 18,
-      count: 110,
+      count: 650,
       weight: (x, z) => (roadAt(x, z) > 0.6 ? 0 : 0.6),
     });
     const geo = paint(new THREE.BoxGeometry(0.16, 0.13, 1.9), PALETTE.woodDark, 0.08);
@@ -637,7 +646,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       minDist: 5.0,
       radius: WORLD_RADIUS,
       inner: 16,
-      count: 52,
+      count: 300,
       weight: (x, z) => (roadAt(x, z) > 0.5 ? 0 : 0.5),
     });
     const geo = paint(new THREE.CylinderGeometry(0.34, 0.34, 0.92, 8), PALETTE.rustDark);
@@ -661,7 +670,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       minDist: 4.0,
       radius: WORLD_RADIUS,
       inner: 16,
-      count: 70,
+      count: 400,
       weight: (x, z) => (roadAt(x, z) > 0.55 ? 0 : 0.5),
     });
     const geo = paint(new THREE.DodecahedronGeometry(0.45, 0), PALETTE.concreteDark);
@@ -689,7 +698,7 @@ export function createWasteland(scene, seed = 0x51a7) {
       minDist: 5.2,
       radius: WORLD_RADIUS - 1,
       inner: 6,
-      count: 210,
+      count: 1000,
       weight: (x, z) => {
         if (slopeAt(x, z, 1.0) > 0.34) return 0;
         if (roadAt(x, z) > 0.5) return 0;
@@ -756,9 +765,9 @@ export function createWasteland(scene, seed = 0x51a7) {
   {
     const parts = [];
     const rng2 = makeRng(0xdead77);
-    for (let i = 0; i < 17; i++) {
+    for (let i = 0; i < 30; i++) {
       const angle = rng2() * Math.PI * 2;
-      const radius = rng2.range(118, 138);
+      const radius = rng2.range(180, 270);
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
       const base = rng2.range(7, 21);
@@ -776,7 +785,7 @@ export function createWasteland(scene, seed = 0x51a7) {
     }
     for (let i = 0; i < 4; i++) {
       const angle = rng2() * Math.PI * 2;
-      const radius = rng2.range(122, 134);
+      const radius = rng2.range(195, 250);
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
       const h = rng2.range(16, 30);
@@ -836,6 +845,23 @@ export function createWasteland(scene, seed = 0x51a7) {
       chunk.count = Math.max(0, Math.min(full, Math.round(full * ratio)));
       chunk.visible = chunk.count > 0;
     }
+  };
+
+  /** Distance-stream the static prop chunks around the camera. */
+  const STREAM_RADIUS = 175;
+  result.stream = (x, z) => {
+    const r2 = STREAM_RADIUS * STREAM_RADIUS;
+    const visit = (mesh) => {
+      if (mesh.isGroup) {
+        for (const child of mesh.children) visit(child);
+        return;
+      }
+      const center = mesh.userData.center;
+      if (!center) return;
+      const empty = mesh.userData.fullCount != null && mesh.count === 0;
+      mesh.visible = !empty && (center.x - x) ** 2 + (center.z - z) ** 2 <= r2;
+    };
+    for (const mesh of result.meshes) visit(mesh);
   };
 
   result.updateWind = (time) => {

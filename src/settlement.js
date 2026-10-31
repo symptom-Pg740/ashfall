@@ -5,7 +5,7 @@ import { buildAdobeHouse } from './kit.js';
 import { makeRng, deriveSeed, hash32, WORLD_SEED } from './rng.js';
 import { makeDetailSet } from './textures.js';
 
-const CAMP_RADIUS = 46;
+const CAMP_RADIUS = 110;
 const GRID = 1;
 
 function baseDisc(radius) {
@@ -701,6 +701,53 @@ function relayMast() {
   return bakeBaseAO(merge(p), 0.5, 0.3);
 }
 
+function tradePost() {
+  const mud = '#c9a878';
+  const mudDark = '#a98a61';
+  const stone = '#b6a184';
+  const wood = '#6b4a2e';
+  const woodDark = '#4e3522';
+  const rust = '#8a4f35';
+  const metal = '#777a78';
+  const tarp = '#7c6447';
+  const cream = '#dfc9a2';
+  const p = [baseDisc(2.65)];
+
+  // Packed pad and a low stone footing.
+  p.push(box(4.6, 0.12, 3.8, stone, 0, 0.06, 0));
+  p.push(box(4.0, 0.16, 3.2, mudDark, 0, 0.14, 0));
+
+  // Four timber posts and a patched awning.
+  for (const sx of [-1.7, 1.7]) {
+    for (const sz of [-1.35, 1.35]) {
+      p.push(box(0.14, 2.6, 0.14, woodDark, sx, 1.3, sz));
+    }
+  }
+  p.push(box(4.1, 0.09, 3.15, tarp, 0, 2.62, 0, 0.06, 0, 0));
+  p.push(box(4.2, 0.05, 0.7, cream, 0, 2.55, 1.5, 0.18, 0, 0));
+  p.push(box(1.4, 0.55, 0.06, rust, 0, 2.15, 1.73, 0, 0, 0));
+
+  // Counter, shelves and goods.
+  p.push(box(3.6, 0.18, 0.72, wood, 0, 1.02, 0.95));
+  p.push(box(3.2, 0.8, 0.5, mud, 0, 0.58, 0.95));
+  p.push(box(2.2, 1.25, 0.35, mudDark, 0, 1.55, -1.05));
+  p.push(box(2.0, 0.08, 0.45, wood, 0, 1.9, -1.02));
+  p.push(box(2.0, 0.08, 0.45, wood, 0, 1.42, -1.02));
+
+  // Crates and barrels on the pad.
+  p.push(box(0.72, 0.58, 0.62, '#8a6a42', -1.55, 0.4, -0.55, 0, 0.25, 0));
+  p.push(box(0.56, 0.46, 0.5, '#9b7447', -1.35, 0.9, -0.55, 0, -0.18, 0));
+  p.push(cyl(0.3, 0.32, 0.82, 8, rust, 1.45, 0.47, -0.45));
+  p.push(cyl(0.24, 0.26, 0.66, 8, metal, 1.55, 0.39, 0.35));
+  p.push(box(0.5, 0.34, 0.4, '#7c5a36', 0.55, 0.3, -1.35, 0, 0.4, 0));
+
+  // A hanging trader banner.
+  p.push(cyl(0.035, 0.035, 1.1, 4, woodDark, -2.05, 1.9, 1.55));
+  p.push(box(0.7, 0.42, 0.04, rust, -2.05, 2.35, 1.55, 0, 0.2, 0));
+
+  return bakeBaseAO(merge(p), 0.5, 0.3);
+}
+
 export const BUILDINGS = [
   {
     id: 'barricade',
@@ -779,6 +826,15 @@ export const BUILDINGS = [
     geometry: null,
   },
   {
+    id: 'trade',
+    name: 'TRADE POST',
+    cost: 28,
+    hp: 180,
+    radius: 2.8,
+    desc: 'Caravan stop. Trade goods for scrap.',
+    geometry: null,
+  },
+  {
     id: 'relay',
     name: 'RELAY',
     cost: 40,
@@ -812,8 +868,8 @@ export const BUILDINGS = [
     name: 'BATTERY BANK',
     cost: 16,
     radius: 1.25,
-    desc: 'Stores 30 power.',
-    power: { kind: 'storage', capacity: 30, attach: 1.0 },
+    desc: 'Stores 150 power.',
+    power: { kind: 'storage', capacity: 150, attach: 1.0 },
     geometry: null,
   },
   {
@@ -830,7 +886,7 @@ export const BUILDINGS = [
     name: 'VICKERS',
     cost: 26,
     radius: 1.5,
-    desc: 'Ghouls only. 1.2 power.',
+    desc: 'Ghouls + bats only. 1.2 power.',
     power: { kind: 'consumer', demand: 1.2, priority: 5, attach: 1.05 },
     geometry: null,
   },
@@ -863,6 +919,7 @@ const GEO_BUILDERS = {
   well: wellWheel,
   farm: farmPlot,
   workshop,
+  trade: tradePost,
   relay: relayMast,
   solar: solarArray,
   pole: powerPole,
@@ -1453,6 +1510,16 @@ export class Settlement {
     return { ok: true, cost: def.cost, building };
   }
 
+  /** A camp always begins with one lit fire for idle survivors to gather around. */
+  seedStartingCamp() {
+    if (this.count('campfire') > 0) return null;
+    const def = BUILDINGS.find((b) => b.id === 'campfire');
+    if (!def) return null;
+    const building = this.createBuilding(def, 2.6, 2.6, null, true, 1);
+    this.syncStorage();
+    return building;
+  }
+
   count(typeId, onlyBuilt = true) {
     let n = 0;
     for (const b of this.buildings) {
@@ -1511,7 +1578,7 @@ export class Settlement {
     return this.isNearCampfire(x, z, 5.2) || this.isNearChapel(x, z, 7.5);
   }
 
-  updateTurret(b, dt, enemies) {
+  updateTurret(b, dt, enemies, bats = null) {
     if (!b.head || !b.built) return;
     const powered = !!b.powered;
     if (b.lampMat) b.lampMat.color.setHex(powered ? 0x2f7a45 : 0x5a1e1e);
@@ -1530,17 +1597,17 @@ export class Settlement {
     // 360° traverse. The old 220° arc was invisible and clamped at placement; it is the main reason
     // a turret could sit next to a ghoul and never turn. A tripod-mounted Vickers can traverse fully.
     const candidates = [];
-    for (let i = 0; i < enemies.pool.length; i++) {
-      const e = enemies.pool[i];
-      if (!e.active) continue;
+    const consider = (e, i, kind) => {
+      if (!e.active) return;
       const dx = e.x - b.x;
       const dz = e.z - b.z;
       const d = Math.hypot(dx, dz);
-      if (d > 18 || d < 0.4) continue;
-      // Only non-humans are valid targets by design; the enemy pool is ghouls.
+      if (d > 18 || d < 0.4) return;
       const yaw = Math.atan2(dx, dz);
-      candidates.push({ i, e, d, yaw });
-    }
+      candidates.push({ i, e, kind, d, yaw });
+    };
+    for (let i = 0; i < enemies.pool.length; i++) consider(enemies.pool[i], i, 'ghoul');
+    if (bats) for (let i = 0; i < bats.pool.length; i++) consider(bats.pool[i], i, 'bat');
     b._targets = candidates.length;
     if (!candidates.length) {
       b.burstLeft = 0;
@@ -1558,7 +1625,8 @@ export class Settlement {
     for (const c of candidates) {
       const sx = b.x + Math.sin(c.yaw) * sightOut;
       const sz = b.z + Math.cos(c.yaw) * sightOut;
-      if (this.los && !this.los(sx, sightY, sz, c.e.x, c.e.y + 0.75, c.e.z)) continue;
+      const targetY = c.kind === 'bat' ? c.e.y : c.e.y + 0.75;
+      if (this.los && !this.los(sx, sightY, sz, c.e.x, targetY, c.e.z)) continue;
       chosen = c;
       break;
     }
@@ -1595,9 +1663,11 @@ export class Settlement {
     b.burstTimer += 60 / 450;
     b.burstLeft -= 1;
     b.mag -= 1;
-    const killed = enemies.damage(index, 6, b.x, b.z);
+    const killed = chosen.kind === 'bat'
+      ? bats.damage(index, 6, b.x, b.z)
+      : enemies.damage(index, 6, b.x, b.z);
     const from = new THREE.Vector3(mx, my, mz);
-    const to = new THREE.Vector3(e.x, e.y + 0.75, e.z);
+    const to = new THREE.Vector3(e.x, chosen.kind === 'bat' ? e.y : e.y + 0.75, e.z);
     this.fireTracer(from, to);
     this.particles.burst(mx, my, mz, '#ffd9a0', 3, 1.4);
     this.particles.burst(to.x, to.y, to.z, killed ? '#a8c07a' : '#ffbd7a', killed ? 12 : 4, 2.2);
@@ -1672,7 +1742,7 @@ export class Settlement {
     }
   }
 
-  update(dt, time, player, enemies) {
+  update(dt, time, player, enemies, bats = null) {
     this.time = time;
 
     // flicker
@@ -1697,7 +1767,7 @@ export class Settlement {
     // Vickers turrets: powered, ghoul-only, burst fire.
     if (enemies) {
       for (const b of this.buildings) {
-        if (b.type === 'turret' && b.built) this.updateTurret(b, dt, enemies);
+        if (b.type === 'turret' && b.built) this.updateTurret(b, dt, enemies, bats);
       }
     }
 

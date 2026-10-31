@@ -65,8 +65,11 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Cancel wiring | `CANCEL` | `Esc` |
 | Move (direct mode) | Left stick | `WASD` / arrows |
 | Strike / fire | `STRIKE` / `FIRE` button | `Space` |
-| Gather scrap | `GATHER` button (appears near a pile) | `E` |
-| Open build tray | `BUILD` | `B` |
+| Gather scrap | `GATHER` button (appears near a site) | `E` |
+| Enter/exit a cave | `ENTER CAVE` / `EXIT CAVE` button | `E` |
+| Loot a cleared cave cache | `LOOT CACHE` button | `E` |
+| Open the camp panel | `CAMP` top-right | `CAMP` top-right |
+| Manage an expedition | `CAMP` → pick destination + team → `LAUNCH EXPEDITION` | same |
 | Pick structure | Tap a card / swipe the tray | `1`–`9` |
 | Place a site | pan the camera, pick a structure, tap the ground anywhere in camp | same |
 | Aim placement | Tap / drag the ground | Move mouse, click ground |
@@ -87,34 +90,103 @@ to face north). Tapping the compass centre re-centres the camera on the player. 
 screen-relative, so `W` is always "up", and during placement the same ground drag aims the ghost
 instead of panning.
 
-**Command mode is the default.** The stick is hidden until you select a survivor and press **TAKE
-CONTROL**. A unit ordered to a scrap pile walks there, harvests, carries the load back to you and
-deposits it; ordered at a ghoul it closes to weapon range and fights. The roster strip is the
-reliable way to select a unit when the camp is crowded.
+**Command mode is the default.** There is no separate player body: every survivor is the same kind
+of unit, and you either command them or press **TAKE CONTROL** to borrow one directly. Idle units
+drift back to the campfire and warm themselves in a ring around it. A unit ordered to a salvage site
+walks there, harvests, carries the load back to camp and deposits it; ordered at a ghoul or raider it
+closes to weapon range and fights. The roster strip is the reliable way to select a unit when the
+camp is crowded.
 
 ---
 
 ## The 60-second loop
 
-1. Start with **26 scrap** and a field stock cap of **80**. Scrap piles are marked by floating amber
-   shards; each gives **6–12 scrap**. In command mode, select a survivor and tap a pile: they gather
-   it and haul it back to the nearest **Warehouse**, or to you if there is none.
+1. You start with **26 scrap**, a lit **Campfire**, and a field stock cap of **80**. Scrap comes
+   from finite **salvage sites** — car wrecks, collapsed ruins and trader caches — marked by floating
+   amber shards. Each visit yields **8–14 scrap** and every site has a fixed total. Depleted sites
+   never respawn. In command mode, select a survivor and tap a site: they gather a load and haul it
+   back to the nearest **Warehouse**, or to camp if there is none.
 2. Build a **Warehouse** (22) early: **+120 storage** and the hauling drop point. The crates inside
    fill as scrap accumulates. Placing a structure marks a **site**; a survivor with the **builder**
-   role walks there and finishes it. Then a **Campfire** (8) to heal inside its light, or a
-   **Barricade** (4) for solid cover.
-3. Power the camp: a **Solar Array** (14), a **Power Pole** (3), a **Battery Bank** (16) and a **Yard
-   Light** (8). Wires cost scrap per metre. By day the panels charge the battery; by night the light
-   drains it. The clock in the lower-right shows the time of day.
+   role walks there and finishes it. A **Barricade** (4) gives solid cover.
+3. Power the camp: a **Solar Array** (14), a **Power Pole** (3), a **Battery Bank** (16, stores
+   **150 power**) and a **Yard Light** (8). Wires cost scrap per metre. The lower-right panel shows
+   **energy production** and **stored power** separately. By day the panels charge the battery; by
+   night the light drains it.
 4. A **Rain Catcher** (12) adds **+1 water / 6 s** passively. Build a **Well Wheel** (20) and assign
    a water carrier for **+1 water / 4 s**, and a **Farm** (24) with farmers for **+1 food / 7 s**
    (each farmer uses **1 water / 20 s**). The camp eats and drinks at dawn.
    An **Adobe House** (18) sends out scavengers for **+1 scrap / 9 s** and raises the survivor cap by
    one.
-5. Build a **Vickers** (26) and power it: it shreds ghouls but cannot identify humans, so raiders
-   walk past it. Build a **Guard post** (20) and assign an armed survivor to it for the human raids.
-6. Ghouls arrive after a grace period, drop **2 scrap**, and get denser over time. Death costs 20% of
-   your scrap and respawns you at the old camp. Buildings persist.
+5. Build a **Vickers** (26) and power it: it shreds ghouls and bio-bats but cannot identify humans,
+   so raiders walk past it. Build a **Guard post** (20) and assign an armed survivor to it for the
+   human raids.
+6. **Raiders** in camp raids are a smash-and-grab squad, not an extermination force. They walk in,
+   loot the nearest warehouse/farm/well/workshop, shoot only defenders close enough to stop them, and
+   run for the map edge after two loads or heavy casualties. If they escape, the stolen scrap, water
+   or food is gone. Raiders elsewhere in the world guard sites instead of looting.
+7. Hostiles are scattered in **encounter groups** at ruins, wrecks and other points of interest.
+   They idle until a living body enters their aggro ring or damages a member; then the whole group
+   wakes and chases, but only as far as its home leash. Survivors and raiders are valid prey for
+   ghouls. Bio-bats roost in their own groups, fly over walls, and are tracked by Vickers turrets.
+8. The camp is mostly safe from ambient pressure. Instead, occasional **camp events** arrive:
+   bat swarms at night, ghoul hordes, or a raider looting raid. Each event is announced, then the
+   camp is quiet again.
+9. **Fallback melee** is always available: a survivor with an empty gun, or no gun at all, closes
+   and swings instead of standing uselessly. The action label changes from `FIRE` to `STRIKE`.
+10. The world is much larger than the old camp disc. Terrain is streamed in 64 m chunks as the camera
+   moves, so the map can extend well beyond the buildable camp radius without loading it all at once.
+
+---
+
+## Salvage and trade
+
+The map's scrap is finite. Sixty-eight salvage sites are placed as car wrecks, collapsed ruins and
+trader caches; each holds a fixed total and never respawns. Once the region is stripped, the caravan
+is the sustainable source.
+
+Build a **Trade Post** (28 scrap). A caravan arrives periodically and stays for a short window. Open
+the post while it is there to see three one-shot offers:
+
+- sell surplus water for scrap
+- sell surplus food for scrap
+- sell components for scrap
+- occasionally buy components with scrap
+
+Caravan stock, arrival timer and used offers persist in the save.
+
+---
+
+## Camp operations and expeditions
+
+The `CAMP` panel is the management surface. It shows day, survivors, at-camp count, scrap, water,
+food, each survivor's level, role, assignment, needs and HP, active expeditions, and the expedition
+launcher.
+
+**Expeditions**
+- Pick a nearby salvage site or uncleared cave.
+- Pick up to three free survivors.
+- Launch. The team travels, searches, and returns automatically.
+- Salvage sites yield scrap based on team size and level; caves are high risk and award a component
+  plus a one-time cache.
+- Failure means a smaller haul and injured survivors.
+- Survivors gain XP for expeditions.
+- Two expeditions can run at once; they persist through save/load.
+- While away, survivors leave the roster, cannot be assigned to jobs, and return to the campfire
+  when finished.
+
+---
+
+## Levels and inspection
+
+Survivors, ghouls, raiders and bats all have levels 1–10. Nothing floats over their heads. Select a
+survivor to see their level, XP bar, HP, damage, range, speed and role perk in the unit card. Tap a
+hostile to see its level, HP and combat stats in a short inspection card.
+
+- Survivors gain XP from gathering, building, repairing, crafting, producing water/food and kills.
+- Survivors get tougher, hit harder, move faster and work faster as they level.
+- Hostiles scale by encounter tier, day and camp-event pressure.
+- The world encounter groups carry levels 1–3 based on distance from the starting camp.
 
 Placement is ghost-previewed, grid-snapped, slope-checked, and blocked by structures and wreckage.
 Structures are solid to both the player and ghouls.
@@ -150,25 +222,29 @@ The graph keeps the last ~45 seconds.
 
 ## What is implemented
 
-- **Procedural terrain** — a seeded, baked 416² height/slope/moisture/road field (fBm, domain warp,
-  ridged rim, soft terraces, droplet erosion) drives a 300 m terrain plane, the props, player,
-  buildings and enemies. The playable disc is **180 m across** (radius 90). Vertex-coloured with a
-  generated tiling sand albedo + normal map, winding dirt road, cross street and ash/rust patches.
+- **Procedural terrain** — a seeded 700² height/slope/moisture/road field (fBm, domain warp, ridged
+  rim, soft terraces, droplet erosion) drives the props, player, buildings and enemies. The playable
+  disc is **800 m across** (radius 400). Terrain is built as streamed **64 m tiles** with
+  vertex-coloured generated sand albedo + normal map, winding dirt road, cross street and ash/rust
+  patches.
 - **Art direction** — sun-bleached sand, warm key light, cool fill, **real-time crisp shadows**,
   red adobe, cream stucco, terracotta roofs, blue shutters, exposed beams, cacti, shrubs and mesas.
-- **World scale and navigation (Phase 4d)** — the camp sits in an open **180 m** disc with the
-  scatter spread out (roughly half the old density, wider spacing, 14–18 m clear approaches). A
-  185×185 m navigation grid inflates buildings and wreckage, biases paths away from walls with a
-  soft clearance field, and uses binary-heap A* with a direct-line fast path. Units replan once when
-  wedged, then report `NO PATH` instead of walking into scenery; camp folk also separate from each
-  other. `PATHS` in the perf panel (or `?paths=1`) draws the live paths.
-- **Performance (Phase 7)** — grass and rocks are split into 55 m instanced chunks so the main and
-  shadow passes can cull off-screen scatter; the terrain is 144 segments over 300 m. Quality tiers
-  auto-select from touch/cores/memory (low / balanced / high), respect a saved manual choice and can
-  be forced with `?quality=`. Headless high runs ~322k triangles / 91 calls; low ~199k / 60 calls.
-  Full world streaming is deliberately deferred — see [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+- **World scale and navigation** — the playable disc is **800 m across** (radius 400). The nav grid
+  uses 2 m cells over the larger map, inflates buildings and wreckage, biases paths away from walls
+  with a soft clearance field, and uses binary-heap A* with a direct-line fast path. Units replan
+  once when wedged, then report `NO PATH` instead of walking into scenery. `PATHS` in the perf panel
+  (or `?paths=1`) draws the live paths.
+- **Performance and streaming** — terrain streams 64 m tiles around the camera. Static props are
+  split into 55 m instanced chunks and only chunks within 175 m are visible. Encounter definitions
+  cover the whole map, but only groups within 165 m are spawned; groups beyond 220 m return to their
+  pools. Salvage sites stay finite and persisted.
+- **Caves (cells)** — three cave entrances lead to a separate interior scene with its own floor,
+  walls, torch light, ghoul pack and cache. The overworld is hidden and paused while inside. Clear
+  the pack, loot the cache for scrap and a component, then return through the exit. This is the
+  first cell type; the same system can host bunkers, basements and other interior content.
 - **Procedural props** — rocks, dead trees, saguaro cacti, desert shrubs, broken ruins, wrecked cars,
-  a bus landmark, an **abandoned adobe ruin with a piano**, a camp banner, scrap piles, planks,
+  a bus landmark, an **abandoned adobe ruin with a piano**, a camp banner, finite salvage wrecks and
+  caches, planks,
   barrels, rubble, clustered dry grass and distant mesas. Placed with blue-noise scatter masked by
   slope, moisture and roads; grass and shrubs sway in a vertex shader. Rocks use a cracked-rock
   albedo + normal set; houses use plaster detail and baked base AO.
@@ -177,7 +253,7 @@ The graph keeps the last ~45 seconds.
   auto-saved to localStorage (schema `v: 6`; runs from `v: 1`–`v: 5` migrate in place). Reload shows
   **CONTINUE**; **NEW RUN** clears the save, and PERF has **RESET SAVE**.
 - **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
-  ring and contextual orders: tap an enemy to engage, a scrap pile to gather/haul, or the ground to
+  ring and contextual orders: tap an enemy to engage, a salvage site to gather/haul, or the ground to
   move. `TAKE CONTROL` possesses any survivor (joystick, camera follow, that unit's weapon and HP);
   `RELEASE` returns to command mode.
 - **Warehouse and storage (Phase 2)** — a 4×4 shed with a growing crate stack. Base field stock is
@@ -196,7 +272,7 @@ The graph keeps the last ~45 seconds.
   `MAKE BUILDER` turns them into a free builder who automatically takes the oldest construction site
   (no more random auto-assign on placement), and `RELEASE BUILDER` / `RELEASE POST` returns them to
   guard/scavenger duty. The **Scavenger Hut** has two job slots: tap a slot, then the selected/nearest
-  survivor, and they loop nearest scrap pile → harvest → haul to the warehouse, then pick the next
+  survivor, and they loop nearest salvage site → harvest → haul to the warehouse, then pick the next
   pile within 26 m. They wait and report `NO NODES` or `STORAGE FULL` instead of wandering. Manual
   orders pause the loop; when the order ends the worker returns to their post. Roles and assignments
   are saved with the run.
@@ -218,11 +294,11 @@ The graph keeps the last ~45 seconds.
 - **Relay protocol and a complete run (Phase 6)** — the permanent objective strip walks the camp
   through **Workshop → components → Relay → power → activate**. The relay costs **40 scrap + 8
   components**, is a power consumer, and must be linked to the grid. `ACTIVATE` starts a **90-second
-  final assault**: raiders focus the relay and campfire while ghoul waves press the player; the hold
+  final assault**: raiders loot the camp while ghoul waves press the player; the hold
   pauses if the relay loses power, and new waves arrive every ~20 s. Win by holding with the relay
   alive; lose if the campfire is destroyed, the relay falls during the assault, or every survivor
   leaves. The end screen reports day, survivors and kills with a `NEW RUN` button. Run state is saved
-  and resumes mid-assault; ambient spawns pause during the final.
+  and resumes mid-assault; camp events pause during the final.
 - **Raids, damage and repair (Phase 4b)** — raids now alternate by time of day: **raiders by day,
   ghouls by night**, with the banner showing which. Raiders are on a mission: they walk to the nearest
   **warehouse or power building**, shoot it, and only break off for a unit within 14 m. Structures
@@ -297,7 +373,7 @@ The graph keeps the last ~45 seconds.
 - **Pinch or the mouse wheel zooms 0.8–2.2×.**
 
 - **Settlement structures** — barricade, campfire, rain catcher, adobe house, warehouse, scavenger
-  hut, well wheel, farm, workshop, relay, solar array, power pole, battery bank, yard light, Vickers
+  hut, well wheel, farm, workshop, trade post, relay, solar array, power pole, battery bank, yard light, Vickers
   turret, guard post and chapel. Generated geometry, ghost placement, costs, production, jobs, healing and the
   power grid. The Adobe House is assembled from a modular kit (facade bays, roof, parapet, porch,
   rooftop clutter) and gets a seeded variant per placement; the rest stay hand-authored parametric
@@ -323,7 +399,9 @@ src/main.js           bootstrap, state, game loop, wiring
 src/terrain.js        shared height field, terrain mesh, cracked-earth texture
 src/sky.js            sky dome shader, lights, fog, shadow configuration
 src/props.js          instanced scenery, landmarks, contact shadows, mesas
-src/resources.js      scrap nodes, markers, respawn
+src/resources.js      finite salvage sites, markers, depletion
+src/cells.js         cave entrances, separate interior scene, cave ghouls, cache
+src/expeditions.js   auto-resolving salvage/cave expeditions and team management
 src/player.js         procedural survivor + animation
 src/enemies.js        instanced ghoul pool + AI
 src/settlement.js     six structures, merged geometry, ghost, placement, production

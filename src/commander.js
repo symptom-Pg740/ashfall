@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { canAttack } from './actors.js';
+import { levelInfo, perkFor } from './levels.js';
 
 /**
  * Command layer: selection, contextual orders and possession.
@@ -85,63 +86,72 @@ export class Commander {
   // units and views
   // -------------------------------------------------------------------------
 
-  get leaderUnit() {
-    return {
-      isLeader: true,
-      key: 'leader',
-      name: 'YOU',
-      role: 'leader',
-      rig: this.player.rig,
-      hp: this.state.health,
-      maxHp: this.state.maxHealth,
-      dead: this.state.dead,
-      job: null,
-    };
-  }
-
   units() {
-    return [this.leaderUnit, ...this.campFolk.people.filter((p) => p.active)];
+    return this.campFolk.people.filter((p) => p.active && !p.left && !p.onExpedition);
   }
 
   keyOf(unit) {
     if (!unit) return '';
-    return unit.isLeader ? 'leader' : `camp:${this.campFolk.people.indexOf(unit)}`;
+    return `camp:${this.campFolk.people.indexOf(unit)}`;
   }
 
   unitByKey(key) {
-    if (key === 'leader') return this.leaderUnit;
     const index = Number(key.split(':')[1]);
     return this.campFolk.people[index] || null;
   }
 
   view(unit) {
     if (!unit) return null;
-    const armed = unit.isLeader ? this.player.weapon : unit.weapon;
     const possessed = unit === this.player.possessedUnit;
-    const live = unit.isLeader || possessed;
-    const dead = unit.isLeader ? this.state.dead : unit.dead;
+    const dead = !!unit.dead;
+    const info = levelInfo(unit.xp || 0);
+    const damage = unit.weapon
+      ? Math.round(unit.weapon.damage * (unit.damageScale || 1))
+      : Math.round(unit.meleeDamage || 15);
     return {
       key: this.keyOf(unit),
-      name: unit.isLeader ? 'YOU' : unit.name,
-      role: (unit.isLeader ? 'leader' : unit.role || 'scavenger').toUpperCase(),
-      home: unit.isLeader ? null : unit.home?.def?.name || null,
-      hp: live ? this.state.health : unit.hp,
-      maxHp: live ? this.state.maxHealth : unit.maxHp,
+      name: unit.name,
+      role: (unit.role || 'scavenger').toUpperCase(),
+      home: unit.home?.def?.name || null,
+      hp: possessed ? this.state.health : unit.hp,
+      maxHp: possessed ? this.state.maxHealth : unit.maxHp,
       status: this.statusOf(unit),
-      armed: !!armed,
+      armed: !!unit.weapon,
       dead,
-      canControl: !dead,
-      canWork: !unit.isLeader && !dead && !possessed,
+      canControl: !dead && !unit.onExpedition && !this.state.dead,
+      canWork: !dead && !possessed && !unit.onExpedition,
+      level: info.level,
+      xp: info.xp,
+      xpNeed: info.need,
+      xpProgress: info.progress,
+      perk: perkFor(unit.role, info.level),
+      damage,
+      rangeText: unit.weapon ? `${Math.round(unit.weapon.range)}m` : 'MELEE',
+      speedText: (unit.speed || 0).toFixed(1),
+    };
+  }
+
+  enemyView(t) {
+    const names = { ghoul: 'GHOUL', raider: 'RAIDER', bat: 'BIO-BAT' };
+    return {
+      name: names[t.kind] || 'HOSTILE',
+      level: t.level || 1,
+      hp: t.hp,
+      maxHp: t.maxHp || 46,
+      damage: t.damage || 0,
+      range: t.range || 0,
+      speed: t.speed || 0,
     };
   }
 
   statusOf(unit) {
     if (!unit) return 'IDLE';
     if (unit.dead) return 'DOWN';
-    if (unit.isLeader || unit === this.player.possessedUnit) {
+    if (unit === this.player.possessedUnit) {
       return this.mode === 'direct' ? 'UNDER YOUR CONTROL' : 'TAKE CONTROL TO MOVE';
     }
     if (unit.manning) return 'ON THE GUARD POST';
+    if (unit.onExpedition) return 'ON EXPEDITION';
     if (unit.attention && !unit.job) return unit.attention;
     const job = unit.job;
     if (!job) {
@@ -173,20 +183,18 @@ export class Commander {
 
   roster() {
     return this.units()
-      .filter((u) => u.isLeader || !u.left)
       .map((u) => {
-      const v = this.view(u);
-      return {
-        key: v.key,
-        name: v.name,
-        initial: v.key === 'leader' ? 'A' : v.name.charAt(0),
-        hp: v.hp,
-        maxHp: v.maxHp,
-        dead: v.dead,
-        selected: this.selected ? this.keyOf(this.selected) === v.key : false,
-        leader: !!u.isLeader,
-      };
-    });
+        const v = this.view(u);
+        return {
+          key: v.key,
+          name: v.name,
+          initial: v.name.charAt(0),
+          hp: v.hp,
+          maxHp: v.maxHp,
+          dead: v.dead,
+          selected: this.selected ? this.keyOf(this.selected) === v.key : false,
+        };
+      });
   }
 
   // -------------------------------------------------------------------------
@@ -242,7 +250,7 @@ export class Commander {
   /** Unit-card role button: release a post, release the builder role, or become a builder. */
   toggleRole() {
     const unit = this.selected;
-    if (!unit || unit.isLeader || unit.dead || unit.possessed || this.state.dead) return;
+    if (!unit || unit.dead || unit.possessed || this.state.dead) return;
     this.campFolk.toggleRole(unit);
     this._lastKey = '';
     this.refresh(unit);
@@ -257,16 +265,12 @@ export class Commander {
     }
     const unit = this.selected;
     if (!unit || this.state.dead) return;
-    if (unit.isLeader) {
-      this._leaderHealth = this.state.health;
-      this._leaderMax = this.state.maxHealth;
-      this.setMode('direct');
-      this.onFollow();
-      this.ui.toast('YOU TAKE POINT');
-      return;
-    }
     if (unit.dead) {
       this.ui.toast(`${unit.name} IS DOWN`, true);
+      return;
+    }
+    if (unit.onExpedition) {
+      this.ui.toast(`${unit.name} IS AWAY ON AN EXPEDITION`, true);
       return;
     }
     this._leaderHealth = this.state.health;
@@ -282,7 +286,7 @@ export class Commander {
     this.onFollow();
     this.ui.updateHUD(this.state);
     this.ui.setAmmo(this.player.ammoState());
-    this.ui.toast(`YOU ARE ${unit.name}`);
+    this.ui.toast(`CONTROLLING ${unit.name}`);
   }
 
   release() {
@@ -294,10 +298,12 @@ export class Commander {
       unit.hp = Math.min(unit.maxHp, hp);
       unit.possessed = false;
     }
-    this.state.health = this._leaderHealth;
-    this.state.maxHealth = this._leaderMax;
-    this.selected = unit || this.leaderUnit;
-    this._lastKey = this.keyOf(this.selected);
+    this.selected = unit || this.units().find((u) => !u.dead) || null;
+    this._lastKey = this.selected ? this.keyOf(this.selected) : '';
+    if (this.selected) {
+      this.state.health = this.selected.hp;
+      this.state.maxHealth = this.selected.maxHp;
+    }
     this.setMode('command');
     this.onFollow();
     this.ui.updateHUD(this.state);
@@ -313,9 +319,12 @@ export class Commander {
     const name = unit.name;
     this.player.release();
     this.campFolk.down(unit);
-    this.state.health = this._leaderHealth;
-    this.state.maxHealth = this._leaderMax;
-    this.selected = null;
+    this.selected = this.units().find((u) => !u.dead) || null;
+    this._lastKey = this.selected ? this.keyOf(this.selected) : '';
+    if (this.selected) {
+      this.state.health = this.selected.hp;
+      this.state.maxHealth = this.selected.maxHp;
+    }
     this.setMode('command');
     this.onFollow();
     this.ui.updateHUD(this.state);
@@ -355,7 +364,7 @@ export class Commander {
     let best = null;
     let bestD = PICK_UNIT * PICK_UNIT;
     for (const unit of this.units()) {
-      if (unit.isLeader ? this.state.dead : unit.dead) continue;
+      if (unit.dead) continue;
       const pos = unit.rig.group.position;
       const s = this.screenOf(pos.x, pos.y + 0.95, pos.z);
       if (!s.on) continue;
@@ -391,7 +400,7 @@ export class Commander {
   }
 
   orderRepair(unit, building) {
-    if (!unit || unit.isLeader || unit.dead) {
+    if (!unit || unit.dead) {
       this.ui.hint('SELECT A SURVIVOR TO REPAIR', 1800);
       return;
     }
@@ -403,7 +412,7 @@ export class Commander {
   }
 
   orderBuild(unit, building) {
-    if (!unit || unit.isLeader || unit.dead) {
+    if (!unit || unit.dead) {
       this.ui.hint('SELECT A SURVIVOR TO BUILD', 1800);
       return;
     }
@@ -448,6 +457,7 @@ export class Commander {
       this.ui.buildOpen ||
       this.ui.wardrobeOpen ||
       this.ui.perfOpen ||
+      this.ui.campOpen ||
       this.ui.wireActive
     ) {
       return;
@@ -471,10 +481,9 @@ export class Commander {
     }
 
     if (!this.selected) {
+      const enemy = this.pickEnemy(clientX, clientY);
+      if (enemy) this.ui.showEnemyCard(this.enemyView(enemy));
       this.ui.hint('SELECT A SURVIVOR FIRST', 1800);
-      return;
-    }
-    if (this.selected.isLeader) {
       return;
     }
     if (this.selected.dead) {
@@ -517,6 +526,7 @@ export class Commander {
   }
 
   orderAttack(unit, target) {
+    this.ui.showEnemyCard(this.enemyView(target));
     if (!unit.weapon) {
       this.ui.toast(`${unit.name} IS UNARMED`, true);
       return;
@@ -555,7 +565,7 @@ export class Commander {
     if (this.selected && !this.state.dead) {
       const pos = this.selected.rig.group.position;
       this.ring.position.set(pos.x, heightAt(pos.x, pos.z) + 0.035, pos.z);
-      const dead = this.selected.isLeader ? this.state.dead : this.selected.dead;
+      const dead = this.selected.dead;
       this.ring.visible = this.mode === 'command' && !dead;
     } else {
       this.ring.visible = false;

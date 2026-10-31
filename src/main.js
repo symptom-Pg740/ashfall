@@ -6,6 +6,7 @@ import { createWasteland } from './props.js';
 import { ScrapField } from './resources.js';
 import { Player } from './player.js';
 import { Enemies } from './enemies.js';
+import { Bats } from './bats.js';
 import { Particles } from './particles.js';
 import { Settlement, BUILDINGS } from './settlement.js';
 import { Perf, QUALITY } from './perf.js';
@@ -13,12 +14,16 @@ import { UI } from './ui.js';
 import { Input } from './input.js';
 import { CampFolk } from './npcs.js';
 import { Raiders } from './raiders.js';
+import { EncounterField } from './encounters.js';
+import { CellSystem } from './cells.js';
+import { ExpeditionSystem } from './expeditions.js';
 import { Commander } from './commander.js';
 import { Armory } from './armory.js';
 import { RECIPES, COMPONENT_CAP, recipeCap, recipeStock } from './recipes.js';
 import { AudioFx } from './audio.js';
 import { DayCycle } from './daycycle.js';
 import { PowerNetwork } from './power.js';
+import { TradeNetwork } from './trade.js';
 import { BuildingCard } from './buildingcard.js';
 import { WireTool } from './wire.js';
 import { PathDebug } from './pathdebug.js';
@@ -28,9 +33,10 @@ import { readSave, writeSave, clearSave } from './save.js';
 import { itemLabel } from './wardrobe.js';
 import { WEAPONS } from './weapons.js';
 import { paint } from './geo.js';
-import { TargetRegistry } from './actors.js';
+import { TargetRegistry, canAttack } from './actors.js';
 import { Firearms } from './firearms.js';
 import { FX } from './fx.js';
+import { XP } from './levels.js';
 
 // ---------------------------------------------------------------------------
 // renderer / scene
@@ -125,12 +131,16 @@ applyCameraFraming();
 const fx = new FX(scene, renderer, activeCamera);
 
 const atmosphere = createAtmosphere(scene, renderer);
-createTerrain(scene);
+const terrainChunks = createTerrain(scene);
 const wasteland = createWasteland(scene, deriveSeed('wasteland'));
 const particles = new Particles(scene);
-const scrapField = new ScrapField(scene, deriveSeed('scrap'));
+const scrapField = new ScrapField(scene, deriveSeed('scrap'), { obstacles: wasteland.obstacles });
 const player = new Player(scene);
+// There is no separate "you" body in the world. The player controller is a camera anchor that
+// borrows a survivor's rig when you take control of them.
+player.group.visible = false;
 const enemies = new Enemies(scene, deriveSeed('enemies'));
+const bats = new Bats(scene, deriveSeed('bats'));
 const charStyle = new URLSearchParams(window.location.search).get('chars');
 const npcStyle = charStyle === 'blocky' ? 'blocky' : charStyle === 'smooth' ? 'smooth' : 'skinned';
 const campFolk = new CampFolk(scene, 6, {
@@ -144,6 +154,14 @@ const campFolk = new CampFolk(scene, 6, {
       : null) || { x: player.x, z: player.z, radius: 2.4 },
 });
 const raiders = new Raiders(scene, deriveSeed('raiders'));
+const encounters = new EncounterField({
+  seed: deriveSeed('encounters'),
+  enemies,
+  raiders,
+  bats,
+  obstacles: wasteland.obstacles,
+});
+encounters.build();
 
 const state = {
   started: false,
@@ -163,6 +181,7 @@ const state = {
   time: 0,
   lastDamage: -99,
   scrapCap: 80,
+  inCell: false,
 };
 
 const RELAY_HOLD = 90;
@@ -188,18 +207,8 @@ player.onDry = (name) => {
   audio.click();
 };
 
-// Shared target registry: the player, camp folk and ghouls all describe themselves the same way.
+// Shared target registry: survivors, raiders, ghouls and bats all describe themselves the same way.
 const registry = new TargetRegistry();
-const playerTarget = {
-  id: 'player',
-  faction: 'player',
-  x: 0, y: 0, z: 0,
-  hp: 100, maxHp: 100,
-  radius: 0.38,
-  height: 1.8,
-  dead: false,
-  hit: (damage) => damagePlayer(damage),
-};
 const playerAimActor = { x: 0, y: 0, z: 0, heading: 0 };
 const campTargets = campFolk.people.map((p, i) => ({
   id: `camp:${i}`,
@@ -210,38 +219,62 @@ const campTargets = campFolk.people.map((p, i) => ({
   height: 1.8,
   dead: false,
   ref: p,
-  hit: (damage) => campFolk.damage(i, damage),
+  hit: (damage) => (p.possessed ? damagePlayer(damage) : campFolk.damage(i, damage)),
 }));
 registry.add(enemies);
 registry.add({
   forEachTarget(cb) {
-    playerTarget.x = player.x;
-    playerTarget.y = player.pos.y;
-    playerTarget.z = player.z;
-    playerTarget.hp = state.health;
-    playerTarget.maxHp = state.maxHealth;
-    playerTarget.dead = state.dead;
-    if (!state.dead) cb(playerTarget);
-  },
-});
-registry.add({
-  forEachTarget(cb) {
     for (let i = 0; i < campFolk.people.length; i++) {
       const person = campFolk.people[i];
-      if (!person.active || person.dead || person.possessed) continue;
+      if (!person.active || person.dead || person.left) continue;
       const t = campTargets[i];
       const pos = person.rig.group.position;
       t.x = pos.x;
       t.y = pos.y;
       t.z = pos.z;
-      t.hp = person.hp;
-      t.maxHp = person.maxHp;
+      t.hp = person.possessed ? state.health : person.hp;
+      t.maxHp = person.possessed ? state.maxHealth : person.maxHp;
       t.dead = false;
       cb(t);
     }
   },
 });
 registry.add(raiders);
+registry.add(bats);
+
+/**
+ * Every living body a ghoul or a bat can bite. The hidden player camera anchor is deliberately
+ * absent: if nobody is standing there, there is nothing to attack.
+ */
+const _living = [];
+function livingTargets() {
+  _living.length = 0;
+  for (let i = 0; i < campFolk.people.length; i++) {
+    const person = campFolk.people[i];
+    if (!person.active || person.dead || person.left) continue;
+    const t = campTargets[i];
+    const pos = person.rig.group.position;
+    t.x = pos.x;
+    t.y = pos.y;
+    t.z = pos.z;
+    t.hp = person.possessed ? state.health : person.hp;
+    t.maxHp = person.possessed ? state.maxHealth : person.maxHp;
+    t.dead = false;
+    _living.push(t);
+  }
+  for (const r of raiders.people) {
+    if (!r.active || r.dead) continue;
+    const t = r.target;
+    const pos = r.rig.group.position;
+    t.x = pos.x;
+    t.y = pos.y;
+    t.z = pos.z;
+    t.hp = r.hp;
+    t.dead = false;
+    _living.push(t);
+  }
+  return _living;
+}
 
 const ui = new UI();
 const pathDebug = new PathDebug(scene);
@@ -283,6 +316,9 @@ const settlement = new Settlement({
   obstacles: wasteland.obstacles,
 });
 const power = new PowerNetwork({ scene, settlement, state, ui });
+const trade = new TradeNetwork({ settlement, state, ui, onSave: () => saveGame() });
+trade.onArrive = () => ui.hint('A CARAVAN IS WAITING AT THE TRADE POST', 4200);
+trade.onDepart = () => ui.toast('THE CARAVAN MOVES ON');
 const buildingCard = new BuildingCard({
   ui,
   settlement,
@@ -310,6 +346,46 @@ const wire = new WireTool({
 });
 buildingCard.wire = wire;
 buildingCard.commander = commander;
+buildingCard.trade = trade;
+const cells = new CellSystem({
+  scene,
+  terrainChunks,
+  wasteland,
+  settlement,
+  scrapField,
+  campFolk,
+  enemies,
+  raiders,
+  bats,
+  ui,
+  obstacles: wasteland.obstacles,
+});
+cells.onBite = (amount) => damagePlayer(amount);
+cells.onLoot = () => {
+  const scrap = 50;
+  const gained = grantScrap(scrap);
+  state.components = Math.min(COMPONENT_CAP, (state.components || 0) + 1);
+  ui.updateHUD(state);
+  ui.toast(`CAVE CACHE · +${gained} SCRAP · +1 COMPONENT`);
+  particles.burst(player.x, player.pos.y + 0.8, player.z, '#ffd88a', 18, 2.6);
+  saveGame();
+};
+registry.add(cells);
+const expeditions = new ExpeditionSystem({
+  campFolk,
+  settlement,
+  scrapField,
+  cells,
+  state,
+  ui,
+  onSave: () => saveGame(),
+  onLoot: (scrap, components) => {
+    const gained = grantScrap(scrap);
+    if (components) state.components = Math.min(COMPONENT_CAP, (state.components || 0) + components);
+    ui.updateHUD(state);
+    if (gained !== scrap) ui.toast('EXPEDITION LOOT · STORAGE WAS FULL', true);
+  },
+});
 commander.buildingCard = buildingCard;
 const nav = new NavGrid({ settlement, wasteland });
 campFolk.nav = nav;
@@ -360,6 +436,30 @@ campFolk.attachCombat({
 });
 raiders.attachCombat({ registry, firearms });
 raiders.settlement = settlement;
+raiders.onLoot = (kind, amount, building) => {
+  if (kind === 'scrap') {
+    const lost = Math.min(state.scrap, amount);
+    state.scrap -= lost;
+    ui.toast(`RAIDERS LOOTED ${lost} SCRAP`, true);
+  } else if (kind === 'water') {
+    const lost = Math.min(state.water, amount);
+    state.water -= lost;
+    ui.toast(`RAIDERS LOOTED ${lost} WATER`, true);
+  } else if (kind === 'food') {
+    const lost = Math.min(state.food, amount);
+    state.food -= lost;
+    ui.toast(`RAIDERS TOOK ${lost} FOOD`, true);
+  }
+  particles.burst(building.x, building.y + 1, building.z, '#c4644a', 10, 2.2);
+  ui.updateHUD(state);
+  saveGame();
+};
+raiders.onRetreat = (alive, total) => {
+  ui.toast(`RAIDERS BREAKING OFF · ${alive}/${total} LEFT`, true);
+};
+raiders.onEscape = (carry) => {
+  if (carry > 0) ui.hint('THE RAIDERS RUN WITH THEIR LOOT', 2400);
+};
 settlement.onBuildingDestroyed = (building) => {
   power.removeBuilding(building);
   if (building.type === 'campfire' && settlement.count('campfire') === 0) {
@@ -403,6 +503,17 @@ campFolk.onBuilderAssigned = (person, building) => {
 campFolk.onRoleChanged = (person, role) => {
   ui.toast(`${person.name} · ${role.toUpperCase()}`);
   if (commander.selected === person) commander.refresh(person);
+  saveGame();
+};
+campFolk.onLevelUp = (person, level) => {
+  ui.toast(`${person.name} · LEVEL ${level}`);
+  if (player.possessedUnit === person) {
+    player.damageScale = person.damageScale || 1;
+    state.maxHealth = person.maxHp;
+    state.health = Math.min(state.health, state.maxHealth);
+  }
+  if (commander.selected === person) commander.refresh(person);
+  ui.updateHUD(state);
   saveGame();
 };
 campFolk.isStorageFull = () => state.scrap >= (state.scrapCap || 80);
@@ -522,6 +633,7 @@ const input = new Input(canvas, activeCamera, {
     else if (ui.buildOpen) closeBuild();
     else if (ui.perfOpen) ui.togglePerf(false);
     else if (ui.wardrobeOpen) ui.toggleWardrobe(false);
+    else if (ui.campOpen) ui.toggleCamp(false);
     else if (buildingCard.open) buildingCard.close();
     else if (commander.selected) commander.clear();
   },
@@ -537,7 +649,9 @@ const input = new Input(canvas, activeCamera, {
     settlement.moveGhost(x, z, player);
     ui.setPlaceStatus(settlement.canPlace, settlement.reason);
   },
-  tap: (x, y) => commander.tapAt(x, y),
+  tap: (x, y) => {
+    if (!state.inCell) commander.tapAt(x, y);
+  },
 });
 
 function refreshWardrobe() {
@@ -555,10 +669,14 @@ window.__ashfall = {
   worldField,
   campFolk,
   raiders,
+  encounters,
   commander,
   power,
+  trade,
   buildingCard,
   wire,
+  cells,
+  expeditions,
   pathDebug,
   nav,
   run,
@@ -566,6 +684,7 @@ window.__ashfall = {
   buildings: BUILDINGS,
   player,
   enemies,
+  bats,
   firearms,
   fx,
   registry,
@@ -580,6 +699,7 @@ window.__ashfall = {
   scrapField,
   wasteland,
   input,
+  terrainChunks,
   actions: {
     doPlace,
     doGather,
@@ -599,17 +719,15 @@ window.__ashfall = {
     needs: () => campFolk.people.map((p) => ({ name: p.name, hunger: p.hunger, thirst: p.thirst, left: !!p.left, speed: p.speed })),
   },
 };
-let spawnAt = 0;
-let nextRaid = 70;
+let nextRaid = 55;
 let raidActive = false;
 let raidKind = 'raiders';
-let spawnWarned = false;
-let nextSpawnGap = 16;
 let resumedGame = false;
 let lastSave = 0;
 let cameraShake = 0;
 let hitStopTimer = 0;
 let lastUIUpdate = 0;
+let lastCampPaint = 0;
 let stressMesh = null;
 let boundaryWarned = false;
 
@@ -621,17 +739,58 @@ ui.on('started', () => {
   state.started = true;
   audio.start();
   input.setEnabled(true);
-  spawnAt = resumedGame ? Math.max(spawnAt, state.time + 8) : state.time + 45;
-  spawnWarned = false;
+  nextRaid = state.time + (resumedGame ? 45 : 55);
+  const first = commander.units().find((p) => !p.dead && !p.left);
+  if (first) commander.select(first);
   ui.hint('GOAL · BUILD A WORKSHOP · CRAFT 8 COMPONENTS · RAISE THE RELAY', 6500);
   ui.toast('THE WASTES ARE LISTENING');
   last = performance.now();
 });
 
-ui.on('unitControl', () => commander.toggleControl());
-ui.on('unitPost', () => commander.toggleRole());
-ui.on('unitClose', () => commander.clear());
-ui.on('rosterSelect', (key) => commander.selectKey(key));
+ui.on('unitControl', () => {
+  if (state.inCell) {
+    ui.toast('LEAVE THE CAVE FIRST', true);
+    return;
+  }
+  commander.toggleControl();
+});
+ui.on('unitPost', () => {
+  if (state.inCell) return;
+  commander.toggleRole();
+});
+ui.on('unitClose', () => {
+  if (state.inCell) return;
+  commander.clear();
+});
+ui.on('rosterSelect', (key) => {
+  if (state.inCell) return;
+  commander.selectKey(key);
+});
+ui.on('campRefresh', () => refreshCamp());
+ui.on('campSelect', (index) => {
+  const person = campFolk.people[index];
+  if (!person || person.onExpedition || person.dead) return;
+  commander.selectKey(`camp:${index}`);
+  ui.toggleCamp(false);
+});
+ui.on('campTarget', (id) => {
+  expeditions.selectTarget(id);
+  refreshCamp();
+});
+ui.on('campMember', (index) => {
+  expeditions.toggleMember(index);
+  refreshCamp();
+});
+ui.on('campLaunch', () => {
+  if (expeditions.launch()) {
+    if (commander.selected?.onExpedition) {
+      const next = commander.units().find((p) => !p.dead);
+      if (next) commander.select(next);
+      else commander.clear();
+    }
+    refreshCamp();
+  }
+});
 ui.on('buildingAction', (id) => buildingCard.action(id));
 ui.on('buildingSlot', (index) => buildingCard.slot(index));
 ui.on('buildingClose', () => buildingCard.close());
@@ -753,13 +912,14 @@ function pickQuality(coarse) {
 // ---------------------------------------------------------------------------
 
 function toggleBuild() {
-  if (!state.started || state.dead) return;
+  if (!state.started || state.dead || state.inCell) return;
   if (ui.buildOpen) {
     closeBuild();
     return;
   }
   wire.cancel(true);
   buildingCard.close();
+  ui.toggleCamp(false);
   if (commander.mode === 'command') commander.clear();
   settlement.cancel();
   ui.showBuildMenu(true);
@@ -775,7 +935,7 @@ function closeBuild() {
 }
 
 function selectBuilding(idOrIndex) {
-  if (!state.started || state.dead) return;
+  if (!state.started || state.dead || state.inCell) return;
   const def = typeof idOrIndex === 'number' ? BUILDINGS[idOrIndex] : BUILDINGS.find((b) => b.id === idOrIndex);
   if (!def) return;
   if (!ui.buildOpen) ui.showBuildMenu(true);
@@ -797,7 +957,7 @@ function cancelPlacement() {
 }
 
 function doPlace() {
-  if (!settlement.placing) return;
+  if (!settlement.placing || state.inCell) return;
   if (!settlement.canPlace) {
     ui.toast(settlement.reason || 'INVALID SPOT', true);
     return;
@@ -827,9 +987,20 @@ function doPlace() {
 }
 
 function doGather() {
-  if (!state.started || state.dead || settlement.placing) return;
+  if (!state.started || state.dead) return;
+  if (state.inCell) {
+    const action = cells.interact();
+    if (action === 'exit') leaveCell();
+    return;
+  }
+  if (settlement.placing) return;
   if (commander.mode !== 'direct') {
     ui.hint('TAKE CONTROL TO GATHER', 1600);
+    return;
+  }
+  const cave = cells.nearEntrance(player.x, player.z);
+  if (cave) {
+    enterCell(cave);
     return;
   }
   if (nearScrap < 0) {
@@ -850,6 +1021,42 @@ function doGather() {
   nearScrap = -1;
   ui.setGather(false);
   player.strike();
+  saveGame();
+}
+
+function enterCell(entrance) {
+  const unit = player.possessedUnit;
+  if (!unit) {
+    ui.toast('TAKE CONTROL TO ENTER', true);
+    return;
+  }
+  if (!cells.enter(entrance, unit, player)) return;
+  wire.cancel(true);
+  buildingCard.close();
+  if (ui.buildOpen) closeBuild();
+  state.inCell = true;
+  ui.setGather(false);
+  ui.toast('THE CAVE AIR IS COLD');
+  ui.hint('CLEAR THE CAVE · LOOT THE CACHE · RETURN TO THE LIGHT', 3600);
+  focus.set(player.x, 0, player.z);
+  camTarget.set(player.x, player.pos.y, player.z);
+  cameraReady = false;
+  cameraFollow = true;
+}
+
+function leaveCell() {
+  const unit = cells.exit();
+  state.inCell = false;
+  player.bounds = null;
+  player.floorY = null;
+  if (unit) {
+    focus.set(player.x, 0, player.z);
+    camTarget.set(player.x, player.pos.y, player.z);
+    cameraReady = false;
+    cameraFollow = true;
+  }
+  ui.setGather(false);
+  ui.toast('BACK IN THE DUST');
   saveGame();
 }
 
@@ -876,10 +1083,15 @@ function playerShoot() {
     ui.setAmmo(player.ammoState());
     return false;
   }
+  if (state.inCell) shot.ignoreStatic = true;
   const result = firearms.fire(player, shot);
   ui.setAmmo(player.ammoState());
   if (result.hit) ui.hitMarker(result.killed > 0);
-  if (result.killed) awardKills(result.killed);
+  if (result.killed) {
+    awardKills(result.killed);
+    const unit = player.possessedUnit;
+    if (unit) campFolk.awardXp(unit, XP.kill * result.killed, 'kill');
+  }
   cameraShake = Math.max(cameraShake, shot.weapon.shake);
   return true;
 }
@@ -890,19 +1102,32 @@ function doStrike() {
     ui.hint('TAKE CONTROL TO FIGHT', 1600);
     return;
   }
-  if (player.armed) {
+  const ammo = player.ammoState();
+  const dry = player.armed && ammo.mag <= 0 && !(ammo.reserve > 0);
+  if (player.armed && !dry) {
     playerShoot();
     return;
   }
   if (!player.strike()) return;
-  const hits = enemies.strike(player.x, player.z, 2.55, 34);
+  const hits = [];
+  registry.forEach((t) => {
+    if (!t || t.dead || !canAttack('player', t.faction)) return;
+    const radius = 2.55 + (t.radius || 0.35) * 0.5;
+    if (Math.hypot(t.x - player.x, t.z - player.z) > radius) return;
+    const killed = t.hit?.(34 * (player.damageScale || 1), player.x, player.z, 1) ?? false;
+    hits.push({ x: t.x, z: t.z, killed });
+  });
   if (hits.length) {
     let kills = 0;
     for (const hit of hits) {
       particles.burst(hit.x, heightAt(hit.x, hit.z) + 0.8, hit.z, hit.killed ? '#a8c07a' : '#c4644a', hit.killed ? 16 : 7, 2.2);
       if (hit.killed) kills++;
     }
-    if (kills) awardKills(kills);
+    if (kills) {
+      awardKills(kills);
+      const unit = player.possessedUnit;
+      if (unit) campFolk.awardXp(unit, XP.kill * kills, 'kill');
+    }
     cameraShake = Math.max(cameraShake, 0.3);
   }
 }
@@ -941,9 +1166,14 @@ function doStress(kind) {
     const spawned = enemies.spawn(20, player.x, player.z, 22);
     ui.toast(`STRESS · ${spawned} GHOULS INBOUND`);
     cameraShake = 0.2;
+  } else if (kind === 'bats') {
+    const spawned = bats.spawn(6, player.x, player.z, 18);
+    ui.toast(`STRESS · ${spawned} BATS INBOUND`);
+    cameraShake = 0.2;
   } else if (kind === 'clear') {
     if (stressMesh) stressMesh.count = 0;
     enemies.clear();
+    bats.clear();
     ui.toast('STRESS SCENE CLEARED');
   }
 }
@@ -963,6 +1193,7 @@ function damagePlayer(amount, fromX, fromZ) {
     cameraShake = Math.max(cameraShake, 0.35);
     if (state.health <= 0) {
       state.health = 0;
+      if (state.inCell) leaveCell();
       commander.downPossessed();
       return true;
     }
@@ -982,7 +1213,7 @@ function damagePlayer(amount, fromX, fromZ) {
     ui.showDeath(true);
     ui.setGather(false);
     ui.hideHint();
-    ui.toast('YOU DIED', true);
+    ui.toast('SURVIVOR DOWN', true);
     if (raidActive) ui.showRaidResult(false, 'THE CAMP IS OVERRUN');
     return true;
   }
@@ -1001,9 +1232,8 @@ function respawn() {
   ui.showDeath(false);
   ui.updateHUD(state);
   cameraShake = 0;
-  spawnAt = state.time + 25;
-  spawnWarned = false;
-  ui.hint('THE CAMP DRAGS YOU BACK', 2600);
+  nextRaid = state.time + 35;
+  ui.hint('THE CAMP CARRIES THEM BACK', 2600);
   saveGame();
 }
 
@@ -1012,7 +1242,7 @@ function respawn() {
 // ---------------------------------------------------------------------------
 
 function saveGame() {
-  if (!state.started || state.dead) return;
+  if (!state.started || state.dead || state.inCell) return;
   // While a survivor is possessed, `player.pos` and `state.health` belong to that survivor. Skip
   // the write instead of saving the leader on the wrong tile; release/down saves immediately.
   if (player.possessedUnit) return;
@@ -1040,6 +1270,10 @@ function saveGame() {
     units: campFolk.serialize(),
     scrap: scrapField.serialize(),
     power: power.serialize(),
+    trade: trade.serialize(),
+    encounters: encounters.serialize(),
+    cells: cells.serialize(),
+    expeditions: expeditions.serialize(),
     run: {
       activated: run.activated,
       assault: run.assault,
@@ -1051,8 +1285,6 @@ function saveGame() {
       reason: run.reason,
     },
     timers: {
-      spawnAt,
-      nextSpawnGap,
       prodTimer: settlement.prodTimer,
       houseTimer: settlement.houseTimer,
     },
@@ -1100,6 +1332,10 @@ function loadGame() {
   campFolk.restore(save.units, (id) => settlement.buildings.find((b) => b.id === id) || null);
   ui.setRoster(commander.roster());
   power.restore(save.power);
+  trade.restore(save.trade);
+  encounters.restore(save.encounters);
+  cells.restore(save.cells);
+  expeditions.restore(save.expeditions);
   if (save.run && typeof save.run === 'object') {
     run.activated = !!save.run.activated;
     run.assault = !!save.run.assault;
@@ -1120,8 +1356,6 @@ function loadGame() {
   }
   scrapField.restore(save.scrap);
   if (save.timers) {
-    spawnAt = num(save.timers.spawnAt, state.time + 45);
-    nextSpawnGap = num(save.timers.nextSpawnGap, 16);
     settlement.prodTimer = num(save.timers.prodTimer, 0);
     settlement.houseTimer = num(save.timers.houseTimer, 0);
   }
@@ -1350,18 +1584,28 @@ function collidePlayer() {
 // ---------------------------------------------------------------------------
 
 function raidRemaining() {
-  return raidKind === 'ghouls' ? enemies.activeCount : raiders.activeCount;
+  if (raidKind === 'ghouls') return enemies.activeCount;
+  if (raidKind === 'bats') return bats.activeCount;
+  return raiders.activeCount;
 }
 
-function startRaid(kind = 'raiders', count = 2, distance = 30) {
+function startRaid(kind = 'raiders', count = 2, distance = 30, level = 1, center = null) {
+  const opts = { level };
+  const cx = center?.x ?? player.x;
+  const cz = center?.z ?? player.z;
   const spawned = kind === 'ghouls'
-    ? enemies.spawn(count, player.x, player.z, distance)
-    : raiders.spawnWave(count, player.x, player.z, distance);
+    ? enemies.spawn(count, cx, cz, distance, opts)
+    : kind === 'bats'
+      ? bats.spawn(count, cx, cz, distance, opts)
+      : raiders.spawnWave(count, cx, cz, distance, opts);
   if (spawned) {
     raidActive = true;
     raidKind = kind;
     ui.setRaid(raidRemaining(), kind);
-    ui.hint(kind === 'ghouls' ? 'GHOULS IN THE DARK' : 'RAIDERS IN THE DUST', 3400);
+    ui.hint(
+      kind === 'ghouls' ? 'GHOULS IN THE DARK' : kind === 'bats' ? 'WINGS IN THE DARK' : 'RAIDERS IN THE DUST',
+      3400,
+    );
   }
   return spawned;
 }
@@ -1384,8 +1628,8 @@ function activateRelay(relay) {
   run.waveTimer = 20;
   run.powerWarned = false;
   raidActive = false;
-  raiders.spawnWave(4, relay.x, relay.z, 28);
-  enemies.spawn(5, relay.x, relay.z, 24);
+  raiders.spawnWave(4, relay.x, relay.z, 28, { level: 2 });
+  enemies.spawn(5, relay.x, relay.z, 24, { level: 2 });
   ui.setRaid(assaultRemaining(), 'assault');
   ui.hint('RELAY ONLINE · HOLD FOR 90 SECONDS', 4200);
   ui.toast('RELAY ACTIVATED');
@@ -1411,8 +1655,9 @@ function updateFinalAssault(dt) {
     run.wave++;
     run.waveTimer = 20;
     const raiderCount = Math.min(2, 5 - raiders.activeCount);
-    if (raiderCount > 0) raiders.spawnWave(raiderCount, relay.x, relay.z, 26);
-    enemies.spawn(3 + Math.min(4, Math.floor(run.wave / 2)), relay.x, relay.z, 26);
+    const waveLevel = Math.min(5, 2 + Math.floor(run.wave / 2));
+    if (raiderCount > 0) raiders.spawnWave(raiderCount, relay.x, relay.z, 26, { level: waveLevel });
+    enemies.spawn(3 + Math.min(4, Math.floor(run.wave / 2)), relay.x, relay.z, 26, { level: waveLevel });
     ui.hint(`WAVE ${run.wave} · HOLD THE RELAY`, 2400);
   }
   ui.setRaid(assaultRemaining(), 'assault');
@@ -1514,7 +1759,7 @@ function dawnTick(day) {
       p.hunger = (p.hunger || 0) + 1;
     }
     const unfed = p.hunger > 0 || p.thirst > 0;
-    p.speed = (p.baseSpeed || p.speed) * (unfed ? 0.8 : 1);
+    p.speed = p.baseSpeed * (unfed ? 0.8 : 1) * (1 + 0.02 * ((p.level || 1) - 1));
     if (p.thirst >= 2 || p.hunger >= 2) campFolk.leaveCamp(p, 'LEFT CAMP');
   }
   let living = campFolk.people.filter((p) => p.active && !p.dead).length;
@@ -1552,8 +1797,93 @@ function dawnTick(day) {
   saveGame();
 }
 
+function campCenter() {
+  return settlement.nearestOfType('campfire', 0, 0) || { x: 0, z: 0 };
+}
+
+function campView() {
+  const people = campFolk.people;
+  const living = people.filter((p) => p.active && !p.dead && !p.left && !p.onExpedition).length;
+  const cap = Math.min(6, 3 + settlement.count('house'));
+  const totalLiving = people.filter((p) => p.active && !p.dead && !p.left).length;
+  return {
+    summary: [
+      { label: 'DAY', value: String(state.day) },
+      { label: 'SURVIVORS', value: `${totalLiving}/${cap}` },
+      { label: 'AT CAMP', value: String(living) },
+      { label: 'SCRAP', value: `${state.scrap}/${state.scrapCap || 80}` },
+      { label: 'WATER', value: `${state.water}/${state.waterCap || 80}` },
+      { label: 'FOOD', value: `${state.food}/${state.foodCap || 80}` },
+    ],
+    survivors: people
+      .map((p, index) => ({ p, index }))
+      .filter(({ p }) => p.active && !p.left)
+      .map(({ p, index }) => ({
+        index,
+        name: p.name,
+        level: p.level || 1,
+        role: (p.role || 'scavenger').toUpperCase(),
+        home: p.home?.def?.name || null,
+        hp: Math.max(0, Math.round(p.hp)),
+        maxHp: Math.round(p.maxHp),
+        armed: !!p.weapon,
+        expedition: !!p.onExpedition,
+        hunger: p.hunger || 0,
+        thirst: p.thirst || 0,
+        selected: commander.selected === p,
+      })),
+    expedition: expeditions.view(),
+  };
+}
+
+function refreshCamp() {
+  if (ui.campOpen) ui.showCamp(campView());
+}
+
+/**
+ * With no leader body in the world, the player controller is just the camera anchor. In command
+ * mode it sits on the selected survivor (or the campfire when nothing is selected); taking control
+ * moves the anchor onto the borrowed rig instead.
+ */
+function updateCommandAnchor() {
+  const sel = commander.selected;
+  if (sel && sel.active && !sel.dead) {
+    const p = sel.rig.group.position;
+    player.pos.set(p.x, p.y, p.z);
+    player.heading = sel.rig.group.rotation.y;
+    player.targetHeading = player.heading;
+    return;
+  }
+  const fire = settlement.nearestOfType('campfire', player.x, player.z);
+  if (fire) {
+    player.pos.set(fire.x, heightAt(fire.x, fire.z), fire.z);
+  }
+}
+
+function simulateCell(dt) {
+  const move = commander.mode === 'direct' ? input.update() : { x: 0, z: 0 };
+  const wm = cameraRelativeMove(move.x, move.z);
+  playerAimActor.x = player.x;
+  playerAimActor.y = player.pos.y;
+  playerAimActor.z = player.z;
+  playerAimActor.heading = player.heading;
+  player.aim.update(dt, playerAimActor, registry, player.weapon);
+  player.update(dt, wm.x, wm.z);
+  ui.setWeapon(player.armed, player.weapon?.name);
+  ui.setAmmo(player.ammoState());
+  cells.update(dt, player);
+  fx.update(dt);
+  const action = cells.nearInteract(player.x, player.z);
+  ui.setGather(!!action, action || 'GATHER');
+  ui.setStrikeCooling(player.attackCooldown > 0.05 || player.reloadTimer > 0);
+}
+
 function simulate(dt) {
   if (run.over) return;
+  if (state.inCell) {
+    simulateCell(dt);
+    return;
+  }
   state.time += dt;
   const day = 1 + Math.floor(state.time / 360);
   if (day > state.day) {
@@ -1562,8 +1892,9 @@ function simulate(dt) {
   }
 
   if (state.dead) {
-    settlement.update(dt, state.time, player, enemies);
-    enemies.update(dt, player, settlement.buildings, wasteland.obstacles);
+    settlement.update(dt, state.time, player, enemies, bats);
+    enemies.update(dt, player, settlement.buildings, wasteland.obstacles, livingTargets);
+    bats.update(dt, state.time, player, livingTargets);
     fx.update(dt);
     if (state.time - state.deadAt > 2.4) respawn();
     return;
@@ -1572,19 +1903,21 @@ function simulate(dt) {
   const direct = commander.mode === 'direct';
   const move = direct ? input.update() : { x: 0, z: 0 };
   const wm = cameraRelativeMove(move.x, move.z);
-  playerAimActor.x = player.x;
-  playerAimActor.y = player.pos.y;
-  playerAimActor.z = player.z;
-  playerAimActor.heading = player.heading;
-  player.aim.update(dt, playerAimActor, registry, player.weapon);
-  player.update(dt, wm.x, wm.z);
-  if (!direct && player.armed && player.aim.target && player.aim.canFire) {
-    // The avatar fights for itself while you command; you can still take over at any time.
-    playerShoot();
+  if (direct) {
+    playerAimActor.x = player.x;
+    playerAimActor.y = player.pos.y;
+    playerAimActor.z = player.z;
+    playerAimActor.heading = player.heading;
+    player.aim.update(dt, playerAimActor, registry, player.weapon);
+    player.update(dt, wm.x, wm.z);
+    collidePlayer();
+    ui.setWeapon(player.armed, player.weapon?.name);
+    ui.setAmmo(player.ammoState());
+  } else {
+    updateCommandAnchor();
+    ui.setWeapon(false, '');
+    ui.setAmmo({ armed: false, mag: 0, reserve: 0, reloading: false });
   }
-  ui.setWeapon(player.armed, player.weapon?.name);
-  ui.setAmmo(player.ammoState());
-  collidePlayer();
 
   if (Math.hypot(player.x, player.z) > PLAY_RADIUS && !boundaryWarned) {
     boundaryWarned = true;
@@ -1593,41 +1926,46 @@ function simulate(dt) {
     boundaryWarned = false;
   }
 
-  settlement.update(dt, state.time, player, enemies);
-  enemies.update(dt, player, settlement.buildings, wasteland.obstacles);
+  settlement.update(dt, state.time, player, enemies, bats);
+  enemies.update(dt, player, settlement.buildings, wasteland.obstacles, livingTargets);
+  bats.update(dt, state.time, player, livingTargets);
   fx.update(dt);
 
-  // campfire / chapel healing + slow passive regen
-  if (settlement.isNearHealer(player.x, player.z)) {
-    state.health = Math.min(state.maxHealth, state.health + 3.2 * dt);
-  } else if (state.time - state.lastDamage > 6) {
-    state.health = Math.min(state.maxHealth, state.health + 0.7 * dt);
-  }
-
-  // spawn pressure pauses during the final assault
-  if (!run.assault && !spawnWarned && state.time > spawnAt - 8) {
-    spawnWarned = true;
-    ui.hint('MOVEMENT IN THE DUST — GHOULS INBOUND', 3200);
-  }
-  if (!run.assault && state.time > spawnAt) {
-    if (enemies.activeCount < enemies.maxActive) {
-      const night = dayCycle.daylight < 0.3;
-      const n = (1 + Math.floor(state.time / 110)) * (night ? 2 : 1);
-      enemies.spawn(Math.min(n, night ? 5 : 3), player.x, player.z, 32);
-      spawnAt = state.time + nextSpawnGap;
-      nextSpawnGap = Math.max(9, 17 - state.time / 90);
-    } else {
-      spawnAt = state.time + 5;
+  // campfire / chapel healing + slow passive regen, applied to the survivor you are following
+  const focus = player.possessedUnit || commander.selected;
+  if (focus && !focus.dead) {
+    const fx = focus.rig.group.position.x;
+    const fz = focus.rig.group.position.z;
+    const healing = settlement.isNearHealer(fx, fz);
+    const rate = healing ? 3.2 : state.time - state.lastDamage > 6 ? 0.7 : 0;
+    if (rate > 0) {
+      if (player.possessedUnit) {
+        state.health = Math.min(state.maxHealth, state.health + rate * dt);
+      } else {
+        focus.hp = Math.min(focus.maxHp, focus.hp + rate * dt);
+        state.health = focus.hp;
+        state.maxHealth = focus.maxHp;
+      }
     }
   }
 
-  // raider pressure: a small squad every minute or so
-  if (!run.assault && state.time > nextRaid) {
-    const n = 1 + Math.floor(state.time / 150);
-    const night = dayCycle.daylight < 0.3;
-    const kind = night ? 'ghouls' : 'raiders';
-    const spawned = startRaid(kind, Math.min(3, kind === 'ghouls' ? n + 1 : n), 30);
-    nextRaid = spawned ? state.time + 60 : state.time + 8;
+  // Camp events: occasional directed attacks, not a permanent trickle of spawns. The world
+  // encounters are handled by the groups scattered around the map.
+  if (!run.assault && !raidActive && state.time > nextRaid) {
+    const night = dayCycle.daylight < 0.35;
+    const roll = Math.random();
+    let kind;
+    if (night) kind = roll < 0.45 ? 'bats' : roll < 0.8 ? 'ghouls' : 'raiders';
+    else kind = roll < 0.4 ? 'raiders' : roll < 0.8 ? 'ghouls' : 'bats';
+    const pressure = 1 + Math.floor(state.time / 200);
+    const eventLevel = 1 + Math.min(4, Math.floor(state.day / 2) + Math.floor(state.time / 240));
+    const count = kind === 'raiders'
+      ? Math.min(4, 1 + Math.floor(pressure / 2))
+      : kind === 'bats'
+        ? Math.min(6, 2 + Math.floor(pressure / 2))
+        : Math.min(6, 2 + pressure);
+    const spawned = startRaid(kind, count, kind === 'bats' ? 24 : 30, eventLevel, campCenter());
+    nextRaid = spawned ? state.time + 80 + Math.random() * 45 : state.time + 10;
   }
 
   if (raidActive) {
@@ -1636,20 +1974,28 @@ function simulate(dt) {
     if (remaining === 0) {
       raidActive = false;
       ui.setRaid(0, raidKind);
-      grantScrap(10);
-      ui.updateHUD(state);
-      ui.toast('RAID CLEARED · +10 SCRAP');
-      ui.hint('THE DUST SETTLES — FOR NOW', 2600);
-      ui.showRaidResult(true, '+10 SCRAP · THE DUST SETTLES');
+      const stolen = raidKind === 'raiders' ? raiders.lootedValue : 0;
+      if (stolen > 0) {
+        ui.toast(`RAIDERS ESCAPED WITH ${stolen} RESOURCES`, true);
+        ui.hint('THEY TOOK WHAT THEY COULD CARRY', 2800);
+        ui.showRaidResult(false, `${stolen} STOLEN · CAMP DAMAGED`);
+      } else {
+        grantScrap(10);
+        ui.updateHUD(state);
+        ui.toast('RAID CLEARED · +10 SCRAP');
+        ui.hint('THE DUST SETTLES — FOR NOW', 2600);
+        ui.showRaidResult(true, '+10 SCRAP · THE DUST SETTLES');
+      }
       saveGame();
     }
   }
 
   if (run.assault) updateFinalAssault(dt);
 
-  // scavenge proximity
+  // scavenge / cave proximity
+  const cave = direct ? cells.nearEntrance(player.x, player.z) : null;
   nearScrap = scrapField.nearest(player.x, player.z, 2.7);
-  ui.setGather(direct && nearScrap >= 0 && !settlement.placing);
+  ui.setGather(direct && !settlement.placing && (cave || nearScrap >= 0), cave ? 'ENTER CAVE' : 'GATHER');
 
   if (settlement.placing) ui.setPlaceStatus(settlement.canPlace, settlement.reason);
   ui.setStrikeCooling(player.attackCooldown > 0.05 || player.reloadTimer > 0);
@@ -1698,21 +2044,40 @@ function loop(now) {
     // keep the firelight alive behind the start/death overlay
     state.time += dt;
     settlement.update(dt, state.time, player, null);
-    enemies.update(dt, player, settlement.buildings, wasteland.obstacles);
+    enemies.update(dt, player, settlement.buildings, wasteland.obstacles, livingTargets);
+    bats.update(dt, state.time, player, livingTargets);
   }
 
-  campFolk.update(dt, state.time, player, settlement.buildings);
-  raiders.update(dt, state.time, player);
+  if (!state.inCell) {
+    campFolk.update(dt, state.time, player, settlement.buildings);
+    // In command mode the vitals bar follows the selected survivor; taking control hands it to
+    // the borrowed rig's live health instead.
+    if (!player.possessedUnit) {
+      const sel = commander.selected;
+      if (sel && sel.active && !sel.dead) {
+        state.health = sel.hp;
+        state.maxHealth = sel.maxHp;
+      }
+    }
+    raiders.update(dt, state.time, player, livingTargets);
+    encounters.update(dt, player.x, player.z);
+    expeditions.update(dt);
+    pathDebug.update(campFolk.people, dt);
+    power.update(dt, dayInfo.daylight);
+    trade.update(dt);
+  }
   commander.update(dt);
   buildingCard.update(dt);
-  pathDebug.update(campFolk.people, dt);
-  power.update(dt, dayInfo.daylight);
   // Damage and passive regen change health outside the event-driven HUD paths.
   if (now - lastUIUpdate > 120) {
     lastUIUpdate = now;
     ui.updateHUD(state);
   }
-  if (state.started && !state.dead && now - lastSave > 5000) {
+  if (ui.campOpen && now - lastCampPaint > 500) {
+    lastCampPaint = now;
+    refreshCamp();
+  }
+  if (state.started && !state.dead && !state.inCell && now - lastSave > 5000) {
     lastSave = now;
     saveGame();
   }
@@ -1721,7 +2086,11 @@ function loop(now) {
   wasteland.updateWind(state.time);
   const wm = state.started ? cameraRelativeMove(input.move.x, input.move.z) : { x: 0, z: 0 };
   updateCamera(dt, wm.x, wm.z);
-  settlement.updateOcclusion(activeCamera, player, dt);
+  if (!state.inCell) {
+    terrainChunks.update(camTarget.x, camTarget.z);
+    wasteland.stream?.(camTarget.x, camTarget.z);
+    settlement.updateOcclusion(activeCamera, player, dt);
+  }
   ui.setCompass(yaw.current, !cameraFollow);
 
   ui.updateHUD(state);
@@ -1764,10 +2133,11 @@ ui.setQuality(initialQuality);
 
 if (new URLSearchParams(window.location.search).has('fresh')) clearSave(false);
 resumedGame = loadGame();
+if (!resumedGame || settlement.count('campfire') === 0) settlement.seedStartingCamp();
 ui.setResume(resumedGame);
 refreshWardrobe();
-ui.setWeapon(player.armed, player.weapon?.name);
-ui.setAmmo(player.ammoState());
+ui.setWeapon(false, '');
+ui.setAmmo({ armed: false, mag: 0, reserve: 0, reloading: false });
 ui.setRaid(0, 'raiders');
 if (resumedGame) {
   ui.updateHUD(state);
@@ -1834,6 +2204,9 @@ if (debugParams.has('raid')) {
 }
 if (debugParams.has('raidghoul')) {
   setTimeout(() => startRaid('ghouls', 3, 9), 1200);
+}
+if (debugParams.has('bats')) {
+  setTimeout(() => startRaid('bats', 4, 10), 1200);
 }
 if (debugParams.has('raidclear')) {
   setTimeout(() => {
@@ -1929,7 +2302,7 @@ if (debugParams.has('fastforward')) {
       if (!state.started) break;
       simulate(1 / 60);
       campFolk.update(1 / 60, state.time, player, settlement.buildings);
-      raiders.update(1 / 60, state.time, player);
+      raiders.update(1 / 60, state.time, player, livingTargets);
       fx.update(1 / 60);
     }
     ui.updateHUD(state);

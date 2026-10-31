@@ -11,9 +11,9 @@ export class UI {
       food: -1,
       waterCap: -1,
       foodCap: -1,
-      kills: -1,
       health: -1,
       canGather: null,
+      gatherLabel: '',
       canPlace: null,
       reason: '',
     };
@@ -23,6 +23,7 @@ export class UI {
     this.perfOpen = false;
     this.buildOpen = false;
     this.wardrobeOpen = false;
+    this.campOpen = false;
     this.buildingCardOpen = false;
     this.wireActive = false;
     this.perfLastHistory = 0;
@@ -31,6 +32,7 @@ export class UI {
     this.lastMag = 0;
     this.lastReserve = Infinity;
     this.lastReloading = false;
+    this.lastMelee = false;
     this.lastRaid = '';
     this.hitTimer = 0;
     this.commanderMode = 'command';
@@ -44,7 +46,7 @@ export class UI {
       scrap: document.getElementById('hud-scrap'),
       water: document.getElementById('hud-water'),
       food: document.getElementById('hud-food'),
-      kills: document.getElementById('hud-kills'),
+      power: document.getElementById('hud-power'),
       hpFill: document.getElementById('hp-fill'),
       hpText: document.getElementById('hp-text'),
       hint: document.getElementById('hint'),
@@ -68,6 +70,15 @@ export class UI {
       placeCancel: document.getElementById('place-cancel'),
       perfBtn: document.getElementById('perf-btn'),
       outfitBtn: document.getElementById('outfit-btn'),
+      campBtn: document.getElementById('camp-btn'),
+      campPanel: document.getElementById('camp-panel'),
+      campClose: document.getElementById('camp-close'),
+      campSummary: document.getElementById('camp-summary'),
+      campSurvivors: document.getElementById('camp-survivors'),
+      campExpeditions: document.getElementById('camp-expeditions'),
+      campTargets: document.getElementById('camp-targets'),
+      campTeam: document.getElementById('camp-team'),
+      campLaunch: document.getElementById('camp-launch'),
       wardrobePanel: document.getElementById('wardrobe-panel'),
       wardrobeList: document.getElementById('wardrobe-list'),
       armory: document.getElementById('armory'),
@@ -82,6 +93,17 @@ export class UI {
       unitRole: document.getElementById('unit-role'),
       unitHp: document.getElementById('unit-hp'),
       unitHpFill: document.getElementById('unit-hp-fill'),
+      unitLevel: document.getElementById('unit-level'),
+      unitXpText: document.getElementById('unit-xp-text'),
+      unitXpFill: document.getElementById('unit-xp-fill'),
+      unitStatsLine: document.getElementById('unit-stats-line'),
+      unitPerk: document.getElementById('unit-perk'),
+      enemyCard: document.getElementById('enemy-card'),
+      enemyName: document.getElementById('enemy-name'),
+      enemyLevel: document.getElementById('enemy-level'),
+      enemyHp: document.getElementById('enemy-hp'),
+      enemyHpFill: document.getElementById('enemy-hp-fill'),
+      enemyStats: document.getElementById('enemy-stats'),
       unitStatus: document.getElementById('unit-status'),
       unitControl: document.getElementById('unit-control'),
       unitPost: document.getElementById('unit-post'),
@@ -89,6 +111,7 @@ export class UI {
       gridDay: document.getElementById('grid-day'),
       gridClock: document.getElementById('grid-clock'),
       gridPower: document.getElementById('grid-power'),
+      gridStored: document.getElementById('grid-stored'),
       gridBarFill: document.getElementById('grid-bar-fill'),
       gridNote: document.getElementById('grid-note'),
       objective: document.getElementById('objective'),
@@ -242,6 +265,18 @@ export class UI {
       e.preventDefault();
       this.toggleWardrobe();
     });
+    this.el.campBtn?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.toggleCamp();
+    });
+    this.el.campClose?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.toggleCamp(false);
+    });
+    this.el.campLaunch?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.cb.campLaunch?.();
+    });
     this.el.unitControl?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -327,7 +362,7 @@ export class UI {
     });
 
     // Stop taps on UI chrome from ever reaching the world.
-    for (const root of [this.el.buildBar, this.el.perfPanel, this.el.wardrobePanel, document.querySelector('.hud-top'), document.querySelector('.actions'), document.querySelector('.joystick-wrap')]) {
+    for (const root of [this.el.buildBar, this.el.perfPanel, this.el.wardrobePanel, this.el.campPanel, document.querySelector('.hud-top'), document.querySelector('.actions'), document.querySelector('.joystick-wrap')]) {
       if (!root) continue;
       root.addEventListener('pointerdown', (e) => e.stopPropagation());
     }
@@ -343,19 +378,156 @@ export class UI {
   togglePerf(force) {
     this.perfOpen = typeof force === 'boolean' ? force : !this.perfOpen;
     this.el.perfPanel.classList.toggle('hidden', !this.perfOpen);
-    if (this.perfOpen) this.toggleWardrobe(false);
+    if (this.perfOpen) {
+      this.toggleWardrobe(false);
+      this.toggleCamp(false);
+    }
   }
 
   toggleWardrobe(force) {
     this.wardrobeOpen = typeof force === 'boolean' ? force : !this.wardrobeOpen;
     this.el.wardrobePanel.classList.toggle('hidden', !this.wardrobeOpen);
-    if (this.wardrobeOpen) this.togglePerf(false);
+    if (this.wardrobeOpen) {
+      this.togglePerf(false);
+      this.toggleCamp(false);
+    }
+  }
+
+  toggleCamp(force) {
+    this.campOpen = typeof force === 'boolean' ? force : !this.campOpen;
+    this.el.campPanel?.classList.toggle('hidden', !this.campOpen);
+    if (this.campOpen) {
+      this.togglePerf(false);
+      this.toggleWardrobe(false);
+      this.cb.campRefresh?.();
+    }
+  }
+
+  campRow({ tag = 'button', className = '', strong = '', small = '', right = '', onClick = null }) {
+    const row = document.createElement(tag);
+    row.className = `camp-row ${className}`.trim();
+    if (tag === 'button') row.type = 'button';
+    const left = document.createElement('div');
+    const head = document.createElement('strong');
+    head.textContent = strong;
+    left.appendChild(head);
+    if (small) {
+      const sub = document.createElement('small');
+      sub.textContent = small;
+      left.appendChild(sub);
+    }
+    const tail = document.createElement('span');
+    tail.textContent = right;
+    row.append(left, tail);
+    if (onClick) {
+      row.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      });
+    }
+    return row;
+  }
+
+  showCamp(view) {
+    if (!view || !this.el.campPanel) return;
+    this.el.campSummary.innerHTML = '';
+    for (const item of view.summary || []) {
+      const cell = document.createElement('div');
+      const label = document.createElement('small');
+      label.textContent = item.label;
+      const value = document.createElement('b');
+      value.textContent = item.value;
+      cell.append(label, value);
+      this.el.campSummary.appendChild(cell);
+    }
+
+    const survivors = this.el.campSurvivors;
+    survivors.innerHTML = '';
+    for (const p of view.survivors || []) {
+      const right = p.expedition ? 'AWAY' : `${p.hp}/${p.maxHp}`;
+      survivors.appendChild(this.campRow({
+        className: (p.expedition ? 'away ' : '') + (p.selected ? 'selected' : ''),
+        strong: `${p.name} · LV ${p.level}`,
+        small: `${p.role}${p.home ? ` · ${p.home}` : ''}${p.armed ? ' · ARMED' : ''} · F${p.hunger} W${p.thirst}`,
+        right,
+        onClick: p.expedition ? null : () => this.cb.campSelect?.(p.index),
+      }));
+    }
+    if (!view.survivors?.length) {
+      const empty = document.createElement('div');
+      empty.className = 'camp-empty';
+      empty.textContent = 'NO SURVIVORS';
+      survivors.appendChild(empty);
+    }
+
+    const missions = this.el.campExpeditions;
+    missions.innerHTML = '';
+    for (const m of view.expedition?.active || []) {
+      missions.appendChild(this.campRow({
+        tag: 'div',
+        strong: m.label,
+        small: `${m.phase} · ${m.members}`,
+        right: `${m.timer}S`,
+      }));
+    }
+    if (!view.expedition?.active?.length) {
+      const empty = document.createElement('div');
+      empty.className = 'camp-empty';
+      empty.textContent = `NO ACTIVE EXPEDITIONS · ${view.expedition?.slots || '0/2'} SLOTS`;
+      missions.appendChild(empty);
+    }
+
+    const targets = this.el.campTargets;
+    targets.innerHTML = '';
+    for (const t of view.expedition?.targets || []) {
+      targets.appendChild(this.campRow({
+        className: t.selected ? 'selected' : '',
+        strong: t.label,
+        small: `${t.detail} · ${t.dangerText}`,
+        right: `${Math.round(t.dist)}m`,
+        onClick: () => this.cb.campTarget?.(t.id),
+      }));
+    }
+    if (!view.expedition?.targets?.length) {
+      const empty = document.createElement('div');
+      empty.className = 'camp-empty';
+      empty.textContent = 'NO REACHABLE SALVAGE OR CAVES';
+      targets.appendChild(empty);
+    }
+
+    const team = this.el.campTeam;
+    team.innerHTML = '';
+    for (const p of view.expedition?.team || []) {
+      team.appendChild(this.campRow({
+        className: p.selected ? 'selected' : '',
+        strong: `${p.name} · LV ${p.level}`,
+        small: p.armed ? 'ARMED' : 'UNARMED',
+        right: p.selected ? 'ON TEAM' : '+ ADD',
+        onClick: () => this.cb.campMember?.(p.index),
+      }));
+    }
+    if (!view.expedition?.team?.length) {
+      const empty = document.createElement('div');
+      empty.className = 'camp-empty';
+      empty.textContent = 'NO FREE SURVIVORS';
+      team.appendChild(empty);
+    }
+
+    if (this.el.campLaunch) {
+      const slotsFull = view.expedition?.slots === '2/2';
+      this.el.campLaunch.disabled = !view.expedition?.canLaunch;
+      this.el.campLaunch.textContent = slotsFull
+        ? 'EXPEDITION SLOTS FULL'
+        : `LAUNCH EXPEDITION · ${view.expedition?.teamSize || '0/3'}`;
+    }
   }
 
   setWeapon(armed, name) {
     if (armed === this.lastArmed) return;
     this.lastArmed = armed;
-    this.el.strike.classList.toggle('is-firearm', !!armed);
+    if (!armed) this.lastMelee = false;
+    this.el.strike.classList.toggle('is-firearm', !!armed && !this.lastMelee);
     if (name) this.el.strike.title = name;
     this.renderStrikeLabel();
   }
@@ -363,15 +535,17 @@ export class UI {
   setAmmo(state) {
     if (!this.el.ammo || !this.el.ammoChip) return;
     const reserve = state.reserve;
+    const melee = state.melee ?? (!!state.armed && state.mag <= 0 && !(reserve > 0));
     this.lastArmed = state.armed;
+    this.lastMelee = melee;
     this.lastMag = state.mag;
     this.lastReserve = reserve;
     this.lastReloading = !!state.reloading;
-    this.el.strike.classList.toggle('is-firearm', !!state.armed);
-    const key = `${state.armed}|${state.mag}|${reserve}|${state.reloading}`;
+    this.el.strike.classList.toggle('is-firearm', !!state.armed && !melee);
+    const key = `${state.armed}|${state.mag}|${reserve}|${state.reloading}|${melee}`;
     if (key !== this.lastAmmo) {
       this.lastAmmo = key;
-      this.el.ammoChip.classList.toggle('hidden', !state.armed);
+      this.el.ammoChip.classList.toggle('hidden', !state.armed || melee);
       this.el.ammoChip.classList.toggle('reloading', !!state.reloading);
       this.el.ammoChip.classList.toggle('dry', state.armed && state.mag <= 0 && reserve <= 0);
       const mag = state.reloading ? '··' : String(state.mag);
@@ -383,9 +557,10 @@ export class UI {
   renderStrikeLabel() {
     const label = this.el.strike.querySelector('span:last-child');
     if (!label) return;
-    if (!this.lastArmed) label.textContent = 'STRIKE';
+    if (!this.lastArmed || this.lastMelee) label.textContent = 'STRIKE';
     else if (this.lastReloading) label.textContent = 'RELOAD';
-    else if (this.lastMag <= 0 && this.lastReserve <= 0) label.textContent = 'EMPTY';
+    else if (this.lastMag <= 0 && this.lastReserve <= 0) label.textContent = 'STRIKE';
+    else if (this.lastMag <= 0) label.textContent = 'RELOAD';
     else if (Number.isFinite(this.lastReserve)) label.textContent = `FIRE ${this.lastMag}/${this.lastReserve}`;
     else label.textContent = `FIRE ${this.lastMag}`;
   }
@@ -443,14 +618,24 @@ export class UI {
   }
 
   setPower(info) {
-    if (!this.el.gridPower || !info) return;
+    if (!info) return;
     const key = `${info.output.toFixed(1)}|${info.demand.toFixed(1)}|${Math.round(info.battery)}|${info.capacity}|${info.powered}|${info.hasGrid}|${info.note}`;
     if (key === this._powerKey) return;
     this._powerKey = key;
-    this.el.gridPower.textContent = `${info.output.toFixed(1)} / ${info.demand.toFixed(1)}`;
-    const fill = info.capacity > 0 ? info.battery / info.capacity : info.powered ? 1 : 0;
-    this.el.gridBarFill.style.width = `${Math.max(0, Math.min(100, fill * 100))}%`;
-    this.el.gridNote.textContent = info.note;
+    if (this.el.power) {
+      this.el.power.textContent = info.output.toFixed(1);
+      this.el.power.parentElement?.setAttribute(
+        'title',
+        `Energy production ${info.output.toFixed(1)} · stored ${Math.round(info.battery)}/${Math.round(info.capacity)}`,
+      );
+    }
+    if (this.el.gridPower) this.el.gridPower.textContent = info.output.toFixed(1);
+    if (this.el.gridStored) this.el.gridStored.textContent = `${Math.round(info.battery)} / ${Math.round(info.capacity)}`;
+    if (this.el.gridBarFill) {
+      const fill = info.capacity > 0 ? info.battery / info.capacity : info.powered ? 1 : 0;
+      this.el.gridBarFill.style.width = `${Math.max(0, Math.min(100, fill * 100))}%`;
+    }
+    if (this.el.gridNote) this.el.gridNote.textContent = info.note;
     this.el.gridPanel?.classList.toggle('low', !!info.hasGrid && !info.powered);
   }
 
@@ -472,6 +657,21 @@ export class UI {
     this.el.unitHp.textContent = `${Math.max(0, Math.round(view.hp))}/${Math.round(view.maxHp)}`;
     this.el.unitHpFill.style.width = `${Math.max(0, Math.min(100, (view.hp / view.maxHp) * 100))}%`;
     this.el.unitStatus.textContent = view.status;
+    if (this.el.unitLevel) this.el.unitLevel.textContent = String(view.level || 1);
+    if (this.el.unitXpText) {
+      this.el.unitXpText.textContent =
+        view.xpNeed > 0 ? `${Math.round(view.xp || 0)}/${view.xpNeed} XP` : 'MAX LEVEL';
+    }
+    if (this.el.unitXpFill) {
+      this.el.unitXpFill.style.width = `${Math.max(0, Math.min(100, (view.xpProgress || 0) * 100))}%`;
+    }
+    if (this.el.unitStatsLine) {
+      this.el.unitStatsLine.textContent = `DMG ${view.damage ?? '—'} · RNG ${view.rangeText || '—'} · SPD ${view.speedText || '—'}`;
+    }
+    if (this.el.unitPerk) {
+      this.el.unitPerk.textContent = view.perk || '';
+      this.el.unitPerk.classList.toggle('hidden', !view.perk);
+    }
     this.el.unitControl.disabled = !view.canControl;
     this.el.unitControl.textContent = mode === 'direct' ? 'RELEASE' : 'TAKE CONTROL';
     this.el.unitControl.classList.toggle('release', mode === 'direct');
@@ -491,6 +691,20 @@ export class UI {
 
   hideUnitCard() {
     this.el.unitCard?.classList.add('hidden');
+  }
+
+  /** Brief inspection card when a hostile is tapped. */
+  showEnemyCard(info) {
+    if (!info || !this.el.enemyCard) return;
+    this.el.enemyName.textContent = info.name || 'HOSTILE';
+    this.el.enemyLevel.textContent = `LV ${info.level || 1}`;
+    this.el.enemyHp.textContent = `${Math.max(0, Math.round(info.hp))}/${Math.round(info.maxHp || 1)}`;
+    this.el.enemyHpFill.style.width = `${Math.max(0, Math.min(100, (info.hp / (info.maxHp || 1)) * 100))}%`;
+    const range = info.range ? `${Math.round(info.range)}m` : 'MELEE';
+    this.el.enemyStats.textContent = `DMG ${Math.round((info.damage || 0) * 10) / 10} · ${range} · SPD ${(info.speed || 0).toFixed(1)}`;
+    this.el.enemyCard.classList.remove('hidden');
+    clearTimeout(this.enemyCardTimer);
+    this.enemyCardTimer = setTimeout(() => this.el.enemyCard.classList.add('hidden'), 2800);
   }
 
   // -------------------------------------------------------------------------
@@ -679,7 +893,7 @@ export class UI {
     if (count > 0 && this.el.raidCount) this.el.raidCount.textContent = String(count);
     if (this.el.raidKind) {
       this.el.raidKind.textContent =
-        kind === 'ghouls' ? 'GHOULS' : kind === 'assault' ? 'FINAL ASSAULT' : 'RAIDERS';
+        kind === 'ghouls' ? 'GHOULS' : kind === 'bats' ? 'BATS' : kind === 'assault' ? 'FINAL ASSAULT' : 'RAIDERS';
     }
   }
 
@@ -994,10 +1208,6 @@ export class UI {
       this.last.foodCap = foodCap;
       this.el.food.textContent = `${state.food}/${foodCap}`;
     }
-    if (state.kills !== this.last.kills) {
-      this.last.kills = state.kills;
-      this.el.kills.textContent = String(state.kills);
-    }
     const hp = Math.max(0, Math.round(state.health));
     if (hp !== this.last.health) {
       this.last.health = hp;
@@ -1006,10 +1216,13 @@ export class UI {
     }
   }
 
-  setGather(visible) {
-    if (visible === this.last.canGather) return;
+  setGather(visible, label = 'GATHER') {
+    if (visible === this.last.canGather && label === this.last.gatherLabel) return;
     this.last.canGather = visible;
+    this.last.gatherLabel = label;
     this.el.gather.classList.toggle('hidden', !visible);
+    const text = this.el.gather.querySelector('span:last-child');
+    if (text) text.textContent = label;
   }
 
   setStrikeCooling(cooling) {

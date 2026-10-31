@@ -48,9 +48,9 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V8" /><path d="M12 12c-3 0-5-2-5-5 3 0 5 2 5 5z" /><path d="M12 16c-3 0-5-2-5-5 3 0 5 2 5 5z" /><path d="M12 12c3 0 5-2 5-5-3 0-5 2-5 5z" /><path d="M12 16c3 0 5-2 5-5-3 0-5 2-5 5z" /></svg>
             <b id="hud-food">4</b><small>FOOD</small>
           </div>
-          <div class="res-chip" id="kills-chip" title="Ghouls put down">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a7 7 0 0 0-7 7v4l2 2v4h3v-3h4v3h3v-4l2-2v-4a7 7 0 0 0-7-7z" /><circle cx="9" cy="11" r="1.2" /><circle cx="15" cy="11" r="1.2" /></svg>
-            <b id="hud-kills">0</b><small>PUT DOWN</small>
+          <div class="res-chip" id="power-chip" title="Energy production and stored power">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
+            <b id="hud-power">0.0</b><small>POWER</small>
           </div>
           <div class="res-chip hidden" id="ammo-chip" title="Magazine">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16H7z" /><path d="M9 4v6h6V4M9 20v-6h6v6" /></svg>
@@ -81,6 +81,7 @@
               <path class="fs-compress" d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />
             </svg>
           </button>
+          <button id="camp-btn" class="perf-btn" aria-label="Camp operations">CAMP</button>
           <button id="outfit-btn" class="perf-btn" aria-label="Wardrobe">OUTFIT</button>
           <button id="perf-btn" class="perf-btn" aria-label="Performance panel">PERF</button>
         </div>
@@ -130,6 +131,14 @@
       <div id="raid-banner" class="raid-banner hidden" role="status">
         <span>RAID</span><b id="raid-count">2</b><small id="raid-kind">RAIDERS</small>
       </div>
+      <div id="enemy-card" class="enemy-card hidden" role="status">
+        <header><span id="enemy-name">GHOUL</span><b id="enemy-level">LV 1</b></header>
+        <div class="unit-hp"><i id="enemy-hp-fill"></i></div>
+        <div class="enemy-meta">
+          <span id="enemy-hp">46/46</span>
+          <span id="enemy-stats">DMG 4.5 · MELEE · SPD 1.5</span>
+        </div>
+      </div>
 
       <!-- command layer -->
       <div id="roster-bar" class="roster-bar">
@@ -145,6 +154,13 @@
           <b id="unit-hp">100</b>
         </div>
         <div class="unit-hp"><i id="unit-hp-fill"></i></div>
+        <div class="unit-level-row">
+          <span>LV <b id="unit-level">1</b></span>
+          <span id="unit-xp-text">0 XP</span>
+        </div>
+        <div class="unit-xp"><i id="unit-xp-fill"></i></div>
+        <div class="unit-stats-line" id="unit-stats-line">DMG — · RNG — · SPD —</div>
+        <p id="unit-perk" class="unit-perk hidden"></p>
         <p id="unit-status">IDLE</p>
         <button id="unit-post" class="unit-control alt hidden" type="button">MAKE BUILDER</button>
         <button id="unit-control" class="unit-control" type="button">TAKE CONTROL</button>
@@ -175,7 +191,8 @@
 
       <div id="grid-panel" class="grid-panel" aria-label="Time of day and power">
         <div class="grid-row"><span id="grid-day">DAY 1</span><b id="grid-clock">09:00</b></div>
-        <div class="grid-row grid-power-row"><span>POWER</span><b id="grid-power">0 / 0</b></div>
+        <div class="grid-row grid-power-row"><span>ENERGY PROD</span><b id="grid-power">0.0</b></div>
+        <div class="grid-row grid-power-row"><span>STORED POWER</span><b id="grid-stored">0 / 0</b></div>
         <div class="grid-bar"><i id="grid-bar-fill"></i></div>
         <p id="grid-note">NO GRID</p>
       </div>
@@ -270,6 +287,7 @@
           <div class="stress-row">
             <button data-stress="debris">+100 DEBRIS</button>
             <button data-stress="ghouls">+20 GHOULS</button>
+            <button data-stress="bats">+6 BATS</button>
             <button data-stress="clear">CLEAR</button>
           </div>
         </div>
@@ -284,6 +302,32 @@
         </div>
 
         <p class="perf-note">All geometry is procedural. If FPS drops, adaptive resolution rescales the canvas before touching the scene.</p>
+      </section>
+
+      <!-- camp operations -->
+      <section id="camp-panel" class="wardrobe-panel camp-panel hidden" aria-label="Camp operations">
+        <header>
+          <span>CAMP OPERATIONS</span>
+          <button id="camp-close" class="mini-x" aria-label="Close camp panel">✕</button>
+        </header>
+        <div id="camp-summary" class="camp-summary"></div>
+        <div class="camp-section">
+          <span class="group-label">SURVIVORS</span>
+          <div id="camp-survivors" class="camp-list"></div>
+        </div>
+        <div class="camp-section">
+          <span class="group-label">EXPEDITIONS</span>
+          <div id="camp-expeditions" class="camp-list"></div>
+        </div>
+        <div class="camp-section">
+          <span class="group-label">DESTINATION</span>
+          <div id="camp-targets" class="camp-list"></div>
+        </div>
+        <div class="camp-section">
+          <span class="group-label">TEAM</span>
+          <div id="camp-team" class="camp-list"></div>
+        </div>
+        <button id="camp-launch" class="unit-control" type="button">LAUNCH EXPEDITION</button>
       </section>
 
       <!-- wardrobe -->
@@ -310,7 +354,7 @@
         <span id="raid-result-sub">+10 SCRAP · THE DUST SETTLES</span>
       </div>
       <div id="death-screen" class="death-screen hidden">
-        <strong>YOU DIED</strong>
+        <strong>SURVIVOR DOWN</strong>
         <span>the wastes remember</span>
       </div>
       <div id="flash"></div>

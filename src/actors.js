@@ -18,9 +18,10 @@ export function shortestAngle(from, to) {
 /** Faction pairs that can damage each other. Friendly fire is intentionally off. */
 export function canAttack(a, b) {
   if (!a || !b || a === b) return false;
-  if (a === 'player') return b === 'hostile';
-  if (a === 'camp') return b === 'hostile';
-  if (a === 'hostile') return b === 'player' || b === 'camp';
+  if (a === 'player') return b === 'hostile' || b === 'raider';
+  if (a === 'camp') return b === 'hostile' || b === 'raider';
+  if (a === 'raider') return b === 'player' || b === 'camp';
+  if (a === 'hostile') return b === 'player' || b === 'camp' || b === 'raider';
   return false;
 }
 

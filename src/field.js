@@ -88,7 +88,7 @@ export class WorldField {
 
   /** 0..1 winding road mask, matching the dirt tracks drawn into the terrain colours. */
   roadAtRaw(x, z) {
-    if (Math.abs(z) > 88) return 0;
+    if (Math.abs(z) > 400) return 0;
     const roadX = Math.sin(z * 0.052) * 8 + Math.cos(z * 0.021) * 4;
     const roadZ = 3 + Math.sin(x * 0.055 + 0.5) * 2.5;
     const wobble = Math.sin(z * 0.7 + x * 0.3) * 0.5;
@@ -113,12 +113,12 @@ export class WorldField {
     let h = (broad + base + dunes * relief + detail) * (0.1 + 0.9 * relief);
 
     // Ridged relief only at the outer ring, so the camp stays buildable.
-    const rim = smoothstep(32, 72, d);
-    h += this.ridged(wx * 0.022, wz * 0.022, 4, 59) * 4.2 * rim * 0.6;
+    const rim = smoothstep(36, 330, d);
+    h += this.ridged(wx * 0.022, wz * 0.022, 4, 59) * 9.0 * rim * 0.6;
 
     // Soft terraces on the rim: mesas/badlands without cliffs inside the camp.
-    const terraced = Math.round(h * 1.3) / 1.3;
-    h += (terraced - h) * rim * 0.45;
+    const terraced = Math.round(h * 1.2) / 1.2;
+    h += (terraced - h) * rim * 0.5;
 
     // Shallow camp basin and a slight road depression.
     h -= (1 - smoothstep(6, 18, d)) * 0.35;

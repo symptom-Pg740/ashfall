@@ -67,6 +67,7 @@ export class Firearms {
    */
   fire(actor, shot) {
     const weapon = shot.weapon;
+    const damage = shot.damage ?? weapon?.damage ?? 0;
     const muzzle = this.muzzleWorld(actor, _muzzle);
     if (!muzzle || !weapon) return { hit: false, killed: 0, x: 0, z: 0 };
 
@@ -113,14 +114,14 @@ export class Firearms {
             _pellet.x, _pellet.y, _pellet.z,
             weapon.range,
           );
-      const staticHit = this.raycastStatic(_origin, _pellet, weapon.range, ignoreBuilding);
+      const staticHit = shot.ignoreStatic ? null : this.raycastStatic(_origin, _pellet, weapon.range, ignoreBuilding);
       const targetT = targetHit ? targetHit.t : Infinity;
       const enemyT = enemyHit ? enemyHit.t : Infinity;
       const staticT = staticHit ? staticHit.t : Infinity;
 
       if (targetHit && targetT <= staticT) {
         const target = targetHit.target;
-        const killed = target.hit ? target.hit(weapon.damage, actor.x, actor.z, 0.35) : false;
+        const killed = target.hit ? target.hit(damage, actor.x, actor.z, 0.35) : false;
         hitAny = true;
         if (killed) kills++;
         this._impact.copy(targetHit.point);
@@ -136,12 +137,12 @@ export class Firearms {
           normal: _normal,
           visualSpeed: weapon.visualSpeed,
         });
-        this._addDamage(damageByTarget, target.id, weapon.damage, killed, this._impact);
+        this._addDamage(damageByTarget, target.id, damage, killed, this._impact);
         if (!impactEvent) {
           impactEvent = { surface: 'flesh', x: this._impact.x, y: this._impact.y, z: this._impact.z };
         }
       } else if (enemyHit && enemyT <= staticT) {
-        const killed = this.enemies.damage(enemyHit.index, weapon.damage, actor.x, actor.z, 0.35);
+        const killed = this.enemies.damage(enemyHit.index, damage, actor.x, actor.z, 0.35);
         hitAny = true;
         if (killed) kills++;
         this._impact.copy(enemyHit.point);
@@ -156,7 +157,7 @@ export class Firearms {
           normal: _normal,
           visualSpeed: weapon.visualSpeed,
         });
-        this._addDamage(damageByTarget, `ghoul:${enemyHit.index}`, weapon.damage, killed, this._impact);
+        this._addDamage(damageByTarget, `ghoul:${enemyHit.index}`, damage, killed, this._impact);
         if (!impactEvent) {
           impactEvent = { surface: 'flesh', x: this._impact.x, y: this._impact.y, z: this._impact.z };
         }

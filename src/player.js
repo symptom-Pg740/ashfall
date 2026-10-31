@@ -1,4 +1,4 @@
-import { heightAt } from './terrain.js';
+import { heightAt, PLAY_RADIUS } from './terrain.js';
 import { damp, clamp, deriveSeed } from './rng.js';
 import { buildSkinnedHumanoid } from './skinned.js';
 import { baseHeadGeometry } from './baseHead.js';
@@ -6,7 +6,7 @@ import { AimController } from './aim.js';
 import { WEAPONS } from './weapons.js';
 
 const SPEED = 4.15;
-const MAX_RADIUS = 52;
+const MAX_RADIUS = PLAY_RADIUS - 2;
 
 export class Player {
   constructor(scene) {
@@ -62,6 +62,9 @@ export class Player {
     this.weapon = WEAPONS[this.weaponId] || null;
     this.mag = this.weapon ? this.weapon.magazine : 0;
     this.reserve = Infinity;
+    this.damageScale = 1;
+    this.bounds = null;
+    this.floorY = null;
     this.reloadTimer = 0;
     this.recoil = 0;
     this.aim = new AimController({
@@ -107,6 +110,7 @@ export class Player {
       phase: this.phase,
       moving: this.moving,
       hitTimer: this.hitTimer,
+      damageScale: this.damageScale,
     };
     this.rig = unit.rig;
     this.group = unit.rig.group;
@@ -130,6 +134,7 @@ export class Player {
     this.targetHeading = this.heading;
     this.phase = 0;
     this.moving = 0;
+    this.damageScale = unit.damageScale || 1;
     this.aim.setRange(this.weapon?.range || 22);
     this.aim.target = null;
     this.aim._initialised = false;
@@ -179,6 +184,7 @@ export class Player {
     this.phase = s.phase;
     this.moving = s.moving;
     this.hitTimer = s.hitTimer;
+    this.damageScale = s.damageScale;
     this.aim.setRange(this.weapon?.range || 22);
     this.aim.target = null;
     this.aim._initialised = false;
@@ -276,12 +282,17 @@ export class Player {
       const nx = moveX / len;
       const nz = moveZ / len;
       const speed = SPEED * (this.weapon?.moveScale ?? 1) * (this.attackTime > 0 ? 0.55 : 1);
-      this.pos.x = clamp(this.pos.x + nx * speed * dt, -MAX_RADIUS, MAX_RADIUS);
-      this.pos.z = clamp(this.pos.z + nz * speed * dt, -MAX_RADIUS, MAX_RADIUS);
-      const d = Math.hypot(this.pos.x, this.pos.z);
-      if (d > MAX_RADIUS) {
-        this.pos.x *= MAX_RADIUS / d;
-        this.pos.z *= MAX_RADIUS / d;
+      this.pos.x += nx * speed * dt;
+      this.pos.z += nz * speed * dt;
+      if (this.bounds) {
+        this.pos.x = clamp(this.pos.x, this.bounds.minX, this.bounds.maxX);
+        this.pos.z = clamp(this.pos.z, this.bounds.minZ, this.bounds.maxZ);
+      } else {
+        const d = Math.hypot(this.pos.x, this.pos.z);
+        if (d > MAX_RADIUS) {
+          this.pos.x *= MAX_RADIUS / d;
+          this.pos.z *= MAX_RADIUS / d;
+        }
       }
       this.targetHeading = Math.atan2(nx, nz);
       this.phase += dt * (7.6 + this.moving * 1.2);
@@ -290,7 +301,7 @@ export class Player {
     }
     if (this.weapon && this.aim.target) this.targetHeading = this.aim.aimYaw;
 
-    this.pos.y = heightAt(this.pos.x, this.pos.z);
+    this.pos.y = this.floorY ?? heightAt(this.pos.x, this.pos.z);
 
     // shortest-arc heading damp
     let diff = this.targetHeading - this.heading;
@@ -377,7 +388,7 @@ export class Player {
       this.reloadTimer = this.weapon.reload;
       this.onReload?.(this.weapon.id);
     }
-    return { weapon: this.weapon, aimPoint: this.aim.target ? this.aim.targetPoint : null };
+    return { weapon: this.weapon, aimPoint: this.aim.target ? this.aim.targetPoint : null, damage: this.weapon.damage * (this.damageScale || 1) };
   }
 
   /** Called when the reload timer completes: top up from the reserve. */

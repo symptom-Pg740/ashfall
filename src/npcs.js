@@ -5,6 +5,8 @@ import { WEAPONS } from './weapons.js';
 import { heightAt } from './terrain.js';
 import { makeRng, deriveSeed, damp } from './rng.js';
 import { RECIPES } from './recipes.js';
+import { canAttack } from './actors.js';
+import { levelInfo, perkFor, statScale, XP } from './levels.js';
 
 const NAMES = ['MARA', 'SILAS', 'REN', 'ODA', 'JUNO', 'KADE'];
 
@@ -110,6 +112,14 @@ export class CampFolk {
         timer: rng.range(0.5, 3),
         speed,
         baseSpeed: speed,
+        xp: 0,
+        level: 1,
+        baseMaxHp: 100,
+        baseMeleeDamage: armed ? 20 : 15,
+        baseReaction: 0.25,
+        baseTurn: 360,
+        damageScale: 1,
+        workScale: 1,
         heading: rig.group.rotation.y,
         phase: rng() * 6.28,
         role: builder ? 'builder' : armed ? 'guard' : 'scavenger',
@@ -117,6 +127,7 @@ export class CampFolk {
         weapon,
         job: null,
         possessed: false,
+        onExpedition: false,
         carry: 0,
         holdTimer: 0,
         manning: null,
@@ -137,6 +148,8 @@ export class CampFolk {
         stuckCount: 0,
         lastMoveX: x,
         lastMoveZ: z,
+        fireAngle: rng() * Math.PI * 2,
+        fireRank: i,
         hp: 100,
         maxHp: 100,
         dead: false,
@@ -146,6 +159,9 @@ export class CampFolk {
         reloadTimer: 0,
         cooldown: 0,
         recoil: 0,
+        dry: false,
+        meleeCooldown: 0,
+        meleeDamage: armed ? 20 : 15,
         aim: armed
           ? new AimController({
               faction: 'camp',
@@ -159,7 +175,38 @@ export class CampFolk {
           : null,
         aimActor: { x: 0, y: 0, z: 0, heading: 0 },
       });
+      this.applyLevelStats(this.people[this.people.length - 1], true);
     }
+  }
+
+  /** Recompute derived stats after XP changes, keeping the current damage taken. */
+  applyLevelStats(person, silent = false) {
+    if (!person) return;
+    const info = levelInfo(person.xp || 0);
+    const previousMax = person.maxHp || person.baseMaxHp;
+    person.level = info.level;
+    const scale = statScale(info.level);
+    person.maxHp = Math.round(person.baseMaxHp * scale.health);
+    person.hp = Math.min(person.maxHp, Math.max(1, (person.hp || person.maxHp) + (person.maxHp - previousMax)));
+    person.meleeDamage = person.baseMeleeDamage * scale.damage;
+    person.damageScale = scale.damage;
+    person.speed = person.baseSpeed * scale.speed * (person.hunger > 0 || person.thirst > 0 ? 0.8 : 1);
+    person.workScale = scale.work;
+    if (person.aim) {
+      person.aim.reaction = Math.max(0, person.baseReaction * (1 - 0.045 * (info.level - 1)));
+      person.aim.turnRate = person.baseTurn * scale.accuracy;
+    }
+  }
+
+  awardXp(person, amount, reason = '') {
+    if (!person || !person.active || person.dead || person.left || !(amount > 0)) return 0;
+    const before = person.level || 1;
+    person.xp = (person.xp || 0) + amount;
+    this.applyLevelStats(person);
+    if (person.level > before) {
+      this.onLevelUp?.(person, person.level, reason);
+    }
+    return amount;
   }
 
   issueJob(person, job) {
@@ -199,7 +246,7 @@ export class CampFolk {
   /** Put a survivor on a building's job slot. Clears any builder role and manual job. */
   assignWorkplace(person, building) {
     const job = building?.def?.job;
-    if (!person || !person.active || person.dead || !job || !building.built || building.destroyed) return false;
+    if (!person || !person.active || person.dead || person.onExpedition || !job || !building.built || building.destroyed) return false;
     if (person.home !== building && this.workersOf(building).length >= job.slots) return false;
     if (person.manning) this.releaseTower(person);
     person.home = building;
@@ -248,7 +295,7 @@ export class CampFolk {
 
   /** Make a survivor a free builder, or return them to guard/scavenger duty. */
   setBuilder(person, on) {
-    if (!person || !person.active || person.dead) return false;
+    if (!person || !person.active || person.dead || person.onExpedition) return false;
     if (on) {
       if (person.home) this.releaseWorkplace(person, true);
       if (person.manning) this.releaseTower(person);
@@ -346,10 +393,11 @@ export class CampFolk {
     person.attention = null;
     person.target = { x: building.x + post.x, z: building.z + post.z };
     person.timer = 3;
-    person.workTimer += dt;
+    person.workTimer += dt * (person.workScale || 1);
     if (person.workTimer >= 4) {
       person.workTimer -= 4;
       this.onWaterProduced?.(1, building);
+      this.awardXp(person, XP.produce, 'water');
     }
   }
 
@@ -378,7 +426,7 @@ export class CampFolk {
     person.attention = null;
     person.target = { x: building.x + post.x, z: building.z + post.z };
     person.timer = 3;
-    person.workTimer += dt;
+    person.workTimer += dt * (person.workScale || 1);
     person.waterTimer += dt;
     if (person.waterTimer >= 20) {
       if (!this.takeWater?.(1)) {
@@ -390,6 +438,7 @@ export class CampFolk {
     if (person.workTimer >= 7) {
       person.workTimer -= 7;
       this.onFoodProduced?.(1, building);
+      this.awardXp(person, XP.produce, 'food');
     }
   }
 
@@ -421,11 +470,12 @@ export class CampFolk {
     person.attention = null;
     person.target = { x: building.x + post.x, z: building.z + post.z };
     person.timer = 3;
-    person.workTimer += dt;
+    person.workTimer += dt * (person.workScale || 1);
     if (person.workTimer >= recipe.time) {
       if (this.doCraft?.(recipe.id)) {
         person.workTimer -= recipe.time;
         this.onCraft?.(recipe, building);
+        this.awardXp(person, XP.craft, 'craft');
       } else {
         person.workTimer = 0;
         person.attention = 'NO SCRAP';
@@ -438,10 +488,15 @@ export class CampFolk {
     if (!person?.weapon) return 0;
     if (!this.reloadUnit) {
       person.mag = person.weapon.magazine;
+      person.dry = false;
       return person.mag;
     }
     const mag = this.reloadUnit(person);
-    if (mag > 0) return mag;
+    if (mag > 0) {
+      person.dry = false;
+      return mag;
+    }
+    person.dry = true;
     person.reloadTimer = 0.75;
     return 0;
   }
@@ -453,6 +508,7 @@ export class CampFolk {
     p.active = true;
     p.dead = false;
     p.left = false;
+    p.onExpedition = false;
     p.hp = p.maxHp;
     p.role = 'scavenger';
     p.home = null;
@@ -461,7 +517,7 @@ export class CampFolk {
     p.carry = 0;
     p.hunger = 0;
     p.thirst = 0;
-    p.speed = p.baseSpeed;
+    this.applyLevelStats(p, true);
     p.anchor = { x, z };
     p.spawnAnchor = { x, z };
     p.target = { x, z };
@@ -797,7 +853,7 @@ export class CampFolk {
         return { x: node.x, z: node.z };
       }
       if (j.phase === 'harvest') {
-        j.timer -= dt;
+        j.timer -= dt * (p.workScale || 1);
         if (j.timer <= 0) {
           const value = field.gather(j.node, time);
           if (!value) {
@@ -821,6 +877,7 @@ export class CampFolk {
             return null;
           }
           p.carry = 0;
+          this.awardXp(p, XP.gather, 'gather');
           if (node.active) {
             j.phase = 'toNode';
             j.timer = 0;
@@ -841,11 +898,12 @@ export class CampFolk {
         return null;
       }
       if (distTo(b.x, b.z) > b.radius + 1.5) return { x: b.x, z: b.z };
-      b.hp = Math.min(b.maxHp, b.hp + dt * 14);
+      b.hp = Math.min(b.maxHp, b.hp + dt * 14 * (p.workScale || 1));
       if (b.hp >= b.maxHp) {
         p.job = null;
         p.holdTimer = 2;
         this.onBuildingRepaired?.(b);
+        this.awardXp(p, XP.repair, 'repair');
       }
       return null;
     }
@@ -859,11 +917,12 @@ export class CampFolk {
       if (distTo(b.x, b.z) > b.radius + 1.5) {
         return { x: b.x, z: b.z };
       }
-      b.buildProgress = Math.min(1, (b.buildProgress || 0) + dt / Math.max(0.5, b.buildTime));
+      b.buildProgress = Math.min(1, (b.buildProgress || 0) + (dt * (p.workScale || 1)) / Math.max(0.5, b.buildTime));
       if (b.buildProgress >= 1) {
         p.job = null;
         p.holdTimer = 2;
         this.onBuildComplete?.(b);
+        this.awardXp(p, XP.build, 'build');
       }
       return null;
     }
@@ -957,27 +1016,87 @@ export class CampFolk {
       if (combatTarget && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
         const shot = this.firearms.fire(
           { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'camp' },
-          { weapon: p.weapon, aimPoint: p.aim.targetPoint, ignoreBuilding: p.ignoreBuilding || null },
+          { weapon: p.weapon, aimPoint: p.aim.targetPoint, ignoreBuilding: p.ignoreBuilding || null, damage: p.weapon.damage * (p.damageScale || 1) },
         );
         p.mag--;
         p.cooldown = 60 / p.weapon.rpm;
         p.recoil = 1;
         if (p.mag <= 0) p.reloadTimer = p.weapon.reload;
-        if (shot.killed) this.onKill?.(shot.x, shot.z);
+        if (shot.killed) {
+          this.onKill?.(shot.x, shot.z);
+          this.awardXp(p, XP.kill * shot.killed, 'kill');
+        }
       }
     }
+  }
+
+  /** The nearest lit campfire to a world point, or null. Idle survivors gather around it. */
+  campfireNear(buildings = [], x = 0, z = 0) {
+    let best = null;
+    let bestD = Infinity;
+    for (const b of buildings) {
+      if (!b || b.type !== 'campfire' || !b.built || b.destroyed) continue;
+      const d = Math.hypot(b.x - x, b.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  /** A ring slot around the fire so the whole camp does not stand on one tile. */
+  campfireSpot(person, fire) {
+    if (!fire) return null;
+    const a = person.fireAngle + person.fireRank * 0.7;
+    const r = 1.9 + (person.fireRank % 3) * 0.62;
+    return { x: fire.x + Math.cos(a) * r, z: fire.z + Math.sin(a) * r };
+  }
+
+  /** Nearest attackable body within `radius`, used when a survivor has no loaded gun. */
+  nearestHostile(person, radius = 7) {
+    if (!this.registry) return null;
+    const pos = person.rig.group.position;
+    let best = null;
+    let bestD = radius * radius;
+    this.registry.forEach((t) => {
+      if (!t || t.dead || !canAttack('camp', t.faction)) return;
+      const dx = t.x - pos.x;
+      const dz = t.z - pos.z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) {
+        bestD = d;
+        best = t;
+      }
+    });
+    return best;
+  }
+
+  /** A dry or unarmed survivor swings at a body that has already closed the distance. */
+  meleeAttack(person, target) {
+    if (!target || target.dead || person.meleeCooldown > 0) return false;
+    person.meleeCooldown = 0.95;
+    const pos = person.rig.group.position;
+    const killed = target.hit?.(person.meleeDamage, pos.x, pos.z, 0.6) ?? false;
+    if (killed) {
+      this.onKill?.(target.x, target.z);
+      this.awardXp(person, XP.kill, 'kill');
+    }
+    return true;
   }
 
   update(dt, time, player, buildings = []) {
     for (const p of this.people) {
       if (!p.active) continue;
       if (p.possessed) continue;
+      if (p.onExpedition) continue;
       if (p.manning) {
         this.updateManning(p, dt);
         continue;
       }
       const pos = p.rig.group.position;
       const toPlayer = Math.hypot(player.x - pos.x, player.z - pos.z);
+      const campfire = this.campfireNear(buildings, pos.x, pos.z);
 
       // Hysteresis so a survivor walking along the threshold does not flicker between tiers.
       if (p.farTier) {
@@ -1030,6 +1149,7 @@ export class CampFolk {
           if (p.reloadTimer === 0) this.reloadPerson(p);
         }
       }
+      p.meleeCooldown = Math.max(0, p.meleeCooldown - dt);
 
       let moving = false;
       let lookX = pos.x + Math.sin(p.heading);
@@ -1048,10 +1168,42 @@ export class CampFolk {
         combatTarget = p.aim.target;
       }
 
-      const jobTarget = combatTarget ? null : this.updateJob(p, dt, time, buildings);
+      // Fallback melee: when the gun is dry, or there is no gun at all, close and swing.
+      let meleeTarget = null;
+      if (!ordered && this.registry) {
+        const dry = p.armed && p.mag <= 0 && p.reloadTimer <= 0 && p.dry;
+        if (dry && combatTarget && Math.hypot(combatTarget.x - pos.x, combatTarget.z - pos.z) <= 10) {
+          meleeTarget = combatTarget;
+          combatTarget = null;
+        }
+        if (!meleeTarget) {
+          const reach = dry || !p.weapon ? 7 : 0;
+          if (reach > 0) meleeTarget = this.nearestHostile(p, reach);
+        }
+      }
+
+      const jobTarget = meleeTarget || combatTarget ? null : this.updateJob(p, dt, time, buildings);
       const jobActive = !!p.job;
 
-      if (combatTarget) {
+      if (meleeTarget) {
+        const dx = meleeTarget.x - pos.x;
+        const dz = meleeTarget.z - pos.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        p.heading = Math.atan2(dx, dz);
+        lookX = meleeTarget.x;
+        lookZ = meleeTarget.z;
+        if (dist > 1.45) {
+          const step = Math.min(p.speed * dt, dist - 1.2);
+          const dir = this.steerAround(p, dx / dist, dz / dist, buildings);
+          pos.x += dir.x * step;
+          pos.z += dir.z * step;
+          moving = true;
+          p.phase += dt * (5.4 + p.speed);
+        } else {
+          p.phase += dt * 2.4;
+          if (p.meleeCooldown <= 0) this.meleeAttack(p, meleeTarget);
+        }
+      } else if (combatTarget) {
         // Stop, face the target and shoot; the body catches up with the aim yaw.
         p.heading = p.aim.aimYaw;
         lookX = p.aim.targetPoint.x;
@@ -1125,12 +1277,26 @@ export class CampFolk {
           lookZ = j.building.z;
         }
         p.phase += dt * 1.2;
-      } else if (toPlayer < 4.5) {
-        p.heading = Math.atan2(player.x - pos.x, player.z - pos.z);
-        lookX = player.x;
-        lookZ = player.z;
-        p.timer = Math.min(p.timer, 1.2);
-        p.phase += dt * 0.8;
+      } else if (campfire && Math.hypot(campfire.x - pos.x, campfire.z - pos.z) < 5.6) {
+        // Off duty: sit in a ring around the fire instead of drifting off into the dark.
+        const spot = this.campfireSpot(p, campfire);
+        const sd = Math.hypot(spot.x - pos.x, spot.z - pos.z);
+        if (sd > 0.7) {
+          const step = Math.min(p.speed * dt, sd);
+          const dir = this.steerAround(p, (spot.x - pos.x) / sd, (spot.z - pos.z) / sd, buildings);
+          pos.x += dir.x * step;
+          pos.z += dir.z * step;
+          p.heading = Math.atan2(dir.x, dir.z);
+          moving = true;
+          p.phase += dt * (5.2 + p.speed);
+        } else {
+          p.heading = Math.atan2(campfire.x - pos.x, campfire.z - pos.z);
+          lookX = campfire.x;
+          lookZ = campfire.z;
+          p.target.x = spot.x;
+          p.target.z = spot.z;
+          p.phase += dt * 0.8;
+        }
       } else if (p.holdTimer > 0) {
         p.holdTimer = Math.max(0, p.holdTimer - dt);
         p.phase += dt * 1.2;
@@ -1151,11 +1317,12 @@ export class CampFolk {
           p.timer -= dt;
           if (p.timer <= 0) {
             p.timer = p.rng.range(3.5, 8);
+            const center = campfire ? { x: campfire.x, z: campfire.z } : p.anchor;
             for (let tries = 0; tries < 10; tries++) {
               const a = p.rng() * Math.PI * 2;
-              const r = p.rng() * 3.2;
-              const tx = p.anchor.x + Math.cos(a) * r;
-              const tz = p.anchor.z + Math.sin(a) * r;
+              const r = campfire ? 1.9 + p.rng() * 1.7 : p.rng() * 3.2;
+              const tx = center.x + Math.cos(a) * r;
+              const tz = center.z + Math.sin(a) * r;
               let blocked = false;
               for (const b of buildings) {
                 if (Math.hypot(b.x - tx, b.z - tz) < b.radius + 0.6) {
@@ -1215,7 +1382,7 @@ export class CampFolk {
 
       if (p.isFar) continue;
 
-      if (combatTarget) p.rig.lookAt(lookX, lookZ, dt);
+      if (combatTarget || meleeTarget) p.rig.lookAt(lookX, lookZ, dt);
       else if (toPlayer < 8) p.rig.lookAt(lookX, lookZ, dt);
       else p.rig.head.rotation.y = damp(p.rig.head.rotation.y, 0, 5, dt);
 
@@ -1227,13 +1394,16 @@ export class CampFolk {
         if (combatTarget && p.aim.canFire && p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) {
           const shot = this.firearms.fire(
             { x: pos.x, z: pos.z, rig: p.rig, heading: p.heading, faction: 'camp' },
-            { weapon: p.weapon, aimPoint: p.aim.targetPoint },
+            { weapon: p.weapon, aimPoint: p.aim.targetPoint, damage: p.weapon.damage * (p.damageScale || 1) },
           );
           p.mag--;
           p.cooldown = 60 / p.weapon.rpm;
           p.recoil = 1;
           if (p.mag <= 0) p.reloadTimer = p.weapon.reload;
-          if (shot.killed) this.onKill?.(shot.x, shot.z);
+          if (shot.killed) {
+            this.onKill?.(shot.x, shot.z);
+            this.awardXp(p, XP.kill * shot.killed, 'kill');
+          }
         }
       }
     }
@@ -1250,8 +1420,10 @@ export class CampFolk {
       hp: Math.max(0, Math.round(p.hp)),
       dead: !!p.dead,
       left: !!p.left,
+      expedition: !!p.onExpedition,
       hunger: p.hunger || 0,
       thirst: p.thirst || 0,
+      xp: Math.round(p.xp || 0),
       x: p.rig.group.position.x,
       z: p.rig.group.position.z,
     }));
@@ -1267,14 +1439,16 @@ export class CampFolk {
       p.active = s.active !== false;
       p.home = home && home.built ? home : null;
       p.role = s.role === 'builder' ? 'builder' : (home?.def?.job?.label || home?.def?.job?.role)?.toLowerCase() || s.role || p.role;
-      p.hp = Number.isFinite(s.hp) ? Math.max(1, Math.min(p.maxHp, s.hp)) : p.maxHp;
       p.dead = !!s.dead;
       p.left = !!s.left;
+      p.onExpedition = !!s.expedition;
       p.hunger = Number.isFinite(s.hunger) ? s.hunger : 0;
       p.thirst = Number.isFinite(s.thirst) ? s.thirst : 0;
+      p.xp = Number.isFinite(s.xp) ? s.xp : 0;
+      this.applyLevelStats(p, true);
+      p.hp = Number.isFinite(s.hp) ? Math.max(1, Math.min(p.maxHp, s.hp)) : p.maxHp;
       p.respawnTimer = p.left ? Infinity : p.dead ? 20 : 0;
       if (p.dead) p.home = null;
-      p.speed = p.baseSpeed * (p.hunger > 0 || p.thirst > 0 ? 0.8 : 1);
       p.job = null;
       p.attention = null;
       p.carry = 0;
