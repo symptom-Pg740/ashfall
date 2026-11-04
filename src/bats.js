@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, PLAY_RADIUS } from './terrain.js';
+import { heightAt, clampToPlayArea, inPlayArea } from './terrain.js';
 import { makeRng } from './rng.js';
 import { box, merge } from './geo.js';
 
@@ -109,10 +109,9 @@ export class Bats {
       const r = spread + this.rng.range(-4, 6);
       const sx = aroundX + Math.cos(a) * r;
       const sz = aroundZ + Math.sin(a) * r;
-      const sd = Math.hypot(sx, sz);
-      const keep = sd > PLAY_RADIUS ? PLAY_RADIUS / sd : 1;
-      b.x = sx * keep;
-      b.z = sz * keep;
+      const spot = clampToPlayArea(sx, sz, 4);
+      b.x = spot.x;
+      b.z = spot.z;
       b.y = heightAt(b.x, b.z) + 1.9;
       b.active = true;
       const policy = opts.level ?? 1;
@@ -300,10 +299,10 @@ export class Bats {
       b.yaw = yaw;
       b.group.rotation.y = yaw;
 
-      const d = Math.hypot(b.x, b.z);
-      if (d > PLAY_RADIUS) {
-        b.x *= PLAY_RADIUS / d;
-        b.z *= PLAY_RADIUS / d;
+      if (!inPlayArea(b.x, b.z, 1)) {
+        const clamped = clampToPlayArea(b.x, b.z, 1);
+        b.x = clamped.x;
+        b.z = clamped.z;
       }
       b.y = heightAt(b.x, b.z) + 1.85 + Math.sin(time * 3.1 + b.phase) * 0.28;
       const flap = Math.sin(time * 13 + b.phase) * 0.9;

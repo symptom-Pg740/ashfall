@@ -1,4 +1,8 @@
-# Realism backlog
+> **Update (current build):** the direct-control mode has been removed; realism work is judged from
+> the command camera and the clipboard inspection view. The anatomical NPC pass and the low-detail
+> character work are in progress; see the implementation log in `research/character-realism.md`.
+>
+> # Realism backlog
 
 Items we want but are not building yet. The point of this file is to **not forget** them while the
 command/economy work happens, and to make the cost explicit before anyone promises them.

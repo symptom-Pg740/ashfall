@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt } from './terrain.js';
+import { heightAt, roadAt, highwayZ, PLAY_HALF_X, PLAY_HALF_Z } from './terrain.js';
 import { makeRng } from './rng.js';
 import { box, cyl, dodeca, merge, PALETTE } from './geo.js';
 import { buildRuin, buildWreck } from './props.js';
@@ -57,11 +57,12 @@ export class ScrapField {
       let z = 0;
       let placed = false;
       for (let tries = 0; tries < 30; tries++) {
-        const a = this.rng() * Math.PI * 2;
-        const r = this.rng.range(16, 380);
-        x = Math.cos(a) * r;
-        z = Math.sin(a) * r;
+        x = this.rng.range(-PLAY_HALF_X + 18, PLAY_HALF_X - 18);
+        z = this.rng.range(-PLAY_HALF_Z + 18, PLAY_HALF_Z - 18);
         if (Math.hypot(x, z) < 14) continue;
+        // Keep the highway (and the caravan that drives it) clear.
+        if (Math.abs(z - highwayZ(x)) < 9) continue;
+        if (roadAt(x, z) > 0.55) continue;
         if (this.nodes.some((n) => Math.hypot(n.x - x, n.z - z) < 11)) continue;
         if (obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < (o.r || 0.5) + 1.4)) continue;
         placed = true;

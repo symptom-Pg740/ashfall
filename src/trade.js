@@ -1,5 +1,8 @@
+import * as THREE from 'three';
 import { makeRng, deriveSeed } from './rng.js';
 import { COMPONENT_CAP } from './recipes.js';
+import { heightAt, highwayZ, PLAY_HALF_X } from './terrain.js';
+import { box, cyl, merge, PALETTE } from './geo.js';
 
 const SELL = [
   { resource: 'water', amount: 8, price: [12, 18], name: 'WATER' },
@@ -10,11 +13,83 @@ const BUY = [
   { resource: 'components', amount: 2, price: [16, 22], name: 'COMPONENTS' },
 ];
 
+const _o = new THREE.Object3D();
+
+/** Two-wheel cart under a patched canvas hood, built facing +Z. */
+function wagonGeometry() {
+  const p = [];
+  p.push(box(1.6, 0.12, 3.0, PALETTE.woodDark, 0, 0.74, 0));
+  p.push(box(0.1, 0.5, 2.8, PALETTE.wood, -0.78, 1.02, 0));
+  p.push(box(0.1, 0.5, 2.8, PALETTE.wood, 0.78, 1.02, 0));
+  p.push(box(1.6, 0.5, 0.1, PALETTE.wood, 0, 1.02, -1.42));
+  // canvas hood over the load
+  p.push(cyl(0.9, 0.9, 2.0, 8, PALETTE.tarp, 0, 1.5, -0.35, Math.PI / 2, 0, 0));
+  p.push(box(1.86, 0.08, 0.1, PALETTE.woodDark, 0, 2.36, 0.6));
+  p.push(box(0.5, 0.06, 0.9, PALETTE.tarpLight, 0.55, 2.12, -0.7, 0, 0, 0.35));
+  // driver bench and driver
+  p.push(box(1.3, 0.16, 0.6, PALETTE.wood, 0, 1.12, 1.1));
+  p.push(box(0.5, 0.7, 0.4, PALETTE.coat, 0, 1.5, 1.15));
+  p.push(box(0.34, 0.12, 0.34, PALETTE.scarf, 0, 1.82, 1.15));
+  p.push(box(0.26, 0.26, 0.26, PALETTE.skin, 0, 1.98, 1.15));
+  // wheels
+  for (const sx of [-1, 1]) {
+    for (const sz of [-0.95, 0.95]) {
+      p.push(cyl(0.46, 0.46, 0.14, 10, '#2c2824', sx * 0.84, 0.46, sz, 0, 0, Math.PI / 2));
+      p.push(cyl(0.16, 0.16, 0.18, 8, PALETTE.rust, sx * 0.84, 0.46, sz, 0, 0, Math.PI / 2));
+    }
+  }
+  // tow bar and cargo
+  p.push(box(0.12, 0.1, 0.9, PALETTE.woodDark, 0, 0.82, 1.7));
+  p.push(box(0.6, 0.4, 0.5, '#8a6a42', 0.3, 1.3, 0.9));
+  p.push(cyl(0.24, 0.26, 0.6, 8, PALETTE.rustDark, -0.35, 1.4, 0.9));
+  return merge(p);
+}
+
+/** A pack mule with a bedroll, built facing +Z. */
+function packAnimalGeometry() {
+  const hide = '#6d5a44';
+  const hideDark = '#584735';
+  const p = [];
+  p.push(box(0.5, 0.52, 1.25, hide, 0, 0.95, 0));
+  p.push(box(0.26, 0.4, 0.3, hideDark, 0, 1.14, 0.66, 0.3));
+  p.push(box(0.22, 0.22, 0.42, hide, 0, 1.32, 0.86));
+  p.push(box(0.08, 0.16, 0.08, hideDark, -0.08, 1.48, 0.82));
+  p.push(box(0.08, 0.16, 0.08, hideDark, 0.08, 1.48, 0.82));
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      p.push(box(0.14, 0.72, 0.16, hideDark, sx * 0.17, 0.36, sz * 0.42));
+    }
+  }
+  p.push(box(0.07, 0.4, 0.07, hideDark, 0, 0.95, -0.66, -0.35));
+  p.push(cyl(0.22, 0.22, 0.62, 7, '#7a6a4c', 0, 1.28, -0.12, 0, 0, Math.PI / 2));
+  return merge(p);
+}
+
+/** A cheap walking figure: traveller with a bedroll and a staff. */
+function travellerGeometry() {
+  const p = [];
+  p.push(box(0.18, 0.66, 0.22, '#4d4536', -0.11, 0.33, 0));
+  p.push(box(0.18, 0.66, 0.22, '#5a5140', 0.11, 0.33, 0));
+  p.push(box(0.5, 0.62, 0.3, '#6b5c45', 0, 0.98, 0));
+  p.push(box(0.56, 0.16, 0.34, '#7c6a4e', 0, 1.16, 0));
+  p.push(box(0.16, 0.5, 0.16, '#5c503c', -0.31, 0.94, 0.02, 0.1));
+  p.push(box(0.16, 0.5, 0.16, '#5c503c', 0.31, 0.94, 0.02, -0.1));
+  p.push(box(0.28, 0.28, 0.26, PALETTE.skin, 0, 1.48, 0.02));
+  p.push(box(0.32, 0.1, 0.3, PALETTE.scarf, 0, 1.62, 0.02));
+  p.push(cyl(0.16, 0.16, 0.5, 6, '#7a6a4c', 0, 1.14, -0.24, 0, 0, Math.PI / 2));
+  p.push(box(0.05, 1.5, 0.05, '#5a4630', 0.42, 0.75, 0.12, 0.05));
+  return merge(p);
+}
+
 /**
  * The caravan.
  *
  * A built trade post unlocks periodic caravan visits. Each visit has three one-shot offers; most
  * turn surplus water/food/components into scrap, which is the sustainable answer to a stripped map.
+ *
+ * Visually the trade network also owns the highway traffic: a wagon and two pack mules drive the
+ * east-west road to the post and park while the offers are live, and a few neutral travellers walk
+ * the same road all the time. All of it is scenery — no gameplay is attached to the figures.
  */
 export class TradeNetwork {
   constructor({ settlement, state, ui, onSave }) {
@@ -30,19 +105,176 @@ export class TradeNetwork {
     this.offers = [];
     this.onArrive = null;
     this.onDepart = null;
+
+    /** Visible wagon + mules. `state` is 'away' | 'inbound' | 'parked' | 'outbound'. */
+    this.caravan = { state: 'away', x: 0, z: 0, parkX: 0, parkZ: 0, dir: 1, t: 0, heading: 0 };
+    /** Neutral road traffic: always walking, wrapping at the ends of the highway. */
+    this.travellers = [
+      { x: -PLAY_HALF_X * 0.55, dir: 1, speed: 1.15, lane: 1.7, phase: 0 },
+      { x: PLAY_HALF_X * 0.3, dir: -1, speed: 1.3, lane: -1.9, phase: 2.2 },
+      { x: -PLAY_HALF_X * 0.1, dir: 1, speed: 0.95, lane: 2.7, phase: 4.4 },
+    ];
+    this.group = new THREE.Group();
+    this.group.name = 'caravan';
+    this.buildVisuals();
   }
+
+  // ---- visuals -----------------------------------------------------------
+
+  buildVisuals() {
+    const scene = this.settlement?.scene;
+    if (!scene) return;
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+
+    const wagon = new THREE.Mesh(wagonGeometry(), material);
+    wagon.castShadow = true;
+    wagon.receiveShadow = true;
+
+    const muleGeo = packAnimalGeometry();
+    this.mules = [];
+    for (let i = 0; i < 2; i++) {
+      const mule = new THREE.Mesh(muleGeo, material);
+      mule.castShadow = true;
+      mule.receiveShadow = true;
+      mule.userData.ox = i ? -0.55 : 0.55;
+      mule.userData.oz = 2.5 + i * 0.9;
+      this.mules.push(mule);
+    }
+
+    this.caravanGroup = new THREE.Group();
+    this.caravanGroup.name = 'trade-caravan';
+    this.caravanGroup.visible = false;
+    this.caravanGroup.add(wagon, ...this.mules);
+    this.group.add(this.caravanGroup);
+
+    // Three walkers in one instanced mesh: one draw call for the road traffic.
+    this.travellerMesh = new THREE.InstancedMesh(
+      travellerGeometry(),
+      material,
+      this.travellers.length,
+    );
+    this.travellerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.travellerMesh.frustumCulled = false;
+    this.travellerMesh.castShadow = true;
+    this.travellerMesh.receiveShadow = true;
+    this.group.add(this.travellerMesh);
+
+    scene.add(this.group);
+    this.updateTravellers(0);
+    this.placeCaravan();
+  }
+
+  /** Put the wagon and mules on the road at the caravan's current x. No per-frame allocation. */
+  placeCaravan() {
+    if (!this.caravanGroup) return;
+    const c = this.caravan;
+    const z = highwayZ(c.x);
+    c.z = z;
+    const slope = (highwayZ(c.x + 1.5) - highwayZ(c.x - 1.5)) / 3;
+    const yaw = Math.atan2(c.dir, c.dir * slope);
+    const moving = c.state === 'inbound' || c.state === 'outbound';
+    const bob = moving ? Math.abs(Math.sin(c.t * 7)) * 0.03 : Math.sin(c.t * 1.6) * 0.012;
+    this.caravanGroup.position.set(c.x, heightAt(c.x, z) + bob, z);
+    this.caravanGroup.rotation.y = yaw;
+    c.heading = yaw;
+  }
+
+  updateTravellers(dt) {
+    if (!this.travellerMesh) return;
+    const span = PLAY_HALF_X - 8;
+    const list = this.travellers;
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      t.x += t.dir * t.speed * dt;
+      if (t.x > span) t.x = -span;
+      else if (t.x < -span) t.x = span;
+      const z = highwayZ(t.x) + t.lane;
+      const slope = (highwayZ(t.x + 1) - highwayZ(t.x - 1)) * 0.5;
+      const yaw = Math.atan2(t.dir, t.dir * slope);
+      t.phase += dt * (3.2 + t.speed * 1.4);
+      const bob = Math.abs(Math.sin(t.phase)) * 0.05;
+      _o.position.set(t.x, heightAt(t.x, z) + bob, z);
+      _o.rotation.set(0, yaw, 0);
+      _o.scale.setScalar(1);
+      _o.updateMatrix();
+      this.travellerMesh.setMatrixAt(i, _o.matrix);
+    }
+    this.travellerMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Send the wagon in from the far end of the highway toward the post. */
+  sendCaravan() {
+    const post = this.post();
+    if (!post || !this.caravanGroup) return;
+    const c = this.caravan;
+    const dir = post.x >= 0 ? -1 : 1;
+    const parkX = Math.max(-PLAY_HALF_X + 30, Math.min(PLAY_HALF_X - 30, post.x + dir * 8));
+    c.parkX = parkX;
+    c.parkZ = highwayZ(parkX);
+    c.dir = dir;
+    c.x = Math.max(-PLAY_HALF_X + 12, Math.min(PLAY_HALF_X - 12, parkX - dir * 110));
+    c.z = highwayZ(c.x);
+    c.t = 0;
+    c.state = 'inbound';
+    this.caravanGroup.visible = true;
+    this.placeCaravan();
+  }
+
+  /** Let the wagon pull away and disappear over the horizon. */
+  departCaravan() {
+    const c = this.caravan;
+    if (c.state === 'away') return;
+    c.state = 'outbound';
+    c.t = 0;
+  }
+
+  recallCaravan() {
+    const c = this.caravan;
+    if (c.state === 'away') return;
+    c.state = 'away';
+    if (this.caravanGroup) this.caravanGroup.visible = false;
+  }
+
+  updateCaravan(dt) {
+    const c = this.caravan;
+    if (!this.caravanGroup) return;
+    c.t += dt;
+    if (c.state === 'inbound') {
+      const dx = c.parkX - c.x;
+      const step = 13 * dt;
+      if (Math.abs(dx) <= step) {
+        c.x = c.parkX;
+        c.state = 'parked';
+        c.t = 0;
+      } else {
+        c.x += Math.sign(dx) * step;
+      }
+    } else if (c.state === 'outbound') {
+      c.x += c.dir * 12 * dt;
+      if (Math.abs(c.x) >= PLAY_HALF_X - 6 || c.t > 45) {
+        c.state = 'away';
+        this.caravanGroup.visible = false;
+      }
+    }
+    this.placeCaravan();
+  }
+
+  // ---- gameplay ----------------------------------------------------------
 
   post() {
     return this.settlement.buildings.find((b) => b.type === 'trade' && b.built && !b.destroyed) || null;
   }
 
   update(dt) {
+    this.updateTravellers(dt);
     const post = this.post();
     if (!post) {
       this.arrived = false;
       this.offers = [];
       this.timer = 28;
       this.stay = 0;
+      this.recallCaravan();
+      this.updateCaravan(dt);
       return;
     }
     if (this.arrived) {
@@ -51,12 +283,14 @@ export class TradeNetwork {
         this.arrived = false;
         this.offers = [];
         this.timer = this.rng.range(80, 130);
+        this.departCaravan();
         this.onDepart?.();
       }
-      return;
+    } else {
+      this.timer -= dt;
+      if (this.timer <= 0) this.arrive();
     }
-    this.timer -= dt;
-    if (this.timer <= 0) this.arrive();
+    this.updateCaravan(dt);
   }
 
   arrive() {
@@ -64,6 +298,7 @@ export class TradeNetwork {
     this.stay = 75;
     this.visit++;
     this.offers = this.generateOffers();
+    this.sendCaravan();
     this.onArrive?.();
   }
 
@@ -157,5 +392,16 @@ export class TradeNetwork {
     this.visit = Number.isFinite(data.visit) ? data.visit : 0;
     this.offers = Array.isArray(data.offers) ? data.offers.map((o) => ({ ...o })) : [];
     if (this.arrived && !this.offers.length) this.offers = this.generateOffers();
+    // A restored visit should show the wagon already parked at the post, not driving in.
+    if (this.arrived) {
+      this.sendCaravan();
+      this.caravan.x = this.caravan.parkX;
+      this.caravan.z = this.caravan.parkZ;
+      this.caravan.state = 'parked';
+      this.caravan.t = 0;
+      this.placeCaravan();
+    } else {
+      this.recallCaravan();
+    }
   }
 }

@@ -25,14 +25,11 @@
         <line id="wire-line" class="hidden" x1="0" y1="0" x2="0" y2="0" />
       </svg>
 
-      <!-- top hud -->
+      <!-- compact top hud -->
       <div class="hud-top">
-        <div class="brand">
-          <span class="brand-mark">A</span>
-          <div>
-            <strong>ASHFALL</strong>
-            <small>PROTOCOL 0.1</small>
-          </div>
+        <div class="hud-clock">
+          <b id="grid-day">DAY 1</b>
+          <span id="grid-clock">09:00</span>
         </div>
 
         <div class="resources">
@@ -52,52 +49,18 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
             <b id="hud-power">0.0</b><small>POWER</small>
           </div>
-          <div class="res-chip hidden" id="ammo-chip" title="Magazine">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v16H7z" /><path d="M9 4v6h6V4M9 20v-6h6v6" /></svg>
-            <b id="hud-ammo">12</b><small>AMMO</small>
-          </div>
         </div>
 
-        <div class="top-actions">
-          <button
-            id="orient-btn"
-            class="fs-btn"
-            aria-label="Lock screen orientation"
-            aria-pressed="false"
-            title="Lock landscape / portrait"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="8" y="2.5" width="8" height="19" rx="1.8" />
-              <path d="M10.5 5h3M10.5 19h3" />
-              <path d="M4 8.5a8 8 0 0 0 0 7" />
-              <path d="M2.5 15.5 4 16.8l1.2-1.7" />
-              <path d="M20 15.5a8 8 0 0 0 0-7" />
-              <path d="M21.5 8.5 20 7.2l-1.2 1.7" />
-            </svg>
-          </button>
-          <button id="fs-btn" class="fs-btn" aria-label="Toggle fullscreen" aria-pressed="false" title="Fullscreen">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path class="fs-expand" d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
-              <path class="fs-compress" d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />
-            </svg>
-          </button>
-          <button id="camp-btn" class="perf-btn" aria-label="Camp operations">CAMP</button>
-          <button id="outfit-btn" class="perf-btn" aria-label="Wardrobe">OUTFIT</button>
-          <button id="perf-btn" class="perf-btn" aria-label="Performance panel">PERF</button>
-        </div>
+        <button id="menu-btn" class="icon-btn menu-btn" aria-label="Open menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>
+        </button>
       </div>
 
-      <div class="vitals">
-        <div class="hp-shell"><div id="hp-fill"></div></div>
-        <span id="hp-text">100</span>
-        <span class="vitals-label">VITALS</span>
-      </div>
-
-      <div id="objective" class="objective" aria-label="Relay objective">
-        <span class="obj-kicker">RELAY PROTOCOL</span>
-        <b id="obj-step">BUILD A WORKSHOP</b>
-        <small id="obj-detail">It turns scrap into ammo and components.</small>
-        <div class="obj-bar"><i id="obj-bar-fill"></i></div>
+      <div id="menu-sheet" class="menu-sheet hidden" role="menu">
+        <button id="perf-btn" class="menu-row" type="button">PERF LAB</button>
+        <button id="fs-btn" class="menu-row" type="button">FULLSCREEN</button>
+        <button id="orient-btn" class="menu-row" type="button">ORIENTATION</button>
+        <button id="sound-btn" class="menu-row" type="button">SOUND</button>
       </div>
 
       <div
@@ -119,7 +82,7 @@
           <span class="compass-arrow"></span>
           <span class="compass-tail"></span>
         </div>
-        <button id="compass-home" class="compass-home" aria-label="Recenter on player" title="Recenter on player">
+        <button id="compass-home" class="compass-home" aria-label="Recenter on the camp" title="Recenter on the camp">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="3.2" />
             <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
@@ -140,30 +103,20 @@
         </div>
       </div>
 
-      <!-- command layer -->
-      <div id="roster-bar" class="roster-bar">
-        <div id="roster" class="roster" aria-label="Survivor roster"></div>
-      </div>
+      <!-- selected unit: compact, details live in the clipboard -->
       <div id="unit-card" class="unit-card hidden" aria-label="Selected survivor">
         <header>
           <span id="unit-name">—</span>
           <button id="unit-close" class="mini-x" aria-label="Close survivor card">✕</button>
         </header>
         <div class="unit-meta">
-          <span id="unit-role">SCAVENGER</span>
+          <span id="unit-role">SURVIVOR</span>
           <b id="unit-hp">100</b>
         </div>
         <div class="unit-hp"><i id="unit-hp-fill"></i></div>
-        <div class="unit-level-row">
-          <span>LV <b id="unit-level">1</b></span>
-          <span id="unit-xp-text">0 XP</span>
-        </div>
-        <div class="unit-xp"><i id="unit-xp-fill"></i></div>
-        <div class="unit-stats-line" id="unit-stats-line">DMG — · RNG — · SPD —</div>
-        <p id="unit-perk" class="unit-perk hidden"></p>
+        <div class="unit-mood"><i id="unit-mood-fill"></i></div>
         <p id="unit-status">IDLE</p>
-        <button id="unit-post" class="unit-control alt hidden" type="button">MAKE BUILDER</button>
-        <button id="unit-control" class="unit-control" type="button">TAKE CONTROL</button>
+        <button id="unit-details" class="unit-control" type="button">DETAILS</button>
       </div>
 
       <div id="building-card" class="building-card hidden" aria-label="Selected structure">
@@ -189,33 +142,32 @@
         <button id="wire-cancel" class="btn-ghost" type="button">CANCEL</button>
       </div>
 
-      <div id="grid-panel" class="grid-panel" aria-label="Time of day and power">
-        <div class="grid-row"><span id="grid-day">DAY 1</span><b id="grid-clock">09:00</b></div>
-        <div class="grid-row grid-power-row"><span>ENERGY PROD</span><b id="grid-power">0.0</b></div>
-        <div class="grid-row grid-power-row"><span>STORED POWER</span><b id="grid-stored">0 / 0</b></div>
-        <div class="grid-bar"><i id="grid-bar-fill"></i></div>
-        <p id="grid-note">NO GRID</p>
-      </div>
-
-      <!-- touch controls -->
-      <div class="joystick-wrap">
-        <div id="joystick" class="joystick" aria-label="Movement stick">
-          <div class="joy-ring"></div>
-          <div id="joy-knob" class="knob"></div>
-          <span class="joy-tick up"></span><span class="joy-tick right"></span>
-          <span class="joy-tick down"></span><span class="joy-tick left"></span>
+      <!-- expedition cell HUD -->
+      <div id="cell-hud" class="cell-hud hidden" role="status">
+        <div class="cell-head">
+          <b id="cell-title">EXPEDITION</b>
+          <span id="cell-enemies">0 HOSTILES</span>
+        </div>
+        <p id="cell-note">Clear the site, loot the cache, then leave.</p>
+        <div class="cell-actions">
+          <button id="cell-loot" class="btn-ghost" type="button" disabled>LOOT CACHE</button>
+          <button id="cell-leave" class="btn-solid" type="button">LEAVE</button>
         </div>
       </div>
 
-      <div class="actions">
-        <button id="gather-btn" class="act act-small hidden">
-          <span class="act-key">E</span><span>GATHER</span>
+      <!-- thumb rail -->
+      <div class="action-rail">
+        <button id="build-btn" class="rail-btn" type="button" aria-label="Build">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l6-6M14 4l6 6-3 3-6-6zM4 20l2-5 3 3z" /></svg>
+          <span>BUILD</span>
         </button>
-        <button id="build-btn" class="act act-small">
-          <span class="act-key">B</span><span>BUILD</span>
+        <button id="units-btn" class="rail-btn" type="button" aria-label="Survivors">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 3.5h6v3H9zM8 11h8M8 15h8M8 19h5" /></svg>
+          <span>UNITS</span>
         </button>
-        <button id="strike-btn" class="act act-strike">
-          <span class="strike-glyph">⌁</span><span>STRIKE</span>
+        <button id="camp-btn" class="rail-btn" type="button" aria-label="Camp operations">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l8-15 8 15zM12 5v15M4 20h16" /></svg>
+          <span>CAMP</span>
         </button>
       </div>
 
@@ -235,6 +187,21 @@
           <button id="place-confirm" class="btn-solid">PLACE</button>
         </div>
       </div>
+
+      <!-- survivor clipboard -->
+      <section id="units-panel" class="drawer units-panel hidden" aria-label="Survivors">
+        <header>
+          <span>SURVIVORS</span>
+          <b id="units-count">3/6</b>
+          <button id="units-close" class="mini-x" aria-label="Close survivors panel">✕</button>
+        </header>
+        <div class="units-body">
+          <div id="units-list" class="units-list"></div>
+          <div id="unit-detail" class="unit-detail">
+            <p class="camp-empty">SELECT A SURVIVOR</p>
+          </div>
+        </div>
+      </section>
 
       <!-- perf lab -->
       <section id="perf-panel" class="perf-panel hidden" aria-label="Performance lab">
@@ -311,10 +278,7 @@
           <button id="camp-close" class="mini-x" aria-label="Close camp panel">✕</button>
         </header>
         <div id="camp-summary" class="camp-summary"></div>
-        <div class="camp-section">
-          <span class="group-label">SURVIVORS</span>
-          <div id="camp-survivors" class="camp-list"></div>
-        </div>
+        <div id="camp-warnings" class="camp-warnings hidden"></div>
         <div class="camp-section">
           <span class="group-label">EXPEDITIONS</span>
           <div id="camp-expeditions" class="camp-list"></div>
@@ -330,22 +294,6 @@
         <button id="camp-launch" class="unit-control" type="button">LAUNCH EXPEDITION</button>
       </section>
 
-      <!-- wardrobe -->
-      <section id="wardrobe-panel" class="wardrobe-panel hidden" aria-label="Wardrobe">
-        <header>
-          <span>WARDROBE</span>
-          <button id="wardrobe-close" class="mini-x" aria-label="Close wardrobe">✕</button>
-        </header>
-        <div id="wardrobe-list" class="wardrobe-list"></div>
-        <div id="armory" class="armory hidden">
-          <header><span>ARMORY</span><b id="armory-weapon">—</b></header>
-          <div id="armory-scrap" class="armory-scrap">SCRAP <b>0</b></div>
-          <div id="armory-ammo" class="armory-ammo"></div>
-          <div id="armory-upgrades" class="wardrobe-list"></div>
-        </div>
-        <p class="perf-note">Tap a slot to cycle its item. Changes apply immediately and save with the run.</p>
-      </section>
-
       <div id="dmg-layer" class="dmg-layer" aria-hidden="true"></div>
       <div id="hit-marker" class="hit-marker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <div id="toast" class="toast" role="status"></div>
@@ -353,42 +301,39 @@
         <strong id="raid-result-title">RAID CLEARED</strong>
         <span id="raid-result-sub">+10 SCRAP · THE DUST SETTLES</span>
       </div>
-      <div id="death-screen" class="death-screen hidden">
-        <strong>SURVIVOR DOWN</strong>
-        <span>the wastes remember</span>
-      </div>
       <div id="flash"></div>
     </div>
 
-      <section id="end-screen" class="end-screen hidden" aria-label="Run result">
-        <div class="end-kicker" id="end-kicker">RELAY PROTOCOL</div>
-        <strong id="end-title">RELAY ONLINE</strong>
-        <span id="end-sub">THE WASTES ANSWER</span>
-        <div class="end-stats">
-          <div><b id="end-day">1</b><small>DAY</small></div>
-          <div><b id="end-survivors">3</b><small>SURVIVORS</small></div>
-          <div><b id="end-kills">0</b><small>PUT DOWN</small></div>
-        </div>
-        <button id="end-new-run" class="start-btn" type="button">NEW RUN</button>
-      </section>
+    <section id="end-screen" class="end-screen hidden" aria-label="Camp result">
+      <div class="end-kicker" id="end-kicker">CAMP PROTOCOL</div>
+      <strong id="end-title">CAMP LOST</strong>
+      <span id="end-sub">THE WASTES REMEMBER</span>
+      <div class="end-stats">
+        <div><b id="end-day">1</b><small>DAY</small></div>
+        <div><b id="end-survivors">3</b><small>SURVIVORS</small></div>
+        <div><b id="end-kills">0</b><small>PUT DOWN</small></div>
+      </div>
+      <button id="end-new-run" class="start-btn" type="button">NEW RUN</button>
+    </section>
+
     <!-- start screen -->
     <div id="start-screen" class="start-screen">
       <div class="start-grain"></div>
       <div class="start-inner">
         <div class="start-kicker">A PROCEDURAL WASTELAND</div>
         <h1>ASH<span>FALL</span></h1>
-        <div class="start-sub">SETTLEMENT PROTOCOL // MOBILE-FIRST PROTOTYPE</div>
+        <div class="start-sub">SETTLEMENT PROTOCOL // MOBILE-FIRST</div>
         <p class="start-copy">
           Scavenge the dust. Raise a camp. Keep the ghouls outside the firelight.
-          Build the relay, power it, and hold the camp long enough to call home.
-          Every mesh, texture and gust of ash is generated at runtime.
+          Build the relay, power it, and broadcast for survivors. There is no finish line — only the
+          camp you leave behind.
         </p>
         <button id="start-btn" class="start-btn">ENTER THE WASTELAND</button>
         <button id="new-run-btn" class="start-new hidden">NEW RUN</button>
         <div class="start-tags">
-          <span>TOP-DOWN 3D</span><span>SETTLEMENT</span><span>PERF LAB</span><span>0 ART ASSETS</span>
+          <span>TOP-DOWN 3D</span><span>SETTLEMENT</span><span>COMMAND ONLY</span><span>0 ART ASSETS</span>
         </div>
-        <div class="start-hint">Tap a survivor, then a target · drag to pan · pinch to zoom · TAKE CONTROL to move</div>
+        <div class="start-hint">Tap a survivor, then the ground or a target · drag to pan · pinch to zoom</div>
         <div class="start-best">BEST EXPERIENCED IN LANDSCAPE</div>
       </div>
     </div>

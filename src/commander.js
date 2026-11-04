@@ -4,19 +4,18 @@ import { canAttack } from './actors.js';
 import { levelInfo, perkFor } from './levels.js';
 
 /**
- * Command layer: selection, contextual orders and possession.
+ * Command layer: selection and contextual orders. There is no direct-control mode any more.
  *
- * Command mode is the default. A tap on a survivor selects it; the next tap resolves against what is
- * under it (enemy → attack, scrap → gather, ground → move). `TAKE CONTROL` hands the unit to the
- * Player controller; `RELEASE` returns it to the camp brain.
+ * A tap on a survivor selects it; the next tap resolves against what is under it (enemy → attack,
+ * scrap → gather, building → open its card, ground → move). Selection is proximity picking in screen
+ * space rather than mesh raycasts: the camera is top-down and the units are small, so a generous
+ * pixel radius is both cheaper and kinder on touch.
  *
- * The first slice deliberately uses proximity picking in screen space rather than mesh raycasts: the
- * camera is top-down and the units are small, so a generous pixel radius is both cheaper and kinder
- * on touch.
+ * The clipboard panel is the reliable way to select a unit when the camp is crowded.
  */
 
-const PICK_UNIT = 36;
-const PICK_ENEMY = 32;
+const PICK_UNIT = 38;
+const PICK_ENEMY = 34;
 const PICK_SCRAP = 1.9;
 
 const _v = new THREE.Vector3();
@@ -51,15 +50,14 @@ export class Commander {
     this.onFollow = onFollow || (() => {});
     this.onFocus = onFocus || (() => {});
     this.onSave = onSave || (() => {});
-    this.mode = 'command';
     this.selected = null;
     this.buildingCard = null;
+    this.inCell = false;
+    this.cellMembers = null;
     this.ray = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
     this.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.hit = new THREE.Vector3();
-    this._leaderHealth = state.health;
-    this._leaderMax = state.maxHealth;
     this._uiTimer = 0;
     this._lastKey = '';
 
@@ -78,8 +76,6 @@ export class Commander {
     this.ring.visible = false;
     this.ring.renderOrder = 4;
     scene.add(this.ring);
-
-    this.setMode('command');
   }
 
   // -------------------------------------------------------------------------
@@ -87,6 +83,7 @@ export class Commander {
   // -------------------------------------------------------------------------
 
   units() {
+    if (this.inCell) return (this.cellMembers || []).filter((p) => p.active && !p.left);
     return this.campFolk.people.filter((p) => p.active && !p.left && !p.onExpedition);
   }
 
@@ -102,24 +99,25 @@ export class Commander {
 
   view(unit) {
     if (!unit) return null;
-    const possessed = unit === this.player.possessedUnit;
-    const dead = !!unit.dead;
     const info = levelInfo(unit.xp || 0);
     const damage = unit.weapon
       ? Math.round(unit.weapon.damage * (unit.damageScale || 1))
       : Math.round(unit.meleeDamage || 15);
+    const morale = Math.round(unit.morale ?? 70);
     return {
       key: this.keyOf(unit),
       name: unit.name,
-      role: (unit.role || 'scavenger').toUpperCase(),
+      role: (unit.role || 'survivor').toUpperCase(),
       home: unit.home?.def?.name || null,
-      hp: possessed ? this.state.health : unit.hp,
-      maxHp: possessed ? this.state.maxHealth : unit.maxHp,
+      hp: unit.hp,
+      maxHp: unit.maxHp,
       status: this.statusOf(unit),
+      warning: this.warningOf(unit),
+      morale,
+      moraleFactors: unit.moraleFactors || [],
       armed: !!unit.weapon,
-      dead,
-      canControl: !dead && !unit.onExpedition && !this.state.dead,
-      canWork: !dead && !possessed && !unit.onExpedition,
+      dead: !!unit.dead,
+      onExpedition: !!unit.onExpedition,
       level: info.level,
       xp: info.xp,
       xpNeed: info.need,
@@ -128,7 +126,21 @@ export class Commander {
       damage,
       rangeText: unit.weapon ? `${Math.round(unit.weapon.range)}m` : 'MELEE',
       speedText: (unit.speed || 0).toFixed(1),
+      weaponText: unit.weapon ? unit.weapon.name : 'UNARMED',
+      ammoText: unit.weapon ? `${unit.mag}/${unit.weapon.magazine}` : '—',
+      carryText: unit.carry ? `${unit.carry} LOAD` : 'EMPTY',
+      equipment: { ...unit.rig.equipment },
+      canMan: !!unit.weapon,
     };
+  }
+
+  warningOf(unit) {
+    if (!unit || unit.dead) return '';
+    if (unit.leaveWarn) return unit.leaveWarn;
+    if ((unit.morale ?? 70) <= 25) return 'UNHAPPY · MAY LEAVE';
+    if (unit.hunger > 0) return `HUNGRY ${unit.hunger}/2`;
+    if (unit.thirst > 0) return `THIRSTY ${unit.thirst}/2`;
+    return '';
   }
 
   enemyView(t) {
@@ -147,18 +159,14 @@ export class Commander {
   statusOf(unit) {
     if (!unit) return 'IDLE';
     if (unit.dead) return 'DOWN';
-    if (unit === this.player.possessedUnit) {
-      return this.mode === 'direct' ? 'UNDER YOUR CONTROL' : 'TAKE CONTROL TO MOVE';
-    }
     if (unit.manning) return 'ON THE GUARD POST';
-    if (unit.onExpedition) return 'ON EXPEDITION';
+    if (unit.onExpedition && !this.inCell) return 'ON EXPEDITION';
     if (unit.attention && !unit.job) return unit.attention;
     const job = unit.job;
     if (!job) {
       if (unit.carry > 0) return `CARRYING ${unit.carry}`;
       if (unit.home) return `AT ${unit.home.def.name}`;
-      if (unit.role === 'builder') return 'READY TO BUILD';
-      return unit.role === 'guard' ? 'ON WATCH' : 'IDLE';
+      return unit.armed ? 'ON WATCH' : 'FREE';
     }
     if (job.type === 'move') return 'MOVING';
     if (job.type === 'attack') return 'ENGAGING';
@@ -169,51 +177,47 @@ export class Commander {
     }
     if (job.type === 'man') return 'TO THE GUARD POST';
     if (job.type === 'repair') {
-      return job.building && Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) < job.building.radius + 1.6
+      return job.building &&
+        Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) <
+          job.building.radius + 1.6
         ? `REPAIRING ${job.building.def.name}`
         : `TO REPAIR ${job.building?.def.name || 'STRUCTURE'}`;
     }
     if (job.type === 'build') {
-      return job.building && Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) < job.building.radius + 1.6
+      return job.building &&
+        Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) <
+          job.building.radius + 1.6
         ? `BUILDING ${job.building.def.name}`
         : `TO THE ${job.building?.def.name || 'SITE'}`;
     }
     return 'WORKING';
   }
 
+  /** Compact list data for the old roster callers and the clipboard. */
   roster() {
-    return this.units()
-      .map((u) => {
-        const v = this.view(u);
-        return {
-          key: v.key,
-          name: v.name,
-          initial: v.name.charAt(0),
-          hp: v.hp,
-          maxHp: v.maxHp,
-          dead: v.dead,
-          selected: this.selected ? this.keyOf(this.selected) === v.key : false,
-        };
-      });
+    return this.units().map((u) => {
+      const v = this.view(u);
+      return {
+        key: v.key,
+        name: v.name,
+        initial: v.name.charAt(0),
+        hp: v.hp,
+        maxHp: v.maxHp,
+        morale: v.morale,
+        role: v.role,
+        level: v.level,
+        status: v.status,
+        warning: v.warning,
+        home: v.home,
+        dead: v.dead,
+        selected: this.selected ? this.keyOf(this.selected) === v.key : false,
+      };
+    });
   }
 
   // -------------------------------------------------------------------------
-  // mode and selection
+  // selection
   // -------------------------------------------------------------------------
-
-  setMode(mode) {
-    this.mode = mode;
-    this.ui.setCommanderMode(mode);
-    this.ui.setRoster(this.roster());
-    if (mode === 'direct') {
-      this.ui.hideHint?.();
-      this.ring.visible = false;
-      this.ui.showUnitCard(this.view(this.selected), mode);
-    } else if (this.selected) {
-      this.ui.showUnitCard(this.view(this.selected), mode);
-      this.ui.setRoster(this.roster());
-    }
-  }
 
   select(unit) {
     if (!unit || this.state.dead) return;
@@ -221,9 +225,8 @@ export class Commander {
     const same = this.selected && this.keyOf(this.selected) === this.keyOf(unit);
     this.selected = unit;
     this._lastKey = this.keyOf(unit);
-    this.ui.showUnitCard(this.view(unit), this.mode);
-    this.ui.setRoster(this.roster());
-    this.ring.visible = this.mode === 'command' && !this.state.dead;
+    this.ui.showUnitCard(this.view(unit));
+    this.ring.visible = !this.state.dead;
     if (same) this.onFocus(unit);
   }
 
@@ -234,102 +237,29 @@ export class Commander {
     this.onFocus(unit);
   }
 
+  cycle(dir = 1) {
+    const units = this.units().filter((u) => !u.dead);
+    if (!units.length) return;
+    const current = units.indexOf(this.selected);
+    const next = units[(current + dir + units.length) % units.length];
+    this.select(next);
+    this.onFocus(next);
+  }
+
   clear() {
-    if (this.mode === 'direct') this.release();
     this.buildingCard?.close();
     this.selected = null;
     this.ring.visible = false;
     this.ui.hideUnitCard();
-    this.ui.setRoster(this.roster());
   }
 
-  // -------------------------------------------------------------------------
-  // possession
-  // -------------------------------------------------------------------------
-
-  /** Unit-card role button: release a post, release the builder role, or become a builder. */
-  toggleRole() {
-    const unit = this.selected;
-    if (!unit || unit.dead || unit.possessed || this.state.dead) return;
-    this.campFolk.toggleRole(unit);
-    this._lastKey = '';
+  /** Clipboard: send a survivor home from their workplace. */
+  releasePost(unit) {
+    if (!unit?.home) return false;
+    this.campFolk.releaseWorkplace(unit);
     this.refresh(unit);
-    this.ui.setRoster(this.roster());
     this.onSave();
-  }
-
-  toggleControl() {
-    if (this.mode === 'direct') {
-      this.release();
-      return;
-    }
-    const unit = this.selected;
-    if (!unit || this.state.dead) return;
-    if (unit.dead) {
-      this.ui.toast(`${unit.name} IS DOWN`, true);
-      return;
-    }
-    if (unit.onExpedition) {
-      this.ui.toast(`${unit.name} IS AWAY ON AN EXPEDITION`, true);
-      return;
-    }
-    this._leaderHealth = this.state.health;
-    this._leaderMax = this.state.maxHealth;
-    this.state.health = unit.hp;
-    this.state.maxHealth = unit.maxHp;
-    if (!this.player.possess(unit)) return;
-    unit.possessed = true;
-    unit.job = null;
-    unit.carry = unit.carry || 0;
-    this.selected = unit;
-    this.setMode('direct');
-    this.onFollow();
-    this.ui.updateHUD(this.state);
-    this.ui.setAmmo(this.player.ammoState());
-    this.ui.toast(`CONTROLLING ${unit.name}`);
-  }
-
-  release() {
-    if (this.mode !== 'direct') return;
-    const unit = this.player.possessedUnit;
-    const hp = Math.max(1, this.state.health);
-    this.player.release();
-    if (unit) {
-      unit.hp = Math.min(unit.maxHp, hp);
-      unit.possessed = false;
-    }
-    this.selected = unit || this.units().find((u) => !u.dead) || null;
-    this._lastKey = this.selected ? this.keyOf(this.selected) : '';
-    if (this.selected) {
-      this.state.health = this.selected.hp;
-      this.state.maxHealth = this.selected.maxHp;
-    }
-    this.setMode('command');
-    this.onFollow();
-    this.ui.updateHUD(this.state);
-    this.ui.setAmmo(this.player.ammoState());
-    this.ui.toast('COMMAND MODE');
-    this.onSave();
-  }
-
-  /** Called when the possessed unit's health reaches zero. */
-  downPossessed() {
-    const unit = this.player.possessedUnit;
-    if (!unit) return;
-    const name = unit.name;
-    this.player.release();
-    this.campFolk.down(unit);
-    this.selected = this.units().find((u) => !u.dead) || null;
-    this._lastKey = this.selected ? this.keyOf(this.selected) : '';
-    if (this.selected) {
-      this.state.health = this.selected.hp;
-      this.state.maxHealth = this.selected.maxHp;
-    }
-    this.setMode('command');
-    this.onFollow();
-    this.ui.updateHUD(this.state);
-    this.ui.toast(`${name} DOWN`, true);
-    this.onSave();
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -380,6 +310,7 @@ export class Commander {
   }
 
   pickBuilding(clientX, clientY) {
+    if (this.inCell) return null;
     let best = null;
     let bestD = Infinity;
     for (const b of this.getSettlement()?.buildings || []) {
@@ -388,8 +319,8 @@ export class Commander {
       const dx = s.x - clientX;
       const dy = s.y - clientY;
       const d = dx * dx + dy * dy;
-      // Small nodes (poles, lights) get a smaller touch target, otherwise tapping the ground next
-      // to one opens its card by accident.
+      // Small nodes (poles, lights, wall posts) get a smaller touch target, otherwise tapping the
+      // ground next to one opens its card by accident.
       const limit = Math.max(16, Math.min(PICK_UNIT, 12 + (b.radius || 1) * 8));
       if (d < limit * limit && d < bestD) {
         bestD = d;
@@ -451,11 +382,10 @@ export class Commander {
 
   tapAt(clientX, clientY) {
     if (
-      this.mode !== 'command' ||
       !this.state.started ||
       this.state.dead ||
       this.ui.buildOpen ||
-      this.ui.wardrobeOpen ||
+      this.ui.unitsOpen ||
       this.ui.perfOpen ||
       this.ui.campOpen ||
       this.ui.wireActive
@@ -500,16 +430,18 @@ export class Commander {
       return;
     }
 
-    const node = this.scrapField.nearest(ground.x, ground.z, PICK_SCRAP);
-    if (node >= 0) {
-      this.orderGather(this.selected, node);
-      return;
+    if (!this.inCell) {
+      const node = this.scrapField.nearest(ground.x, ground.z, PICK_SCRAP);
+      if (node >= 0) {
+        this.orderGather(this.selected, node);
+        return;
+      }
     }
     this.orderMove(this.selected, ground.x, ground.z);
   }
 
   openBuilding(building) {
-    if (!building || building.destroyed) return;
+    if (!building || building.destroyed || this.inCell) return;
     if (!this.buildingCard) {
       this.ui.toast('STRUCTURE CARD UNAVAILABLE', true);
       return;
@@ -552,8 +484,7 @@ export class Commander {
 
   refresh(unit) {
     if (this.selected === unit) {
-      this.ui.showUnitCard(this.view(unit), this.mode);
-      this.ui.setRoster(this.roster());
+      this.ui.showUnitCard(this.view(unit));
     }
   }
 
@@ -565,8 +496,7 @@ export class Commander {
     if (this.selected && !this.state.dead) {
       const pos = this.selected.rig.group.position;
       this.ring.position.set(pos.x, heightAt(pos.x, pos.z) + 0.035, pos.z);
-      const dead = this.selected.dead;
-      this.ring.visible = this.mode === 'command' && !dead;
+      this.ring.visible = !this.selected.dead;
     } else {
       this.ring.visible = false;
     }
@@ -574,13 +504,12 @@ export class Commander {
     this._uiTimer += dt;
     if (this._uiTimer < 0.22) return;
     this._uiTimer = 0;
-    const unit = this.mode === 'direct' ? this.player.possessedUnit || this.selected : this.selected;
+    const unit = this.selected;
     if (!unit) return;
     const view = this.view(unit);
-    const key = `${view.key}|${view.hp}|${view.status}|${this.mode}`;
+    const key = `${view.key}|${view.hp}|${view.status}|${view.morale}|${view.warning}`;
     if (key === this._lastKey) return;
     this._lastKey = key;
-    this.ui.updateUnitCard(view, this.mode);
-    if (this.mode === 'command') this.ui.setRoster(this.roster());
+    this.ui.updateUnitCard(view);
   }
 }

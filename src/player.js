@@ -1,4 +1,4 @@
-import { heightAt, PLAY_RADIUS } from './terrain.js';
+import { heightAt, PLAY_RADIUS, clampToPlayArea } from './terrain.js';
 import { damp, clamp, deriveSeed } from './rng.js';
 import { buildSkinnedHumanoid } from './skinned.js';
 import { baseHeadGeometry } from './baseHead.js';
@@ -288,11 +288,9 @@ export class Player {
         this.pos.x = clamp(this.pos.x, this.bounds.minX, this.bounds.maxX);
         this.pos.z = clamp(this.pos.z, this.bounds.minZ, this.bounds.maxZ);
       } else {
-        const d = Math.hypot(this.pos.x, this.pos.z);
-        if (d > MAX_RADIUS) {
-          this.pos.x *= MAX_RADIUS / d;
-          this.pos.z *= MAX_RADIUS / d;
-        }
+        const c = clampToPlayArea(this.pos.x, this.pos.z, 2);
+        this.pos.x = c.x;
+        this.pos.z = c.z;
       }
       this.targetHeading = Math.atan2(nx, nz);
       this.phase += dt * (7.6 + this.moving * 1.2);

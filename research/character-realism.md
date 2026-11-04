@@ -388,3 +388,30 @@ problem.
     <https://doi.org/10.1111/cgf.12276>
 15. Three.js `BufferGeometryUtils.mergeVertices` — weld vertices for smooth normals.
     `node_modules/three/examples/jsm/utils/BufferGeometryUtils.js`
+
+## 2026-11-04 — anatomical pass (command-only build)
+
+- **Shared profiles:** `loft()` plus `torsoProfile / armProfile / legProfile / footProfile / trimProfile`
+  now drive both the body and every torso/leg/feet outfit item, so clothing is inflated from the
+  same silhouette and cannot drift off the body.
+- **Body:** pelvis mass → narrow waist → ribcage → clavicle shelf → trapezius; lumbar/thoracic
+  S-curve and per-archetype posture; deltoid caps, elbow volume, forearm belly, wrist, thigh taper,
+  knee cap, calf belly, ankle; hands with palm, curled finger block, thumb and knuckle; feet with
+  heel, instep and toe box; short back-set neck.
+- **Arm lengths:** corrected to shoulder→elbow 0.30 s and elbow→wrist 0.27 s (was 0.42/0.38), and the
+  two-handed IK constants were updated. The held gun sits closer to the body; check combat feel.
+- **Archetypes:** `SHAPES` adds shoulder, chest, limb, hip, posture and neck factors; `makeSpec`
+  jitters a `build` block after the existing RNG draws, so seed palettes are unchanged.
+- **Head:** `smoothHead()` is a lofted skull (chin/jaw/cheek/brow/forehead/crown) with cheek planes,
+  brow ridge, nose bridge/tip, ears, smaller eyes/brows and a shell headwrap that leaves the brow
+  visible. The authored head fit was reduced from 1.25 to 1.08.
+- **Outfits:** shirt/vest/coat/plate are lofted shells with collar, hem, cuff and placket volumes;
+  trousers/greaves/wraps are lofted legs plus a pelvis-tagged trouser seat; boots are a foot loft
+  plus ankle shaft; pack/bedroll/cape, hip tool/pouches, gloves and headgear re-fitted. Outfit
+  geometry is welded after merging.
+- **Bugs fixed:** loft winding depended on profile order (arms/legs read top-down, so sleeves and
+  trousers rendered inside-out and were invisible); +Z tubes had inverted winding (see-through
+  boots); runtime wardrobe swaps no longer rebuild NPC outfits at high detail.
+- **Cost:** low-detail NPC total is ~8.1–8.8k triangles (down ~25% from ~11.2–12.0k), with more
+  anatomical detail. Player high detail is ~23.8k triangles with 60% fewer vertices. Live camp view
+  measured **~163k triangles / ~114 draw calls** after chunking all static instanced props.

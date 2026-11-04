@@ -4,10 +4,20 @@ import { ghoulGeometry } from './enemies.js';
 import { makeRng, deriveSeed } from './rng.js';
 import { box, cyl, dodeca, merge } from './geo.js';
 
-const CELL_X = 240;
+/**
+ * Expedition cells.
+ *
+ * Caves are no longer entered by a possessed avatar. A team walks out on an expedition, and when
+ * it arrives the overworld is hidden and a runtime-generated interior is built here: floor, walls,
+ * cover, a cache and a hostile pack. The player keeps commanding the same survivors with the same
+ * tap orders. Clearing the pack unlocks the cache; leaving returns the team and its loot to camp.
+ *
+ * The old cave entrances remain as expedition destinations on the world map.
+ */
+
+const CELL_X = 520;
 const CELL_Z = 0;
-const HALF = 10.5;
-const MOB_COUNT = 5;
+const HALF = 13;
 
 function caveMouthGeometry() {
   const p = [];
@@ -20,12 +30,6 @@ function caveMouthGeometry() {
   p.push(cyl(0.05, 0.05, 1.8, 4, '#3d3027', -1.25, 2.0, 0.35, 0.25, 0, 0.2));
   p.push(cyl(0.05, 0.05, 1.6, 4, '#3d3027', 1.25, 1.9, 0.35, 0.25, 0, -0.2));
   return merge(p);
-}
-
-function caveFloor() {
-  const geo = new THREE.PlaneGeometry(HALF * 2, HALF * 2, 12, 12);
-  geo.rotateX(-Math.PI / 2);
-  return geo;
 }
 
 export class CellSystem {
@@ -59,6 +63,7 @@ export class CellSystem {
     this.active = null;
     this.cleared = false;
     this.looted = false;
+    this.wiped = false;
     this.onBite = null;
     this.onLoot = null;
 
@@ -67,9 +72,11 @@ export class CellSystem {
     this.group.position.set(CELL_X, this.floorY, CELL_Z);
     this.group.visible = false;
     this.scene.add(this.group);
+    this.arena = null;
+    this.mobs = [];
+    this.mobMesh = null;
 
     this.buildEntrances(obstacles || []);
-    this.buildCell();
   }
 
   buildEntrances(obstacles) {
@@ -107,13 +114,44 @@ export class CellSystem {
     }
   }
 
-  buildCell() {
+  // -------------------------------------------------------------------------
+  // runtime arena
+  // -------------------------------------------------------------------------
+
+  clearArena() {
+    if (this.arena) {
+      this.group.remove(this.arena);
+      this.arena.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+          else obj.material.dispose();
+        }
+      });
+    }
+    this.arena = new THREE.Group();
+    this.group.add(this.arena);
+    if (this.mobMesh) {
+      this.group.remove(this.mobMesh);
+      this.mobMesh.geometry.dispose();
+      this.mobMesh.material.dispose();
+      this.mobMesh = null;
+    }
+    this.mobs.length = 0;
+  }
+
+  buildArena(seed, danger) {
+    this.clearArena();
+    const rng = makeRng(seed);
+    const arena = this.arena;
+
     const floor = new THREE.Mesh(
-      caveFloor(),
+      new THREE.PlaneGeometry(HALF * 2, HALF * 2, 12, 12),
       new THREE.MeshLambertMaterial({ color: 0x4a3d31, flatShading: true }),
     );
+    floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
-    this.group.add(floor);
+    arena.add(floor);
 
     const wallMat = new THREE.MeshLambertMaterial({ color: 0x5b4a3b, flatShading: true });
     const wallDark = new THREE.MeshLambertMaterial({ color: 0x45382d, flatShading: true });
@@ -128,34 +166,48 @@ export class CellSystem {
       wall.position.set(x, y, z);
       wall.castShadow = true;
       wall.receiveShadow = true;
-      this.group.add(wall);
+      arena.add(wall);
     }
 
-    // Broken pillars and rubble break up the room.
-    for (const [x, z, s] of [[-6.5, -4, 1.1], [6, 4.5, 0.8], [5.5, -6, 1.3], [-6, 6, 0.9]]) {
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.55 * s, 0.8 * s, 3.2 * s, 7), wallDark);
-      pillar.position.set(x, 1.6 * s, z);
-      pillar.rotation.z = (x + z) * 0.01;
-      pillar.castShadow = true;
-      this.group.add(pillar);
-      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55 * s, 0), wallMat);
-      rock.position.set(x + 0.8 * s, 0.35, z - 0.5);
-      rock.rotation.set(0.5, x, 0.3);
-      this.group.add(rock);
+    // Seeded cover: broken pillars, rubble and a few low walls. The layout changes per expedition.
+    const cover = [];
+    const pieces = 5 + Math.floor(rng() * 5);
+    for (let i = 0; i < pieces; i++) {
+      const x = rng.range(-HALF + 2.5, HALF - 2.5);
+      const z = rng.range(-HALF + 2.5, HALF - 2.5);
+      if (Math.hypot(x, z) < 4) continue;
+      if (Math.hypot(x - (HALF - 2.5), z - (HALF - 2.5)) < 3.5) continue;
+      const s = rng.range(0.7, 1.35);
+      if (rng() < 0.55) {
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.55 * s, 0.8 * s, 3.2 * s, 7), wallDark);
+        pillar.position.set(x, 1.6 * s, z);
+        pillar.rotation.z = (x + z) * 0.01;
+        pillar.castShadow = true;
+        arena.add(pillar);
+      } else {
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.7 * s, 0), wallMat);
+        rock.position.set(x, 0.4 * s, z);
+        rock.rotation.set(rng() * 2, rng() * 6, rng() * 2);
+        rock.castShadow = true;
+        arena.add(rock);
+      }
+      cover.push({ x: CELL_X + x, z: CELL_Z + z, radius: 0.9 * s });
     }
+    this.cover = cover;
 
-    // Exit marker and cache.
+    // Exit marker at the south wall.
     const exit = new THREE.Mesh(
       new THREE.BoxGeometry(2.2, 2.8, 0.15),
       new THREE.MeshBasicMaterial({ color: 0xffa45e, transparent: true, opacity: 0.32, toneMapped: false }),
     );
     exit.position.set(0, 1.4, HALF - 0.15);
-    this.group.add(exit);
+    arena.add(exit);
     this.exitPos = { x: CELL_X, z: CELL_Z + HALF - 1.2 };
 
+    // Cache at the far corner, sealed until the pack is down.
     const chestMat = new THREE.MeshLambertMaterial({ color: 0x8a5a32, flatShading: true });
     const chest = new THREE.Group();
-    chest.position.set(0, 0, -HALF + 2.2);
+    chest.position.set(HALF - 2.5, 0, -HALF + 2.5);
     const boxBase = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 0.95), chestMat);
     boxBase.position.y = 0.4;
     boxBase.castShadow = true;
@@ -172,73 +224,70 @@ export class CellSystem {
     chest.add(glow);
     this.chest = chest;
     this.chestGlow = glow;
-    this.group.add(chest);
-    this.chestPos = { x: CELL_X, z: CELL_Z - HALF + 2.2 };
+    arena.add(chest);
+    this.chestPos = { x: CELL_X + HALF - 2.5, z: CELL_Z - HALF + 2.5 };
 
-    for (const [x, z] of [[-HALF + 1.6, -HALF + 1.6], [HALF - 1.6, -HALF + 1.6]]) {
-      const light = new THREE.PointLight(0xff9a52, 2.2, 12, 1.7);
+    for (const [x, z] of [[-HALF + 1.6, -HALF + 1.6], [HALF - 1.6, -HALF + 1.6], [-HALF + 1.6, HALF - 1.6]]) {
+      const light = new THREE.PointLight(0xff9a52, 2.0, 12, 1.7);
       light.position.set(x, 2.4, z);
-      this.group.add(light);
+      arena.add(light);
     }
 
-    // Cave mobs.
+    // Hostile pack. Danger scales the count and the health.
+    const count = Math.max(3, Math.min(10, Math.round(3 + danger * 7)));
     const geo = ghoulGeometry();
     const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-    this.mobMesh = new THREE.InstancedMesh(geo, material, MOB_COUNT);
+    this.mobMesh = new THREE.InstancedMesh(geo, material, count);
     this.mobMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mobMesh.castShadow = true;
     this.mobMesh.receiveShadow = true;
     this.mobMesh.frustumCulled = false;
-    this.group.add(this.mobMesh);
+    arena.add(this.mobMesh);
 
-    this.mobs = [];
-    for (let i = 0; i < MOB_COUNT; i++) {
-      this.mobs.push({
+    const level = 1 + Math.min(5, Math.floor(danger * 4));
+    for (let i = 0; i < count; i++) {
+      const m = {
         active: false,
         x: 0,
         z: 0,
         hp: 0,
-        maxHp: 70,
-        speed: 1.6,
-        phase: this.rng() * 6.28,
+        maxHp: 58 + level * 12,
+        speed: 1.45 + danger * 0.7,
+        phase: rng() * 6.28,
         attackCd: 0,
-        scale: 1.1,
+        scale: 0.95 + danger * 0.25,
         target: {
-          id: `cavemob:${i}`,
+          id: `cellmob:${i}`,
           faction: 'hostile',
           kind: 'ghoul',
           x: 0, y: 0, z: 0,
-          hp: 0, maxHp: 70,
+          hp: 0, maxHp: 58 + level * 12,
           radius: 0.34,
           height: 1.6,
-          level: 2,
-          damage: 5,
-          speed: 1.6,
+          level,
+          damage: 4 + level,
+          speed: 1.45 + danger * 0.7,
           dead: true,
           hit: (damage) => this.damageMob(i, damage),
         },
-      });
+      };
+      this.mobs.push(m);
       this.hideMob(i);
     }
     this.mobMesh.instanceMatrix.needsUpdate = true;
+    this.spawnMobs(rng);
   }
 
-  clearMobs() {
-    for (let i = 0; i < this.mobs.length; i++) this.hideMob(i);
-    this.mobMesh.instanceMatrix.needsUpdate = true;
-  }
-
-  spawnMobs() {
-    const rng = this.rng;
-    for (let i = 0; i < MOB_COUNT; i++) {
+  spawnMobs(rng) {
+    for (let i = 0; i < this.mobs.length; i++) {
       const m = this.mobs[i];
       const a = rng() * Math.PI * 2;
-      const r = rng.range(2, 6);
+      const r = rng.range(3, 8);
       m.x = Math.cos(a) * r;
       m.z = -HALF + 4 + Math.sin(a) * r;
       m.hp = m.maxHp;
       m.active = true;
-      m.attackCd = rng.range(0.3, 1.2);
+      m.attackCd = rng.range(0.3, 1.4);
       m.phase = rng() * 6.28;
       m.target.dead = false;
       m.target.hp = m.hp;
@@ -249,7 +298,7 @@ export class CellSystem {
 
   hideMob(i) {
     const m = this.mobs[i];
-    if (!m) return;
+    if (!m || !this.mobMesh) return;
     m.active = false;
     m.target.dead = true;
     m.hp = 0;
@@ -261,6 +310,7 @@ export class CellSystem {
   }
 
   updateMobMatrices() {
+    if (!this.mobMesh) return;
     for (let i = 0; i < this.mobs.length; i++) {
       const m = this.mobs[i];
       if (!m.active) continue;
@@ -273,34 +323,50 @@ export class CellSystem {
     this.mobMesh.instanceMatrix.needsUpdate = true;
   }
 
-  enter(entrance, unit, player) {
-    if (this.active || !entrance || !unit) return false;
+  // -------------------------------------------------------------------------
+  // expedition entry / exit
+  // -------------------------------------------------------------------------
+
+  enterExpedition(mission, members, player) {
+    if (this.active || !mission || !members?.length) return false;
+    this.clearArena();
+    const seed = deriveSeed(`cell:${mission.id}:${mission.targetId || mission.label}`);
+    this.buildArena(seed, mission.danger ?? 0.4);
     this.active = {
-      entrance,
-      unit,
-      returnPos: unit.rig.group.position.clone(),
-      returnHeading: unit.heading || 0,
+      kind: 'expedition',
+      mission,
+      members: members.slice(),
     };
     this.looted = false;
-    this.cleared = false;
-    const alreadyCleared = this.clearedCaves.has(entrance.id);
-    if (alreadyCleared) {
-      this.clearMobs();
-      this.cleared = true;
-      this.looted = true;
-    } else {
-      this.spawnMobs();
-    }
+    this.wiped = false;
+    this.lootScrap = Math.min(mission.scrap ?? 40, Math.round((mission.scrap ?? 40) * (0.8 + this.rng() * 0.5)));
+    this.lootComponents = mission.components ?? (mission.danger > 0.6 ? 1 : 0);
     this.group.visible = true;
     this.setOverworldVisible(false);
-    unit.rig.group.visible = true;
-    unit.rig.group.position.set(CELL_X, this.floorY + 0.02, CELL_Z + HALF - 4.2);
-    unit.heading = Math.PI;
-    unit.targetHeading = Math.PI;
-    unit.rig.group.rotation.y = Math.PI;
-    player.aim.target = null;
-    player.aim._initialised = false;
-    player.attackCooldown = 0;
+    const spots = [
+      [0, HALF - 4.5], [-2.2, HALF - 4.2], [2.2, HALF - 4.2],
+    ];
+    members.forEach((p, i) => {
+      const [ox, oz] = spots[i % spots.length];
+      const x = CELL_X + ox;
+      const z = CELL_Z + oz;
+      p.rig.group.visible = true;
+      p.rig.mesh.visible = true;
+      if (p.farTier) p.farTier.visible = false;
+      p.rig.group.position.set(x, this.floorY + 0.02, z);
+      p.heading = Math.PI;
+      p.targetHeading = Math.PI;
+      p.rig.group.rotation.y = Math.PI;
+      p.job = null;
+      p.path = null;
+      p.attention = null;
+      p.onExpedition = true;
+      p.anchor = { x, z };
+      p.target = { x, z };
+      p.holdTimer = 4;
+      p.timer = 2;
+      p.aim?.setLock(null);
+    });
     player.bounds = {
       minX: CELL_X - HALF + 0.7,
       maxX: CELL_X + HALF - 0.7,
@@ -308,23 +374,29 @@ export class CellSystem {
       maxZ: CELL_Z + HALF - 0.7,
     };
     player.floorY = this.floorY + 0.02;
-    this.chestGlow.visible = !this.looted;
+    player.pos.set(CELL_X, this.floorY, CELL_Z + HALF - 4.2);
+    this.chestGlow.visible = true;
     return true;
   }
 
-  exit() {
+  exitExpedition() {
     if (!this.active) return null;
-    const unit = this.active.unit;
-    const back = this.active.entrance;
-    unit.rig.group.position.set(back.x + 2.8, heightAt(back.x + 2.8, back.z), back.z);
-    unit.heading = Math.atan2(-2.8, 0);
-    unit.targetHeading = unit.heading;
-    unit.rig.group.rotation.y = unit.heading;
-    if (this.active.unit.rig) this.active.unit.rig.group.visible = true;
+    const active = this.active;
+    const result = {
+      mission: active.mission,
+      members: active.members,
+      cleared: this.cleared,
+      looted: this.looted,
+      scrap: this.looted ? this.lootScrap : 0,
+      components: this.looted ? this.lootComponents : 0,
+    };
     this.active = null;
     this.group.visible = false;
     this.setOverworldVisible(true);
-    return unit;
+    this.cleared = false;
+    this.looted = false;
+    this.clearArena();
+    return result;
   }
 
   setOverworldVisible(visible) {
@@ -332,9 +404,10 @@ export class CellSystem {
     if (this.scrapField.setVisible) this.scrapField.setVisible(visible);
     for (const mesh of this.wasteland.meshes) mesh.visible = visible;
     for (const b of this.settlement.buildings) b.group.visible = visible;
+    if (this.settlement.wallGroup) this.settlement.wallGroup.visible = visible;
     this.enemies.mesh.visible = visible;
     for (const p of this.campFolk.people) {
-      p.rig.group.visible = visible && p.active && !p.dead;
+      p.rig.group.visible = visible && p.active && !p.dead && !p.left;
     }
     for (const p of this.raiders.people) {
       p.rig.group.visible = visible && p.active && !p.dead;
@@ -349,30 +422,35 @@ export class CellSystem {
     }
   }
 
-  nearEntrance(x, z, radius = 2.8) {
-    for (const e of this.entrances) {
-      if (Math.hypot(e.x - x, e.z - z) <= radius) return e;
-    }
-    return null;
+  // -------------------------------------------------------------------------
+  // cell state
+  // -------------------------------------------------------------------------
+
+  livingMembers() {
+    return (this.active?.members || []).filter((p) => p && !p.dead && !p.left);
   }
 
-  nearInteract(x, z) {
-    if (!this.active) return null;
-    if (Math.hypot(this.exitPos.x - x, this.exitPos.z - z) < 2.2) return 'EXIT CAVE';
-    if (!this.looted && this.cleared && Math.hypot(this.chestPos.x - x, this.chestPos.z - z) < 2.2) {
-      return 'LOOT CACHE';
+  nearestMemberTo(x, z) {
+    let best = null;
+    let bestD = Infinity;
+    for (const p of this.livingMembers()) {
+      const pos = p.rig.group.position;
+      const d = Math.hypot(pos.x - x, pos.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
     }
-    return null;
+    return best;
   }
 
   interact() {
     if (!this.active) return null;
-    const unit = this.active.unit;
-    const p = unit.rig.group.position;
-    if (Math.hypot(this.exitPos.x - p.x, this.exitPos.z - p.z) < 2.2) return 'exit';
-    if (!this.looted && this.cleared && Math.hypot(this.chestPos.x - p.x, this.chestPos.z - p.z) < 2.2) {
+    const unit = this.nearestMemberTo(this.chestPos.x, this.chestPos.z);
+    if (!unit) return null;
+    const pos = unit.rig.group.position;
+    if (!this.looted && this.cleared && Math.hypot(this.chestPos.x - pos.x, this.chestPos.z - pos.z) < 2.6) {
       this.looted = true;
-      this.clearedCaves.add(this.active.entrance.id);
       this.chestGlow.visible = false;
       this.onLoot?.();
       return 'loot';
@@ -380,18 +458,73 @@ export class CellSystem {
     return null;
   }
 
-  update(dt, player) {
+  nearInteract(x, z) {
+    if (!this.active) return null;
+    if (!this.looted && this.cleared && Math.hypot(this.chestPos.x - x, this.chestPos.z - z) < 2.6) {
+      return 'LOOT CACHE';
+    }
+    return null;
+  }
+
+  hudView() {
+    if (!this.active) return null;
+    const living = this.livingMembers().length;
+    const enemies = this.mobs.filter((m) => m.active).length;
+    const selected = this.nearestMemberTo(this.chestPos.x, this.chestPos.z);
+    let canLoot = false;
+    if (selected && this.cleared && !this.looted) {
+      const pos = selected.rig.group.position;
+      canLoot = Math.hypot(this.chestPos.x - pos.x, this.chestPos.z - pos.z) < 2.6;
+    }
+    let note = 'CLEAR THE SITE · LOOT THE CACHE · RETURN TO CAMP';
+    if (this.wiped || living === 0) note = 'THE TEAM IS DOWN · RETURN TO CAMP';
+    else if (this.cleared && !this.looted) note = 'SITE CLEAR · SEND A SURVIVOR TO THE CACHE';
+    else if (this.looted) note = 'CACHE LOOTED · RETURN TO CAMP';
+    return {
+      title: this.active.mission.label || 'EXPEDITION',
+      enemies,
+      note,
+      canLoot,
+      looted: this.looted,
+      canLeave: true,
+    };
+  }
+
+  update(dt, player, selected = null) {
     if (!this.active) return;
+    const members = this.livingMembers();
+    if (!members.length && !this.wiped) {
+      this.wiped = true;
+      this.ui?.toast('THE TEAM IS DOWN · RETURN TO CAMP', true);
+    }
     let living = 0;
     for (let i = 0; i < this.mobs.length; i++) {
       const m = this.mobs[i];
       if (!m.active) continue;
       living++;
       m.attackCd = Math.max(0, m.attackCd - dt);
+      // Chase the nearest living member, preferring the selected one when they are close.
+      let target = selected && !selected.dead ? selected : null;
+      let bestD = target
+        ? Math.hypot(target.rig.group.position.x - (CELL_X + m.x), target.rig.group.position.z - (CELL_Z + m.z))
+        : Infinity;
+      for (const p of members) {
+        const pos = p.rig.group.position;
+        const d = Math.hypot(pos.x - (CELL_X + m.x), pos.z - (CELL_Z + m.z));
+        if (d < bestD) {
+          bestD = d;
+          target = p;
+        }
+      }
       const wx = CELL_X + m.x;
       const wz = CELL_Z + m.z;
-      const dx = player.x - wx;
-      const dz = player.z - wz;
+      if (!target) {
+        m.phase += dt;
+        continue;
+      }
+      const tpos = target.rig.group.position;
+      const dx = tpos.x - wx;
+      const dz = tpos.z - wz;
       const dist = Math.hypot(dx, dz) || 1;
       if (dist > 1.35) {
         const step = Math.min(m.speed * dt, dist - 1.15);
@@ -399,11 +532,14 @@ export class CellSystem {
         m.z += (dz / dist) * step;
       } else if (m.attackCd <= 0) {
         m.attackCd = 1.35;
-        this.onBite?.(5);
+        const index = this.campFolk.people.indexOf(target);
+        const killed = this.campFolk.damage(index, m.target.damage);
+        this.onBite?.(m.target.damage, target);
+        if (killed) this.ui?.toast(`${target.name} IS DOWN`, true);
       }
       m.phase += dt * (5.5 + m.speed);
-      m.target.x = CELL_X + m.x;
-      m.target.z = CELL_Z + m.z;
+      m.target.x = wx;
+      m.target.z = wz;
       m.target.y = this.floorY;
       m.target.hp = m.hp;
       m.target.dead = false;
@@ -413,10 +549,10 @@ export class CellSystem {
       _o.updateMatrix();
       this.mobMesh.setMatrixAt(i, _o.matrix);
     }
-    this.mobMesh.instanceMatrix.needsUpdate = true;
+    if (this.mobMesh) this.mobMesh.instanceMatrix.needsUpdate = true;
     if (!living && !this.cleared) {
       this.cleared = true;
-      this.ui?.toast('CAVE CLEARED · CACHE UNSEALED', false);
+      this.ui?.toast('SITE CLEARED · CACHE UNSEALED', false);
     }
     if (this.chestGlow.visible) {
       this.chestGlow.position.y = 1.5 + Math.sin(performance.now() * 0.003) * 0.12;

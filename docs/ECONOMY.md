@@ -1,4 +1,8 @@
-# Workplaces, jobs and the settlement economy
+> **Update (current build):** the relay no longer starts a final assault or a win condition; it is
+> a command centre with a once-per-day broadcast. Expeditions are playable runtime cells. The
+> numbers below are kept for the economy history and long-session balance work.
+>
+> # Workplaces, jobs and the settlement economy
 
 **Status:** Phases **5a, 5b, 5c and 6 are implemented** (free builder role, Scavenger Hut, Well
 Wheel, Farm, Workshop, daily needs, food/water HUD, recruitment, saved roles and needs, relay

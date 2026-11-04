@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { heightAt, PLAY_RADIUS } from './terrain.js';
+import { heightAt, clampToPlayArea, inPlayArea } from './terrain.js';
 import { makeRng } from './rng.js';
 import { box, merge, PALETTE } from './geo.js';
 
@@ -112,10 +112,9 @@ export class Enemies {
       const r = spread + this.rng.range(-4, 8);
       const spawnX = aroundX + Math.cos(a) * r;
       const spawnZ = aroundZ + Math.sin(a) * r;
-      const sd = Math.hypot(spawnX, spawnZ);
-      const keep = sd > PLAY_RADIUS ? PLAY_RADIUS / sd : 1;
-      e.x = spawnX * keep;
-      e.z = spawnZ * keep;
+      const spot = clampToPlayArea(spawnX, spawnZ, 4);
+      e.x = spot.x;
+      e.z = spot.z;
       e.y = heightAt(e.x, e.z);
       e.active = true;
       const level = opts.level ?? 1;
@@ -355,10 +354,10 @@ export class Enemies {
         }
       }
 
-      const rr = Math.hypot(e.x, e.z);
-      if (rr > PLAY_RADIUS) {
-        e.x *= PLAY_RADIUS / rr;
-        e.z *= PLAY_RADIUS / rr;
+      if (!inPlayArea(e.x, e.z, 0.5)) {
+        const clamped = clampToPlayArea(e.x, e.z, 0.5);
+        e.x = clamped.x;
+        e.z = clamped.z;
       }
 
       e.y = heightAt(e.x, e.z);

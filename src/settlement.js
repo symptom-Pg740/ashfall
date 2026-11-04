@@ -7,6 +7,10 @@ import { makeDetailSet } from './textures.js';
 
 const CAMP_RADIUS = 110;
 const GRID = 1;
+const POWER_SPAN = 14;
+const WALL_SPAN = 4.4;
+const WALL_THICK = 0.42;
+const WALL_HEIGHT = 1.75;
 
 function baseDisc(radius) {
   return cyl(radius * 0.8, radius * 0.9, 0.05, 12, '#a98b65', 0, 0.025, 0);
@@ -748,7 +752,30 @@ function tradePost() {
   return bakeBaseAO(merge(p), 0.5, 0.3);
 }
 
+function wallPost() {
+  const mud = '#c9a878';
+  const mudDark = '#a98a61';
+  const stone = '#b6a184';
+  const wood = '#6b4a2e';
+  const p = [];
+  // A short adobe pier; the panels between piers are built by the settlement when walls auto-link.
+  p.push(box(0.72, 0.22, 0.72, stone, 0, 0.11, 0));
+  p.push(box(0.62, WALL_HEIGHT, 0.62, mudDark, 0, 0.22 + WALL_HEIGHT / 2, 0));
+  p.push(box(0.72, 0.16, 0.72, mud, 0, WALL_HEIGHT + 0.22, 0));
+  p.push(box(0.78, 0.1, 0.78, wood, 0, WALL_HEIGHT + 0.34, 0, 0, 0.2, 0));
+  p.push(cyl(0.055, 0.05, 0.62, 5, wood, 0.24, 1.05, 0.24));
+  return bakeBaseAO(merge(p), 0.5, 0.3);
+}
+
 export const BUILDINGS = [
+  {
+    id: 'wall',
+    name: 'WALL',
+    cost: 3,
+    radius: 0.55,
+    desc: 'Auto-connects to nearby wall.',
+    group: 'defence',
+  },
   {
     id: 'barricade',
     name: 'BARRICADE',
@@ -841,7 +868,7 @@ export const BUILDINGS = [
     components: 8,
     hp: 520,
     radius: 2.0,
-    desc: 'Call home. Hold it.',
+    desc: 'Command centre. Broadcast for survivors.',
     power: { kind: 'consumer', demand: 0.8, priority: 6, attach: 2.8 },
     geometry: null,
   },
@@ -910,6 +937,7 @@ export const BUILDINGS = [
 ];
 
 const GEO_BUILDERS = {
+  wall: wallPost,
   barricade,
   campfire,
   catcher,
@@ -1001,6 +1029,57 @@ export class Settlement {
     this.ring.renderOrder = 3;
     scene.add(this.ring);
 
+    // Power placement preview: the new node's reach plus the nearest node it would link to.
+    this.powerRingMat = new THREE.MeshBasicMaterial({
+      color: 0x9fdc86,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+    this.powerRing = new THREE.Mesh(new THREE.RingGeometry(POWER_SPAN - 0.18, POWER_SPAN, 96), this.powerRingMat);
+    this.powerRing.rotation.x = -Math.PI / 2;
+    this.powerRing.visible = false;
+    this.powerRing.renderOrder = 2;
+    scene.add(this.powerRing);
+
+    this.powerTargetMat = new THREE.MeshBasicMaterial({
+      color: 0xffd88a,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+    this.powerTarget = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.08, 40), this.powerTargetMat);
+    this.powerTarget.rotation.x = -Math.PI / 2;
+    this.powerTarget.visible = false;
+    this.powerTarget.renderOrder = 5;
+    scene.add(this.powerTarget);
+
+    // Wall placement preview: a translucent panel to the nearest existing wall.
+    this.wallPreviewMat = new THREE.MeshBasicMaterial({
+      color: 0x9fdc86,
+      transparent: true,
+      opacity: 0.34,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    this.wallPreview = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), this.wallPreviewMat);
+    this.wallPreview.visible = false;
+    this.wallPreview.renderOrder = 3;
+    scene.add(this.wallPreview);
+
+    this.wallGroup = new THREE.Group();
+    this.wallGroup.name = 'walls';
+    scene.add(this.wallGroup);
+    this.wallPanels = [];
+    this.wallColliders = [];
+    // Wall panels are plain boxes, not vertex-coloured merged kit geometry, so they need a solid
+    // adobe material; reusing buildMat would render them black.
+    this.wallMaterial = new THREE.MeshLambertMaterial({ color: 0xc9a878, flatShading: true });
+
     this.flameGeo = new THREE.ConeGeometry(0.23, 0.72, 6);
     this.flameMat = new THREE.MeshBasicMaterial({
       color: 0xffb05b,
@@ -1090,6 +1169,9 @@ export class Settlement {
     this.ring.visible = true;
     this.ring.geometry.dispose();
     this.ring.geometry = new THREE.RingGeometry(def.radius - 0.12, def.radius, 30);
+    this.powerRing.visible = !!def.power;
+    this.powerTarget.visible = false;
+    this.wallPreview.visible = def.id === 'wall';
     const fwd = origin.heading || 0;
     const spawnDist = Math.max(3.4, def.radius + 1.1);
     this.moveGhost(origin.x + Math.sin(fwd) * spawnDist, origin.z + Math.cos(fwd) * spawnDist, origin);
@@ -1102,16 +1184,104 @@ export class Settlement {
     this.reason = '';
     this.ghost.visible = false;
     this.ring.visible = false;
+    this.powerRing.visible = false;
+    this.powerTarget.visible = false;
+    this.wallPreview.visible = false;
+  }
+
+  /** Existing power nodes, used by the placement preview and the reach snap. */
+  powerNodes() {
+    return this.buildings.filter((b) => b.def?.power && b.built && !b.destroyed);
+  }
+
+  nearestPowerNode(x, z, maxDist = Infinity) {
+    let best = null;
+    let bestD = maxDist;
+    for (const b of this.powerNodes()) {
+      const d = Math.hypot(b.x - x, b.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best ? { building: best, distance: bestD } : null;
+  }
+
+  nearestWallNode(x, z, maxDist = WALL_SPAN) {
+    let best = null;
+    let bestD = maxDist;
+    for (const b of this.buildings) {
+      if (b.type !== 'wall' || b.destroyed || !b.built) continue;
+      const d = Math.hypot(b.x - x, b.z - z);
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best ? { building: best, distance: bestD } : null;
   }
 
   moveGhost(x, z, origin) {
     if (!this.placing) return;
-    const gx = Math.round(x / GRID) * GRID;
-    const gz = Math.round(z / GRID) * GRID;
+    const def = this.selected;
+    let gx = Math.round(x / GRID) * GRID;
+    let gz = Math.round(z / GRID) * GRID;
+
+    // Power nodes snap to the reachable ring of the nearest existing node. This is what lets a
+    // player chain poles at exactly the farthest reachable point instead of guessing the 14 m span.
+    if (def?.power) {
+      const near = this.nearestPowerNode(gx, gz, POWER_SPAN * 2.2);
+      if (near) {
+        const dx = gx - near.building.x;
+        const dz = gz - near.building.z;
+        const d = Math.hypot(dx, dz) || 1;
+        if (d > POWER_SPAN) {
+          gx = near.building.x + (dx / d) * POWER_SPAN;
+          gz = near.building.z + (dz / d) * POWER_SPAN;
+        }
+        this.powerTarget.position.set(
+          near.building.x,
+          near.building.y + 0.08,
+          near.building.z,
+        );
+        this.powerTarget.visible = true;
+      } else {
+        this.powerTarget.visible = false;
+      }
+    }
+
     const y = heightAt(gx, gz);
     this.ghost.position.set(gx, y + 0.02, gz);
     this.ring.position.set(gx, y + 0.06, gz);
+    if (this.powerRing.visible) this.powerRing.position.set(gx, y + 0.05, gz);
     this.validate(origin);
+    if (this.selected?.id === 'wall') this.updateWallPreview(gx, gz, y);
+    if (this.powerRing.visible) {
+      const linked = this.nearestPowerNode(gx, gz, POWER_SPAN + 0.01);
+      this.powerRingMat.color.setHex(linked ? 0x9fdc86 : 0xd8a45e);
+      this.powerRingMat.opacity = linked ? 0.16 : 0.1;
+    }
+  }
+
+  updateWallPreview(x, z, y) {
+    const near = this.nearestWallNode(x, z, WALL_SPAN * 1.25);
+    if (!near) {
+      this.wallPreview.visible = false;
+      return;
+    }
+    const b = near.building;
+    const dx = x - b.x;
+    const dz = z - b.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.4) {
+      this.wallPreview.visible = false;
+      return;
+    }
+    this.wallPreview.visible = true;
+    this.wallPreview.scale.set(WALL_THICK, WALL_HEIGHT, len);
+    this.wallPreview.position.set((x + b.x) / 2, (y + b.y) / 2 + WALL_HEIGHT / 2 + 0.2, (z + b.z) / 2);
+    this.wallPreview.rotation.y = Math.atan2(dx, dz);
+    this.wallPreviewMat.color.setHex(this.canPlace ? 0x9fdc86 : 0xe17151);
   }
 
   validate(origin) {
@@ -1430,6 +1600,7 @@ export class Settlement {
     const index = this.buildings.indexOf(building);
     if (index >= 0) this.buildings.splice(index, 1);
     this.syncStorage();
+    this.rebuildWalls();
     this.onBuildingDestroyed?.(building);
   }
 
@@ -1441,7 +1612,59 @@ export class Settlement {
     b.model.visible = true;
     if (b.site) b.site.group.visible = false;
     this.syncStorage();
+    this.rebuildWalls();
     return true;
+  }
+
+  /** Rebuild the wall panels and colliders from the current wall piers. */
+  rebuildWalls() {
+    for (const mesh of this.wallPanels) {
+      this.wallGroup.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    this.wallPanels.length = 0;
+    this.wallColliders = [];
+    const walls = this.buildings.filter((b) => b.type === 'wall' && b.built && !b.destroyed);
+    const seen = new Set();
+    for (let i = 0; i < walls.length; i++) {
+      for (let j = i + 1; j < walls.length; j++) {
+        const a = walls[i];
+        const b = walls[j];
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const len = Math.hypot(dx, dz);
+        if (len > WALL_SPAN || len < 0.35) continue;
+        const key = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const geo = new THREE.BoxGeometry(WALL_THICK, WALL_HEIGHT, len);
+        const mesh = new THREE.Mesh(geo, this.wallMaterial);
+        mesh.position.set((a.x + b.x) / 2, (a.y + b.y) / 2 + WALL_HEIGHT / 2 + 0.16, (a.z + b.z) / 2);
+        mesh.rotation.y = Math.atan2(dx, dz);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.wallGroup.add(mesh);
+        this.wallPanels.push(mesh);
+        // Collision samples along the panel so units and ghouls cannot walk through it.
+        const samples = Math.max(2, Math.ceil(len / 1.0));
+        for (let s = 1; s < samples; s++) {
+          const t = s / samples;
+          this.wallColliders.push({
+            x: a.x + dx * t,
+            z: a.z + dz * t,
+            y: (a.y + b.y) / 2,
+            radius: 0.5,
+            wall: true,
+          });
+        }
+      }
+    }
+  }
+
+  /** Buildings plus wall-panel colliders, for nav and hostile collision. */
+  /** Buildings plus wall-panel colliders, for nav and hostile collision. */
+  solids() {
+    return this.buildings.concat(this.wallColliders);
   }
 
   /** Recreate saved buildings without charging scrap or playing placement effects. */
@@ -1465,6 +1688,7 @@ export class Settlement {
       }
     }
     this.syncStorage();
+    this.rebuildWalls();
   }
 
   serialize() {

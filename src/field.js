@@ -1,5 +1,28 @@
 import { clamp, smoothstep, makeRng } from './rng.js';
 
+/**
+ * The playable world is a rectangle, wider east-west than north-south, with the highway running
+ * along its long axis. Defined here (not in terrain.js) so the baked field can shape itself
+ * without importing terrain and creating a cycle; terrain.js re-exports these for every other
+ * module.
+ */
+export const PLAY_HALF_X = 380;
+export const PLAY_HALF_Z = 220;
+
+/**
+ * Centre line of the east-west highway: a gentle, deterministic wobble around z = 0. It sits a
+ * few metres south of the origin so the camp core (fire pit, banner, first buildings) stays on
+ * the north shoulder and the road passes cleanly beside it.
+ */
+export function highwayZ(x) {
+  return -8 + Math.sin(x * 0.0068) * 7 + Math.sin(x * 0.017) * 3.5;
+}
+
+/** Centre line of the narrower north-south feeder track that crosses the camp. */
+export function feederX(z) {
+  return Math.sin(z * 0.021) * 6 + Math.cos(z * 0.0085 + 0.6) * 3;
+}
+
 /** Stable 2D hash in [0,1]. Integer inputs only. */
 function hash2(x, y, seed) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1442695041);
@@ -86,16 +109,17 @@ export class WorldField {
 
   // ---- field definitions -------------------------------------------------
 
-  /** 0..1 winding road mask, matching the dirt tracks drawn into the terrain colours. */
+  /**
+   * 0..1 road mask. The east-west highway is the strongest line on the map (~6 m of dust),
+   * the north-south feeder through the camp is deliberately narrower and weaker.
+   */
   roadAtRaw(x, z) {
-    if (Math.abs(z) > 400) return 0;
-    const roadX = Math.sin(z * 0.052) * 8 + Math.cos(z * 0.021) * 4;
-    const roadZ = 3 + Math.sin(x * 0.055 + 0.5) * 2.5;
-    const wobble = Math.sin(z * 0.7 + x * 0.3) * 0.5;
-    const crossWobble = Math.sin(x * 0.9 + z * 0.2) * 0.35;
-    const main = smoothstep(4.1, 1.3, Math.abs(x - roadX) + wobble);
-    const cross = smoothstep(2.7, 0.9, Math.abs(z - roadZ) + crossWobble) * 0.9;
-    return clamp(Math.max(main, cross), 0, 1);
+    if (Math.abs(x) > 560 || Math.abs(z) > 560) return 0;
+    const highwayWobble = Math.sin(x * 0.6 + z * 0.24) * 0.4;
+    const main = smoothstep(3.0, 1.0, Math.abs(z - highwayZ(x)) + highwayWobble);
+    const feederWobble = Math.sin(z * 0.62 + x * 0.19) * 0.35;
+    const feeder = smoothstep(2.1, 0.8, Math.abs(x - feederX(z)) + feederWobble) * 0.7;
+    return clamp(Math.max(main, feeder), 0, 1);
   }
 
   heightAtRaw(x, z) {
@@ -112,9 +136,14 @@ export class WorldField {
     const detail = this.fbm(wx * 0.16, wz * 0.16, 3, 47) * 0.4;
     let h = (broad + base + dunes * relief + detail) * (0.1 + 0.9 * relief);
 
-    // Ridged relief only at the outer ring, so the camp stays buildable.
-    const rim = smoothstep(36, 330, d);
-    h += this.ridged(wx * 0.022, wz * 0.022, 4, 59) * 9.0 * rim * 0.6;
+    // Rectangular rim: normalised box distance (1 at the play-area edge) instead of a radius, so
+    // the badlands frame a rectangle and the camp basin stays flat and buildable.
+    const box = Math.max(Math.abs(x) / PLAY_HALF_X, Math.abs(z) / PLAY_HALF_Z);
+    const rim = smoothstep(0.58, 1.04, box);
+    h += this.ridged(wx * 0.022, wz * 0.022, 4, 59) * 11.0 * rim * 0.6;
+
+    // Low lip just outside the play area: reads as the basin wall the rectangle sits in.
+    h += smoothstep(0.94, 1.14, box) * 4.5;
 
     // Soft terraces on the rim: mesas/badlands without cliffs inside the camp.
     const terraced = Math.round(h * 1.2) / 1.2;
@@ -129,7 +158,8 @@ export class WorldField {
   moistureAtRaw(x, z) {
     const large = this.fbm(x * 0.012 + 5.1, z * 0.012 - 8.4, 3, 71) * 0.5 + 0.5;
     const small = this.fbm(x * 0.06 - 3.7, z * 0.06 + 4.2, 4, 83) * 0.5 + 0.5;
-    const basin = 1 - smoothstep(12, 46, Math.hypot(x, z)) * 0.25;
+    const box = Math.max(Math.abs(x) / PLAY_HALF_X, Math.abs(z) / PLAY_HALF_Z);
+    const basin = 1 - smoothstep(0.06, 0.5, box) * 0.25;
     return clamp((large * 0.65 + small * 0.35) * basin, 0, 1);
   }
 
@@ -220,7 +250,8 @@ export class WorldField {
       }
       if (!total) return;
       const bounded = clamp(amount, -0.08, 0.08);
-      for (const [i, w] of cells) height[i] = clamp(height[i] + (bounded * w) / total, -7, 8);
+      // The rim climbs higher than the old ring, so the erosion ceiling is raised to match.
+      for (const [i, w] of cells) height[i] = clamp(height[i] + (bounded * w) / total, -8, 16);
     };
 
     for (let d = 0; d < droplets; d++) {

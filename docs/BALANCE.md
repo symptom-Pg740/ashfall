@@ -1,4 +1,8 @@
-# Balance sheet — prototype tuning
+> **Update (current build):** the relay no longer starts a final assault or a win condition; it is
+> a command centre with a once-per-day broadcast. Expeditions are playable runtime cells. The
+> numbers below are kept for the economy history and long-session balance work.
+>
+> # Balance sheet — prototype tuning
 
 **Status:** Phase 7 first balance pass. Every number here is provisional and meant to be changed
 after playtests. The target run is **20–30 minutes**: start with three survivors, build the

@@ -48,36 +48,32 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 
 | Action | Touch | Desktop |
 | --- | --- | --- |
-| Select a survivor | tap the unit or its roster button | click the unit |
+| Select a survivor | tap the unit, or `UNITS` → a row | click the unit |
 | Order | with a unit selected, tap enemy / scrap / ground | click the target |
-| Take / release control | `TAKE CONTROL` / `RELEASE` | same buttons |
+| Open the survivor clipboard | `UNITS` | `U` |
+| Change a survivor's outfit / gear | `UNITS` → select → equipment rows | same |
 | Open a structure card | tap any building | click the building |
 | Assign a workplace slot | tap the hut's `SCAVENGER · ASSIGN` slot with a survivor selected | same |
 | Release a workplace slot | tap the filled slot | same |
-| Set / clear the builder role | survivor card → `MAKE BUILDER` / `RELEASE BUILDER` | same |
-| Build a site | site card → `BUILD` | same |
+| Build a site | site card → `BUILD`, or let any free survivor take it | same |
 | Cycle a workshop recipe | workshop card → `NEXT RECIPE` | same |
-| Activate the relay | relay card → `ACTIVATE` (after power) | same |
+| Broadcast from the relay | relay card → `BROADCAST` (after power) | same |
 | Man the guard post | post card → `ASSIGN` | same |
 | Release the guard post | post card → `RELEASE` | same |
 | Repair a structure | damaged building's card → `REPAIR` | same |
 | Link power | power building's card → `LINK`, drag or tap a ringed node | same |
 | Cancel wiring | `CANCEL` | `Esc` |
-| Move (direct mode) | Left stick | `WASD` / arrows |
-| Strike / fire | `STRIKE` / `FIRE` button | `Space` |
-| Gather scrap | `GATHER` button (appears near a site) | `E` |
-| Enter/exit a cave | `ENTER CAVE` / `EXIT CAVE` button | `E` |
-| Loot a cleared cave cache | `LOOT CACHE` button | `E` |
-| Open the camp panel | `CAMP` top-right | `CAMP` top-right |
+| Open the camp panel | `CAMP` bottom-right | `CAMP` |
+| Explore an expedition cell | tap ground / enemies, then `LOOT CACHE` / `RETURN TO CAMP` | same |
+| Open the menu | `⋯` top-right | `⋯` |
 | Manage an expedition | `CAMP` → pick destination + team → `LAUNCH EXPEDITION` | same |
 | Pick structure | Tap a card / swipe the tray | `1`–`9` |
 | Place a site | pan the camera, pick a structure, tap the ground anywhere in camp | same |
 | Aim placement | Tap / drag the ground | Move mouse, click ground |
 | Confirm / cancel | `PLACE` / `CANCEL` | `Enter` / `Esc` |
-| Wardrobe | `OUTFIT` | `O` |
-| Perf lab | `PERF` | `P` |
-| Fullscreen | ⛶ button, top right | `F` |
-| Orient / lock rotation | phone button, top right | — |
+| Perf lab | menu → `PERF LAB` | `P` |
+| Fullscreen | menu → `FULLSCREEN` | `F` |
+| Orient / lock rotation | menu → `ORIENTATION` | — |
 | Pan the camera | drag the ground | drag the ground |
 | Zoom | pinch | mouse wheel |
 | Rotate the camera | drag the compass | compass, `,` / `.` |
@@ -90,12 +86,13 @@ to face north). Tapping the compass centre re-centres the camera on the player. 
 screen-relative, so `W` is always "up", and during placement the same ground drag aims the ghost
 instead of panning.
 
-**Command mode is the default.** There is no separate player body: every survivor is the same kind
-of unit, and you either command them or press **TAKE CONTROL** to borrow one directly. Idle units
-drift back to the campfire and warm themselves in a ring around it. A unit ordered to a salvage site
-walks there, harvests, carries the load back to camp and deposits it; ordered at a ghoul or raider it
-closes to weapon range and fights. The roster strip is the reliable way to select a unit when the
-camp is crowded.
+**Command mode is the only mode.** There is no player body and no joystick: every survivor is the
+same kind of unit, and you command them. Idle units drift back to the campfire and warm themselves
+in a ring around it; a free survivor automatically takes the oldest construction site. A unit
+ordered to a salvage site walks there, harvests, carries the load back to camp and deposits it;
+ordered at a ghoul or raider it closes to weapon range and fights. The `UNITS` clipboard is the
+reliable way to select a unit, inspect morale, and change its outfit and equipment when the camp is
+crowded.
 
 ---
 
@@ -248,34 +245,33 @@ The graph keeps the last ~45 seconds.
   barrels, rubble, clustered dry grass and distant mesas. Placed with blue-noise scatter masked by
   slope, moisture and roads; grass and shrubs sway in a vertex shader. Rocks use a cracked-rock
   albedo + normal set; houses use plaster detail and baked base AO.
-- **Continue a run** — seed + player state + equipment + buildings + scrap + ammo/magazines + weapon
-  upgrades + production timers + power links + construction sites + survivor roles/workplaces are
-  auto-saved to localStorage (schema `v: 6`; runs from `v: 1`–`v: 5` migrate in place). Reload shows
+- **Continue a run** — seed + camp state + per-survivor equipment, morale and roles + buildings +
+  scrap + ammo/magazines + weapon upgrades + production timers + power links + construction sites are
+  auto-saved to localStorage (schema `v: 7`; runs from `v: 1`–`v: 6` migrate in place). Reload shows
   **CONTINUE**; **NEW RUN** clears the save, and PERF has **RESET SAVE**.
-- **Command layer (Phase 1)** — the camp survivors are selectable units with a roster, a selection
-  ring and contextual orders: tap an enemy to engage, a salvage site to gather/haul, or the ground to
-  move. `TAKE CONTROL` possesses any survivor (joystick, camera follow, that unit's weapon and HP);
-  `RELEASE` returns to command mode.
+- **Command layer (command-only)** — the camp survivors are selectable units with a selection ring
+  and contextual orders: tap an enemy to engage, a salvage site to gather/haul, or the ground to
+  move. There is no direct-control mode and no joystick. `UNITS` opens a clipboard with the roster,
+  morale, stats, assignment, outfit and equipment; `CAMP` manages expeditions.
 - **Warehouse and storage (Phase 2)** — a 4×4 shed with a growing crate stack. Base field stock is
   80; each warehouse adds 120. Gatherers haul to the nearest warehouse (or to you if there is none)
   and wait at the door when it is full. The HUD shows `stored/capacity`, and the build costs are the
   sink.
 - **Construction jobs** — a placed structure is a **site**, not an instant building: a pad, scaffold
-  and progress bar. A survivor with the free **builder** role takes the oldest unclaimed site and
-  finishes it; no random auto-assign happens on placement. Tapping the site opens its **building
-  card**, which shows the progress and lets you press **BUILD** to override the queue and send a
-  specific survivor. The builder walks there with the nav grid and finishes it over time. The real
-  model only appears and becomes active on completion; storage, power, production, healing and
-  defence ignore unfinished sites. Placement is **anywhere in the camp** — pan the camera first,
-  then choose a structure; it is no longer tied to the player's position.
-- **Workplaces and the free builder role (Phase 5a)** — a survivor's role is set from the unit card:
-  `MAKE BUILDER` turns them into a free builder who automatically takes the oldest construction site
-  (no more random auto-assign on placement), and `RELEASE BUILDER` / `RELEASE POST` returns them to
-  guard/scavenger duty. The **Scavenger Hut** has two job slots: tap a slot, then the selected/nearest
-  survivor, and they loop nearest salvage site → harvest → haul to the warehouse, then pick the next
-  pile within 26 m. They wait and report `NO NODES` or `STORAGE FULL` instead of wandering. Manual
-  orders pause the loop; when the order ends the worker returns to their post. Roles and assignments
-  are saved with the run.
+  and progress bar. **Any free survivor** (no workplace, no manual job) takes the oldest unclaimed
+  site and finishes it; there is no dedicated builder role and no unit parked "just in case". Tapping
+  the site opens its **building card**, which shows the progress and lets you press **BUILD** to send
+  a specific survivor. The site is built over time with the nav grid. The real model only appears and
+  becomes active on completion; storage, power, production, healing and defence ignore unfinished
+  sites. Placement is **anywhere in the camp** — pan the camera first, then choose a structure.
+- **Workplaces (Phase 5a)** — the **Scavenger Hut** has two job slots: tap a slot, then the
+  selected/nearest survivor, and they loop nearest salvage site → harvest → haul to the warehouse,
+  then pick the next pile within 26 m. They wait and report `NO NODES` or `STORAGE FULL` instead of
+  wandering. Manual orders pause the loop; when the order ends the worker returns to their post.
+  Roles and assignments are saved with the run. Morale is shown on the clipboard: food, water, a bed,
+  work, faith, firelight and defence raise it; hunger, thirst, overcrowding and wounds lower it. A
+  survivor who is unfed twice or reaches zero morale **leaves camp**, and the dawn report warns you
+  before that happens.
 - **Well Wheel, Farm and needs (Phase 5b)** — the **Well Wheel** has one water-carrier slot and fills
   the water store while staffed. The **Farm** has two farmer slots, produces food and consumes water;
   no water stops it with `NO WATER`. Both report `NO WATER` / `STORAGE FULL` on their cards. At every
@@ -291,14 +287,25 @@ The graph keeps the last ~45 seconds.
   stock; `NEXT RECIPE` cycles it. A **house** raises the survivor cap by one (base 3, max 6). At
   dawn, a camp with at least **2 spare food and water per survivor** and a free slot recruits a new
   survivor every **2–3 days**; recruits arrive as free scavengers.
-- **Relay protocol and a complete run (Phase 6)** — the permanent objective strip walks the camp
-  through **Workshop → components → Relay → power → activate**. The relay costs **40 scrap + 8
-  components**, is a power consumer, and must be linked to the grid. `ACTIVATE` starts a **90-second
-  final assault**: raiders loot the camp while ghoul waves press the player; the hold
-  pauses if the relay loses power, and new waves arrive every ~20 s. Win by holding with the relay
-  alive; lose if the campfire is destroyed, the relay falls during the assault, or every survivor
-  leaves. The end screen reports day, survivors and kills with a `NEW RUN` button. Run state is saved
-  and resumes mid-assault; camp events pause during the final.
+- **Relay as a command centre (continuous camp)** — the relay costs **40 scrap + 8 components**, is a
+  power consumer, and must be linked to the grid. There is no win condition and no final assault:
+  the relay is the camp's communications hub. `BROADCAST` (10 scrap, once per day, needs a free bed)
+  sends a signal that can attract a new survivor. The only end state is losing every survivor; the
+  end screen reports the day, survivors and kills and offers `NEW RUN`.
+- **Walls** — a **Wall** (3 scrap) is a short adobe pier. Placing piers within 4.4 m of each other
+  auto-connects them into a continuous panel, like wires; the placement ghost previews the panel and
+  the panel blocks unit navigation and ghoul movement. No manual linking.
+- **Power placement preview** — while placing a solar array, pole, battery, light, turret or relay,
+  a 14 m reach ring is drawn around the ghost and the nearest existing node is highlighted. The ghost
+  snaps to the farthest reachable point of that node, so a pole chain can be built at exact span.
+- **Rectangular highway world** — the playable world is **760 × 440 m**, wider east-west than
+  north-south. The east-west highway is the map's main line: a pale graded road with a visible ribbon
+  mesh, a wagon and pack mules that drive to the trade post, and neutral travellers walking the road.
+- **Playable expeditions** — pick a salvage site or cave in `CAMP`, assign up to three free survivors,
+  and launch. They travel, then the game builds a **runtime-generated interior cell**: floor, walls,
+  cover, a hostile pack and a sealed cache. Command the same team with tap orders, clear the pack,
+  loot the cache and `RETURN TO CAMP`; loot and XP are banked on return. A wiped team limps home at
+  reduced health.
 - **Raids, damage and repair (Phase 4b)** — raids now alternate by time of day: **raiders by day,
   ghouls by night**, with the banner showing which. Raiders are on a mission: they walk to the nearest
   **warehouse or power building**, shoot it, and only break off for a unit within 14 m. Structures
@@ -331,16 +338,18 @@ The graph keeps the last ~45 seconds.
   structure they are standing in; incoming fire can still reach the gunner above the parapet.
   A 1 m A* navigation grid routes ordered units around houses and rock clusters.
 - **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
-  jitter. The player is a skinned R4 character: the MakeHuman `hm08` head (CC0) with a procedural
-  hair shell, eyes and brows, on a slim 20-bone skinned body with automatic weights, two-bone foot
-  IK, PBR-lite, IBL and a character atlas with skin/cloth/leather/metal regions. The three camp folk
-  use the same skinned builder at a lower detail level, with a **static merged far LOD** above 24 m;
-  `?chars=blocky` and `?chars=smooth` keep the older rigs for comparison.
+  jitter. The survivors use the same 20-bone skinned builder with automatic weights, two-bone foot
+  IK, PBR-lite, IBL and a character atlas with skin/cloth/leather/metal regions. The latest
+  anatomical pass adds clavicles and deltoids, a tapered ribcage and pelvis, elbow/knee volumes,
+  hands with thumbs and fingers, heel/toe feet and a short neck; the far LOD bakes the same rig
+  into one static mesh above 24 m. `?chars=blocky` and `?chars=smooth` keep the older rigs for
+  comparison.
 - **Wardrobe** — 10 equipment slots (head, face, torso, legs, feet, shoulders, hands, back, waist,
   weapon) with multiple items each. Torso/legs/feet rebuild a skinned outfit layer that shares the
-  body skeleton; the rest are meshes on bone sockets. Changes are live, saved with the run, and the
-  far LOD is re-baked for NPCs. Open it with **OUTFIT** / `O` and tap a slot to cycle.
-- **Firearms** — the player starts with a **scrap pistol**, the fast/light sidearm (12-round
+  body skeleton; the rest are meshes on bone sockets. Changes are live, saved per survivor, and the
+  far LOD is re-baked for NPCs. Open the `UNITS` clipboard, select a survivor and tap an equipment
+  row to cycle it.
+- **Firearms** — survivors start with a **scrap pistol**, the fast/light sidearm (12-round
   magazine, 360 rpm, 1.3 s reload). The wardrobe also carries the **pipe rifle**, a slow single-shot
   weapon: 60 damage (one-shots a ghoul), 0.3° spread, 35 m, one round with a 1.1 s reload after each
   shot. Shots are hitscan rays tested against analytic ghoul capsules; a shared target registry
@@ -502,8 +511,9 @@ language.
 
 - **[docs/GAME_PLAN.md](docs/GAME_PLAN.md)** — the full plan: control model, building cards,
   workplaces, warehouse/economy, day/night, electricity, Vickers turret, guard post assignment,
-  progression, map scale and the relay objective. It includes the phased build order and gates.
-- **[docs/ECONOMY.md](docs/ECONOMY.md)** — the workplace/job design: free builder role, Scavenger Hut,
+  progression and map scale. It includes the phased build order and gates. (Command-only and the
+  continuous camp supersede the direct-mode and relay-win parts of that document.)
+- **[docs/ECONOMY.md](docs/ECONOMY.md)** — the workplace/job design: Scavenger Hut,
   Well Wheel, Farm, Workshop (the only ammo source), needs, recruitment and attention states.
 - **[docs/ART_DIRECTION.md](docs/ART_DIRECTION.md)** — mud + scrap for the camp; concrete/glass for
   old-world ruins; salvaged tech on camp-made mounts.
@@ -517,10 +527,11 @@ language.
 building card, manual wire dragging with pole ports and the 360° turret fix are shipped; raids
 alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid;
 the world is a 180 m disc with spread-out scatter and clearance-aware navigation that reports
-`NO PATH`; the builder role, Scavenger Hut, Well Wheel, Farm, Workshop, daily needs, ammo crafting,
-recruitment and saved roles are live; and the relay objective gives the run a 90-second final
-assault and a win/lose screen. Phase 7 added chunked prop culling, device-tier quality and the first
-balance sheet. The next slice is **Phase 8** — art, realism and device polish.
+`NO PATH`; the Scavenger Hut, Well Wheel, Farm, Workshop, daily needs, morale, ammo crafting,
+recruitment and saved roles are live. The relay is now a command centre with a daily broadcast
+instead of a win condition, and expeditions are playable runtime cells rather than timers. Phase 7
+added chunked prop culling, device-tier quality and the first balance sheet. The next slice is
+**Phase 8** — art, realism and device polish.
 
 The old prototype priorities still apply inside that plan: real-device testing, adaptive-resolution
 fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgotten work.
@@ -535,8 +546,9 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
   themselves.
 - The turret card reports power, belt, targets and line of sight, but the turret still reloads its
   own 250-round belt; it does not draw from the workshop like a survivor's gun.
-- Survivor roles, needs, positions and workplace assignments are saved. Guard-post manning, turret
-  belts, the selected building and active wire mode are not; reload leaves posts idle.
+- Survivor roles, needs, morale, equipment, positions and workplace assignments are saved.
+  Guard-post manning, turret belts, the selected building and active wire mode are not; reload
+  leaves posts idle.
 - Building HP is saved and repair works, but repair is free and there is no engineer role yet.
 - Ghouls target living things only and never damage buildings; mixed raider/ghoul assaults are not
   implemented.
@@ -546,9 +558,8 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
   draw calls exceed ~180 or the map outgrows the single-mesh design (see PERFORMANCE.md).
 - Construction cannot be cancelled or refunded yet, and a wire cannot be removed (destroying an
   endpoint still removes its wires).
-- A site with no free builder waits; the free builder role picks up the queue automatically, but
-  there is no reorder/priority for multiple sites beyond oldest-first. The Scavenger Hut, Well Wheel,
-  Farm and Workshop are live; morale is still Phase 6/8.
+- A site with no free survivor waits; any free survivor picks up the queue automatically, oldest
+  first. The Scavenger Hut, Well Wheel, Farm and Workshop are live.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is still the main unknown. Chunked prop culling, a 144-segment
   terrain and the device-tier presets reduce the load, but a physical-phone profile is still needed;
@@ -556,10 +567,10 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
 - Circle collisions over a 1 m A* grid. Dense wreckage can still wedge a unit briefly, but it now
   replans and reports `NO PATH` instead of grinding forever.
 - Needs tick at dawn only; there is no continuous hunger drain or morale system yet (Phase 8).
-- The full 20–30 minute run has not been playtested end-to-end; the final assault and relay costs are
-  provisional. Save/load resumes the hold timer but not the individual hostiles already spawned.
-- There is one objective/ending (relay online) and one defeat family (campfire, relay during the
-  assault, or all survivors leaving); no alternate endings yet.
+- The continuous camp has no end goal by design; only losing every survivor ends a run. Balance is
+  still provisional and needs long-session playtests.
+- Expeditions are saved while travelling; a team already inside a cell is not saved (the save is
+  skipped while the cell is open), so reloading mid-expedition returns the team to the road.
 - Recruitment needs a house and 2 spare days of food/water; there is no recruitment UI beyond the
   dawn notice, and no way to dismiss a survivor.
 - Workshop recipes run while staffed; there is no production queue or per-artisan assignment.

@@ -1,4 +1,5 @@
 import { makeRng } from './rng.js';
+import { PLAY_HALF_X, PLAY_HALF_Z } from './terrain.js';
 
 /**
  * Streamed world encounters.
@@ -32,10 +33,10 @@ export class EncounterField {
       let z = 0;
       let placed = false;
       for (let tries = 0; tries < 30; tries++) {
-        const a = rng() * Math.PI * 2;
-        const r = rng.range(40, 380);
-        x = Math.cos(a) * r;
-        z = Math.sin(a) * r;
+        // Spread over the playable rectangle, keeping a margin off the rim and the camp.
+        x = rng.range(-PLAY_HALF_X + 36, PLAY_HALF_X - 36);
+        z = rng.range(-PLAY_HALF_Z + 30, PLAY_HALF_Z - 30);
+        if (Math.hypot(x, z) < 40) continue;
         if (this.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < (o.r || 0.5) + 3)) continue;
         if (this.groups.some((g) => Math.hypot(g.x - x, g.z - z) < 24)) continue;
         placed = true;
@@ -49,8 +50,10 @@ export class EncounterField {
       else if (roll < 0.78) type = 'raiders';
       else type = 'bats';
 
-      const distance = Math.hypot(x, z);
-      const level = 1 + Math.min(3, Math.floor(distance / 90));
+      // Difficulty follows the box distance from the camp: the far ends of the highway and the
+      // rim are the dangerous parts of the map.
+      const depth = Math.max(Math.abs(x) / PLAY_HALF_X, Math.abs(z) / PLAY_HALF_Z);
+      const level = 1 + Math.min(3, Math.floor(depth * 4));
       const id = `enc:${i}`;
       let members;
       if (type === 'ghouls') members = rng.int(3, 6);

@@ -1,4 +1,4 @@
-import { WORLD_RADIUS, PLAY_RADIUS } from './terrain.js';
+import { WORLD_RADIUS, inPlayArea } from './terrain.js';
 
 /**
  * Navigation grid for settlement movement.
@@ -109,6 +109,7 @@ export class NavGrid {
   signature() {
     let s = '';
     for (const b of this.settlement.buildings) s += `${b.id},`;
+    s += `|w${this.settlement.wallColliders?.length || 0}`;
     return s;
   }
 
@@ -122,7 +123,7 @@ export class NavGrid {
     // The playable disc.
     for (let i = 0; i < SIZE * SIZE; i++) {
       const p = cellWorld(i);
-      if (Math.hypot(p.x, p.z) > PLAY_RADIUS) blocked[i] = 1;
+      if (!inPlayArea(p.x, p.z)) blocked[i] = 1;
     }
 
     // Inflated footprints. Marking from each object's bounding box is much cheaper than testing
@@ -144,7 +145,7 @@ export class NavGrid {
       }
     };
 
-    for (const b of this.settlement.buildings) mark(b.x, b.z, b.radius + 0.6);
+    for (const b of this.settlement.solids()) mark(b.x, b.z, (b.radius || 0.5) + 0.6);
     for (const o of this.wasteland.obstacles) mark(o.x, o.z, (o.r || 0.5) + 0.45);
 
     // Soft clearance: distance in cells to the nearest blocked cell, capped at CLEAR_LIMIT.

@@ -1,14 +1,77 @@
 import * as THREE from 'three';
-import { heightAt, slopeAt, moistureAt, roadAt, WORLD_RADIUS } from './terrain.js';
-import { makeRng, deriveSeed, smoothstep } from './rng.js';
+import { heightAt, slopeAt, moistureAt, roadAt, highwayZ, PLAY_HALF_X, PLAY_HALF_Z } from './terrain.js';
+import { makeRng, deriveSeed, smoothstep, clamp } from './rng.js';
 import { box, cyl, dodeca, merge, paint, PALETTE, shadowTexture } from './geo.js';
-import { scatterDisc } from './scatter.js';
 import { makeDetailSet } from './textures.js';
 
 const tmpObj = new THREE.Object3D();
 const tmpColor = new THREE.Color();
 const UP = new THREE.Vector3(0, 1, 0);
 const nrm = new THREE.Vector3();
+
+/**
+ * Blue-noise-ish points inside the playable rectangle: a jittered grid with a minimum-distance
+ * check, the same scheme as scatter.js but bounded by the world's box instead of a disc.
+ * `weight(x, z)` is an acceptance probability, so the distribution still follows slope, moisture
+ * and road masks. `inner` keeps a clear radius around the camp at the origin.
+ */
+function scatterRect(
+  rng,
+  { minDist, halfX, halfZ, inner = 0, count, weight = () => 1, filter = null, attempts = 5 },
+) {
+  const cell = minDist / Math.SQRT2;
+  const nx = Math.ceil(halfX / cell);
+  const nz = Math.ceil(halfZ / cell);
+  const grid = new Map();
+  const points = [];
+  const key = (ix, iz) => `${ix},${iz}`;
+
+  const tooClose = (x, z) => {
+    const gx = Math.floor(x / cell);
+    const gz = Math.floor(z / cell);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const p = grid.get(key(gx + dx, gz + dz));
+        if (p && Math.hypot(p.x - x, p.z - z) < minDist) return true;
+      }
+    }
+    return false;
+  };
+
+  const cells = [];
+  for (let iz = -nz; iz <= nz; iz++) {
+    for (let ix = -nx; ix <= nx; ix++) cells.push(ix, iz);
+  }
+  // Deterministic shuffle so early cells do not bias one side of the rectangle.
+  for (let i = cells.length - 2; i > 0; i -= 2) {
+    const j = Math.floor(rng() * (i / 2 + 1)) * 2;
+    const tx = cells[i];
+    const tz = cells[i + 1];
+    cells[i] = cells[j];
+    cells[i + 1] = cells[j + 1];
+    cells[j] = tx;
+    cells[j + 1] = tz;
+  }
+
+  for (let i = 0; i < cells.length && points.length < count; i += 2) {
+    const ix = cells[i];
+    const iz = cells[i + 1];
+    for (let a = 0; a < attempts; a++) {
+      const x = (ix + rng()) * cell;
+      const z = (iz + rng()) * cell;
+      if (Math.abs(x) > halfX || Math.abs(z) > halfZ) continue;
+      if (Math.hypot(x, z) < inner) continue;
+      if (tooClose(x, z)) continue;
+      const w = clamp(weight(x, z), 0, 1);
+      if (w <= 0 || rng() > w) continue;
+      if (filter && !filter(x, z)) continue;
+      points.push({ x, z });
+      grid.set(key(Math.floor(x / cell), Math.floor(z / cell)), { x, z });
+      break;
+    }
+  }
+  return points;
+}
 
 /**
  * Sit a large prop on the field: tilt to the local slope and drop it to the lowest point under its
@@ -65,6 +128,9 @@ function instanced(geo, material, count, castColor = true) {
     for (let i = 0; i < count; i++) mesh.setColorAt(i, tmpColor.setRGB(1, 1, 1));
   }
   mesh.frustumCulled = true;
+  // Every static scatter mesh is split into 55 m chunks below. Dynamic pools (ghouls, bats,
+  // shadows) are not built here, so this is safe as a default.
+  mesh.userData.chunkable = true;
   return mesh;
 }
 
@@ -78,7 +144,7 @@ function finalize(mesh) {
 
 /**
  * Split a static InstancedMesh into spatial chunks so the camera can frustum-cull the parts it
- * cannot see. The map is only 180 m across, so full streaming is unnecessary; this keeps the
+ * cannot see. Full streaming is unnecessary, but on a 760 x 440 m rectangle this keeps the
  * single-mesh world while cutting the visible prop/shadow triangles by roughly half.
  */
 function chunkStatic(mesh, scene, chunkSize = 55, minCount = 8) {
@@ -89,7 +155,7 @@ function chunkStatic(mesh, scene, chunkSize = 55, minCount = 8) {
   for (let i = 0; i < mesh.count; i++) {
     mesh.getMatrixAt(i, m);
     p.setFromMatrixPosition(m);
-    const key = `${Math.floor((p.x + 160) / chunkSize)}:${Math.floor((p.z + 160) / chunkSize)}`;
+    const key = `${Math.floor((p.x + PLAY_HALF_X) / chunkSize)}:${Math.floor((p.z + PLAY_HALF_Z) / chunkSize)}`;
     let group = groups.get(key);
     if (!group) {
       group = [];
@@ -399,12 +465,14 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- rocks -------------------------------------------------------------
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 4.2,
-      radius: WORLD_RADIUS - 1,
+      halfX: PLAY_HALF_X - 4,
+      halfZ: PLAY_HALF_Z - 4,
       inner: 16,
-      count: 1100,
+      count: 780,
       weight: (x, z) => {
+        if (Math.abs(z - highwayZ(x)) < 9) return 0;
         if (roadAt(x, z) > 0.55) return 0;
         return 0.12 + slopeAt(x, z, 1.4) * 2.2;
       },
@@ -429,12 +497,14 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- dead trees --------------------------------------------------------
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 9,
-      radius: WORLD_RADIUS - 2,
+      halfX: PLAY_HALF_X - 6,
+      halfZ: PLAY_HALF_Z - 6,
       inner: 14,
-      count: 320,
+      count: 240,
       weight: (x, z) => {
+        if (Math.abs(z - highwayZ(x)) < 10) return 0;
         if (slopeAt(x, z, 1.2) > 0.28) return 0;
         if (roadAt(x, z) > 0.4) return 0;
         return 0.25 + moistureAt(x, z) * 0.35;
@@ -461,12 +531,14 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- cacti -------------------------------------------------------------
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 9,
-      radius: WORLD_RADIUS - 3,
+      halfX: PLAY_HALF_X - 8,
+      halfZ: PLAY_HALF_Z - 8,
       inner: 14,
-      count: 260,
+      count: 190,
       weight: (x, z) => {
+        if (Math.abs(z - highwayZ(x)) < 10) return 0;
         if (slopeAt(x, z, 1.1) > 0.22) return 0;
         if (roadAt(x, z) > 0.38) return 0;
         return 0.3 + (1 - moistureAt(x, z)) * 0.5;
@@ -492,12 +564,14 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- desert shrubs -----------------------------------------------------
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 4.4,
-      radius: WORLD_RADIUS - 2,
+      halfX: PLAY_HALF_X - 5,
+      halfZ: PLAY_HALF_Z - 5,
       inner: 8,
-      count: 780,
+      count: 540,
       weight: (x, z) => {
+        if (Math.abs(z - highwayZ(x)) < 8) return 0;
         if (slopeAt(x, z, 1.0) > 0.32) return 0;
         if (roadAt(x, z) > 0.45) return 0;
         return 0.15 + moistureAt(x, z) * 0.8;
@@ -522,12 +596,14 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- ruined structures -------------------------------------------------
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 14,
-      radius: 340,
+      halfX: PLAY_HALF_X - 30,
+      halfZ: PLAY_HALF_Z - 24,
       inner: 18,
-      count: 110,
+      count: 78,
       weight: (x, z) => {
+        if (Math.abs(z - highwayZ(x)) < 14) return 0;
         if (slopeAt(x, z, 2.5) > 0.2) return 0;
         if (roadAt(x, z) > 0.3) return 0;
         return 0.65;
@@ -553,12 +629,14 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- wrecked vehicles --------------------------------------------------
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 20,
-      radius: 360,
+      halfX: PLAY_HALF_X - 26,
+      halfZ: PLAY_HALF_Z - 22,
       inner: 18,
-      count: 52,
+      count: 40,
       weight: (x, z) => {
+        if (Math.abs(z - highwayZ(x)) < 13) return 0;
         if (slopeAt(x, z, 2) > 0.25) return 0;
         if (roadAt(x, z) > 0.5) return 0;
         return 0.5;
@@ -618,12 +696,13 @@ export function createWasteland(scene, seed = 0x51a7) {
 
   // ---- debris ------------------------------------------------------------
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 3.6,
-      radius: WORLD_RADIUS,
+      halfX: PLAY_HALF_X - 2,
+      halfZ: PLAY_HALF_Z - 2,
       inner: 18,
-      count: 650,
-      weight: (x, z) => (roadAt(x, z) > 0.6 ? 0 : 0.6),
+      count: 460,
+      weight: (x, z) => (Math.abs(z - highwayZ(x)) < 7 || roadAt(x, z) > 0.6 ? 0 : 0.6),
     });
     const geo = paint(new THREE.BoxGeometry(0.16, 0.13, 1.9), PALETTE.woodDark, 0.08);
     const mesh = instanced(geo, material, places.length);
@@ -642,12 +721,13 @@ export function createWasteland(scene, seed = 0x51a7) {
   }
 
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 5.0,
-      radius: WORLD_RADIUS,
+      halfX: PLAY_HALF_X - 2,
+      halfZ: PLAY_HALF_Z - 2,
       inner: 16,
-      count: 300,
-      weight: (x, z) => (roadAt(x, z) > 0.5 ? 0 : 0.5),
+      count: 210,
+      weight: (x, z) => (Math.abs(z - highwayZ(x)) < 8 || roadAt(x, z) > 0.5 ? 0 : 0.5),
     });
     const geo = paint(new THREE.CylinderGeometry(0.34, 0.34, 0.92, 8), PALETTE.rustDark);
     const mesh = instanced(geo, material, places.length);
@@ -666,12 +746,13 @@ export function createWasteland(scene, seed = 0x51a7) {
   }
 
   {
-    const places = scatterDisc(rng, {
+    const places = scatterRect(rng, {
       minDist: 4.0,
-      radius: WORLD_RADIUS,
+      halfX: PLAY_HALF_X - 2,
+      halfZ: PLAY_HALF_Z - 2,
       inner: 16,
-      count: 400,
-      weight: (x, z) => (roadAt(x, z) > 0.55 ? 0 : 0.5),
+      count: 280,
+      weight: (x, z) => (Math.abs(z - highwayZ(x)) < 8 || roadAt(x, z) > 0.55 ? 0 : 0.5),
     });
     const geo = paint(new THREE.DodecahedronGeometry(0.45, 0), PALETTE.concreteDark);
     const mesh = instanced(geo, rockMaterial, places.length);
@@ -694,12 +775,14 @@ export function createWasteland(scene, seed = 0x51a7) {
   {
     const geo = buildGrass();
     const spots = [];
-    const clusters = scatterDisc(rng, {
+    const clusters = scatterRect(rng, {
       minDist: 5.2,
-      radius: WORLD_RADIUS - 1,
+      halfX: PLAY_HALF_X - 3,
+      halfZ: PLAY_HALF_Z - 3,
       inner: 6,
-      count: 1000,
+      count: 700,
       weight: (x, z) => {
+        if (Math.abs(z - highwayZ(x)) < 7) return 0;
         if (slopeAt(x, z, 1.0) > 0.34) return 0;
         if (roadAt(x, z) > 0.5) return 0;
         return 0.2 + moistureAt(x, z) * 0.85;
@@ -762,14 +845,22 @@ export function createWasteland(scene, seed = 0x51a7) {
   }
 
   // ---- distant mesas / buttes -------------------------------------------
+  // Placed on a rectangular ring just outside the play area, so the horizon frames a wide
+  // rectangle instead of a disc. All merged into one mesh: one draw call.
   {
     const parts = [];
     const rng2 = makeRng(0xdead77);
-    for (let i = 0; i < 30; i++) {
-      const angle = rng2() * Math.PI * 2;
-      const radius = rng2.range(180, 270);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const ring = (padMin, padMax) => {
+      const side = Math.floor(rng2() * 4);
+      const pad = rng2.range(padMin, padMax);
+      const u = rng2.range(-1, 1);
+      if (side === 0) return { x: PLAY_HALF_X + pad, z: u * (PLAY_HALF_Z + pad) };
+      if (side === 1) return { x: -PLAY_HALF_X - pad, z: u * (PLAY_HALF_Z + pad) };
+      if (side === 2) return { x: u * (PLAY_HALF_X + pad), z: PLAY_HALF_Z + pad };
+      return { x: u * (PLAY_HALF_X + pad), z: -PLAY_HALF_Z - pad };
+    };
+    for (let i = 0; i < 34; i++) {
+      const { x, z } = ring(16, 90);
       const base = rng2.range(7, 21);
       const top = base * rng2.range(0.36, 0.72);
       const h = rng2.range(10, 26);
@@ -783,11 +874,8 @@ export function createWasteland(scene, seed = 0x51a7) {
         parts.push(dodeca(rng2.range(2.2, 4.5), '#b98a63', x + rng2.range(-9, 9), y + 2.5, z + rng2.range(-9, 9), rng2() * 2, rng2() * 6, 0));
       }
     }
-    for (let i = 0; i < 4; i++) {
-      const angle = rng2() * Math.PI * 2;
-      const radius = rng2.range(195, 250);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    for (let i = 0; i < 5; i++) {
+      const { x, z } = ring(24, 100);
       const h = rng2.range(16, 30);
       parts.push(cyl(1.5, 5.5, h, 6, '#b18460', x, heightAt(x, z) - 4 + h / 2, z));
     }

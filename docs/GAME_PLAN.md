@@ -1,4 +1,10 @@
-# Ashfall — game plan
+> **Update (current build):** this document is the historical phase plan. The current game is
+> **command-only** (no direct control / possession), the relay is a **command centre with a daily
+> broadcast** rather than a win condition, and expeditions are **playable runtime cells** instead of
+> timer resolutions. The camp is continuous and has no victory state. The rest of this document is
+> kept for the design history of the economy, power, raids and workplaces.
+>
+> # Ashfall — game plan
 
 **Vision:** a mobile-first, top-down **settlement survival game**. You command a small band of
 survivors in a procedural wasteland: scavenge, haul, build, wire up power, and hold the camp through
@@ -686,7 +692,7 @@ Detailed design: [ECONOMY.md](ECONOMY.md). Three slices:
 - **No new engine.** Three.js + the current architecture.
 - **One map seed at a time**, but keep determinism and save compatibility.
 - **Mobile first.** Every new interaction must work with one thumb and no hover.
-- **Do not break direct mode.** It is the fallback when the command layer is confusing.
+- **Command-only.** Direct control was removed; the clipboard and contextual taps are the fallback.
 
 ---
 

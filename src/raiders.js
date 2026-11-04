@@ -1,7 +1,7 @@
 import { buildSkinnedHumanoid, bakeStatic } from './skinned.js';
 import { AimController } from './aim.js';
 import { WEAPONS } from './weapons.js';
-import { heightAt, PLAY_RADIUS } from './terrain.js';
+import { heightAt, clampToPlayArea, inPlayArea } from './terrain.js';
 import { deriveSeed, makeRng, damp } from './rng.js';
 
 const POOL = 10;
@@ -168,10 +168,9 @@ export class Raiders {
       const radius = distance + this.rng.range(-2, 3);
       const spawnX = aroundX + Math.cos(a) * radius;
       const spawnZ = aroundZ + Math.sin(a) * radius;
-      const sd = Math.hypot(spawnX, spawnZ);
-      const keep = sd > PLAY_RADIUS ? PLAY_RADIUS / sd : 1;
-      const x = spawnX * keep;
-      const z = spawnZ * keep;
+      const spot = clampToPlayArea(spawnX, spawnZ, 4);
+      const x = spot.x;
+      const z = spot.z;
       p.active = true;
       p.dead = false;
       const policy = opts.level ?? 1;
@@ -472,6 +471,19 @@ export class Raiders {
     const step = Math.min(p.speed * speedScale * dt, d);
     pos.x += (dx / d) * step;
     pos.z += (dz / d) * step;
+    // Walls are solid to raiders too, not just to pathfinding ghouls.
+    if (this.solids) {
+      for (const b of this.solids) {
+        const bx = pos.x - b.x;
+        const bz = pos.z - b.z;
+        const rad = (b.radius || 0.5) + 0.35;
+        const bd = Math.hypot(bx, bz);
+        if (bd > 0.001 && bd < rad) {
+          pos.x = b.x + (bx / bd) * rad;
+          pos.z = b.z + (bz / bd) * rad;
+        }
+      }
+    }
     p.heading = Math.atan2(dx, dz);
     p.phase += dt * (5 + p.speed);
     return d;
@@ -497,7 +509,7 @@ export class Raiders {
       if (p.cooldown <= 0 && p.reloadTimer <= 0 && p.mag > 0) this.shoot(p);
     }
 
-    if (Math.hypot(pos.x, pos.z) > PLAY_RADIUS - 5 || p.fleeTimer > 30) {
+    if (!inPlayArea(pos.x, pos.z, 5) || p.fleeTimer > 30) {
       p.active = false;
       p.dead = true;
       p.target.dead = true;

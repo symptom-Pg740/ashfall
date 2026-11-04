@@ -6,18 +6,25 @@ import { makeCharacterAtlas, CHAR_REGIONS } from './textures.js';
 import { heightAt } from './terrain.js';
 import { clamp } from './rng.js';
 import {
-  LAYOUT,
   RIG_GROUP,
+  armProfile,
+  armXOf,
   ball,
   boxUV,
   capsule,
+  footProfile,
   getLowDetail,
+  legProfile,
+  legXOf,
+  loft,
+  radialSegments,
   rbox,
-  ring,
   setLowDetail,
   setRegionUV,
+  shoulderXOf,
   smoothMerge,
   tagGroup,
+  torsoProfile,
 } from './charparts.js';
 import {
   OUTFIT_SLOTS,
@@ -55,9 +62,10 @@ function setBodyUV(geo, spec) {
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    // The base body is skin except the torso/hip underlayer, which is left as dark cloth so a
-    // removed outfit never exposes a naked torso.
-    const region = y > 1.4 * s || y < 0.95 * s ? 'skin' : 'cloth';
+    // The base body is skin except the torso/pelvis underlayer, which is left as dark cloth so a
+    // removed outfit never exposes a naked torso. The cut is below the crotch (0.87) so the pelvis
+    // reads as an undersuit, while the thighs and hands stay skin.
+    const region = y > 1.4 * s || y < 0.87 * s ? 'skin' : 'cloth';
     const r = CHAR_REGIONS[region];
     let [u, v] = boxUV(x, y, z, nrm.getX(i), nrm.getY(i), nrm.getZ(i));
     u -= Math.floor(u);
@@ -69,41 +77,102 @@ function setBodyUV(geo, spec) {
   return geo;
 }
 
-function baseBodyGeometry(spec) {
-  const { s, w, skin, coat } = spec;
+/** Hand: palm, thumb and a curled finger block. Reads as a fist at 2x zoom and holds the grip. */
+function handGeometry(spec, sx) {
+  const { s, w, skin, build } = spec;
+  const limb = build?.limb ?? 1;
+  const x = sx * armXOf(spec);
   const p = [];
-  const armX = LAYOUT.armX * w;
-  const legX = LAYOUT.legX * w;
+  // Palm: the hand bone sits at the palm centre, which is where the weapon grip is authored.
+  p.push(rbox(0.05 * w * limb, 0.072 * s, 0.031 * w * limb, 0.012 * w, skin, x, 0.828 * s, 0.012 * w, 0, 0, sx * -0.03));
+  // Finger block, curled slightly so it closes around a grip instead of reading as a mitt.
+  p.push(rbox(0.046 * w * limb, 0.05 * s, 0.028 * w * limb, 0.01 * w, skin, x, 0.778 * s, 0.015 * w, -0.22, 0, sx * -0.03));
+  // Thumb on the inner edge, angled across the palm.
+  p.push(
+    capsule(0.011 * w * limb, 0.03 * s, skin, x - sx * 0.028 * w, 0.81 * s, 0.018 * w, 0, 0, sx * 0.55),
+  );
+  p.push(ball(0.018 * w * limb, skin, x, 0.802 * s, 0.016 * w, 1, 0.9, 0.9));
+  return p;
+}
+
+function baseBodyGeometry(spec) {
+  const { s, w, skin, coat, build } = spec;
+  const p = [];
   const under = shade(coat, 0.48);
   const BODY = RIG_GROUP.BODY;
+  const seg = radialSegments();
+  const limb = build?.limb ?? 1;
 
-  // Torso and pelvis: a slim body that clothing sits on top of, not a suit of armour.
-  p.push(tagGroup(rbox(0.34 * w, 0.22 * s, 0.24 * w, 0.07 * w, under, 0, 0.9 * s, 0), BODY));
-  p.push(tagGroup(rbox(0.4 * w, 0.34 * s, 0.26 * w, 0.09 * w, under, 0, 1.12 * s, 0), BODY));
-  p.push(tagGroup(rbox(0.33 * w, 0.17 * s, 0.23 * w, 0.07 * w, under, 0, 1.36 * s, 0), BODY));
-  p.push(tagGroup(capsule(0.045 * w, 0.08 * s, skin, 0, 1.48 * s, 0), BODY));
+  // Torso: a single lofted volume. The pelvis carries the hip mass, the waist pinches in, the
+  // ribcage widens and the top ring is the trapezius running into the neck. Clothing inflates the
+  // same profile (wardrobe.js), so the shirt cannot read as a box around a tapered body.
+  p.push(
+    tagGroup(
+      loft(torsoProfile(spec), under, { segments: seg, round: 0.24, capStart: 0.035 * s, capEnd: 0 }),
+      BODY,
+    ),
+  );
 
-  // arms
+  // Neck: short and slightly back-set, so the head sits on the shoulders instead of floating.
+  const neck = [
+    [1.412, 0.074, 0.0],
+    [1.452, 0.055, -0.004],
+    [1.5, 0.048, -0.008],
+    [1.545, 0.045, -0.011],
+  ].map(([y, r, z]) => ({
+    y: y * s,
+    rx: r * w * (build?.neck ?? 1),
+    rz: r * w * (build?.neck ?? 1),
+    z: z * w,
+  }));
+  p.push(tagGroup(loft(neck, skin, { segments: seg, round: 0.06, capStart: 0, capEnd: 0.012 * s }), BODY));
+
+  // Arms: deltoid cap + a lofted limb with an elbow and a forearm belly, tapering to the wrist.
   for (const sx of [-1, 1]) {
+    const side = sx < 0 ? 'L' : 'R';
     const group = sx < 0 ? RIG_GROUP.ARM_L : RIG_GROUP.ARM_R;
-    p.push(tagGroup(ball(0.072 * w, skin, sx * armX, 1.38 * s, 0), group));
-    p.push(tagGroup(capsule(0.056 * w, 0.26 * s, skin, sx * armX, 1.17 * s, 0), group));
-    p.push(tagGroup(capsule(0.045 * w, 0.24 * s, skin, sx * armX, 0.83 * s, 0.006 * w), group));
-    p.push(tagGroup(ball(0.056 * w, skin, sx * armX, 0.64 * s, 0.02 * w, 1, 0.92, 0.82), group));
+    const x = sx * armXOf(spec);
+    p.push(tagGroup(ball(0.06 * w * limb, skin, x, 1.352 * s, 0.0, 1.02, 0.88, 0.98), group));
+    p.push(
+      tagGroup(
+        loft(armProfile(spec, side), skin, { segments: seg, round: 0.06, capStart: 0, capEnd: 0.014 * s }),
+        group,
+      ),
+    );
+    for (const part of handGeometry(spec, sx)) p.push(tagGroup(part, group));
   }
 
-  // legs
+  // Legs: thigh taper, knee cap, calf belly and ankle in one loft, then a heel/instep/toe foot.
   for (const sx of [-1, 1]) {
+    const side = sx < 0 ? 'L' : 'R';
     const group = sx < 0 ? RIG_GROUP.LEG_L : RIG_GROUP.LEG_R;
-    p.push(tagGroup(ball(0.082 * w, under, sx * legX, 0.84 * s, 0), group));
-    p.push(tagGroup(capsule(0.076 * w, 0.26 * s, skin, sx * legX, 0.62 * s, 0), group));
-    p.push(tagGroup(capsule(0.06 * w, 0.24 * s, skin, sx * legX, 0.24 * s, 0), group));
-    p.push(tagGroup(rbox(0.13 * w, 0.1 * s, 0.24 * w, 0.03 * w, skin, sx * legX, 0.02 * s, 0.04 * w), group));
+    p.push(
+      tagGroup(
+        loft(legProfile(spec, side), skin, { segments: seg, round: 0.1, capStart: 0.02 * s, capEnd: 0.012 * s }),
+        group,
+      ),
+    );
+    p.push(
+      tagGroup(
+        loft(footProfile(spec, side), skin, {
+          axis: 'z',
+          segments: seg,
+          round: 0.42,
+          capStart: 0.018 * s,
+          capEnd: 0.012 * s,
+        }),
+        group,
+      ),
+    );
   }
   return setBodyUV(smoothMerge(p), spec);
 }
 
-function createSkeleton(s, w) {
+function createSkeleton(spec) {
+  const { s } = spec;
+  const shoulderX = shoulderXOf(spec);
+  const armX = armXOf(spec);
+  const legX = legXOf(spec);
   const root = new THREE.Bone();
   root.name = 'root';
   root.position.set(0, 0, 0);
@@ -128,9 +197,11 @@ function createSkeleton(s, w) {
   neck.position.set(0, 0.24 * s, 0);
   chest.add(neck);
 
+  // 0.08 s above the neck base: the old 0.10 s left a 16 cm gap between the jaw and the shoulders,
+  // which is what made the head look perched on a stalk.
   const head = new THREE.Bone();
   head.name = 'head';
-  head.position.set(0, 0.1 * s, 0);
+  head.position.set(0, 0.08 * s, 0);
   neck.add(head);
 
   const bones = [root, hips, spine, chest, neck, head];
@@ -141,27 +212,29 @@ function createSkeleton(s, w) {
     const sx = side === 'L' ? -1 : 1;
     const shoulder = new THREE.Bone();
     shoulder.name = `shoulder${side}`;
-    shoulder.position.set(sx * LAYOUT.shoulderX * w, 0.18 * s, 0);
+    shoulder.position.set(sx * shoulderX, 0.18 * s, 0);
     chest.add(shoulder);
 
     const upper = new THREE.Bone();
     upper.name = `upperArm${side}`;
-    upper.position.set(sx * (LAYOUT.armX - LAYOUT.shoulderX) * w, 0, 0);
+    upper.position.set(sx * (armX - shoulderX), 0, 0);
     shoulder.add(upper);
 
+    // Anatomical arm lengths: shoulder→elbow 0.30 s, elbow→wrist 0.27 s. The old 0.42/0.38 chain
+    // put the hands at knee height, which is most of the "gorilla" read.
     const fore = new THREE.Bone();
     fore.name = `forearm${side}`;
-    fore.position.set(0, -0.42 * s, 0);
+    fore.position.set(0, -0.3 * s, 0);
     upper.add(fore);
 
     const hand = new THREE.Bone();
     hand.name = `hand${side}`;
-    hand.position.set(0, -0.38 * s, 0);
+    hand.position.set(0, -0.27 * s, 0);
     fore.add(hand);
 
     const thigh = new THREE.Bone();
     thigh.name = `thigh${side}`;
-    thigh.position.set(sx * LAYOUT.legX * w, -0.02 * s, 0);
+    thigh.position.set(sx * legX, -0.02 * s, 0);
     hips.add(thigh);
 
     const shin = new THREE.Bone();
@@ -199,6 +272,9 @@ function distanceToSegment(px, py, pz, ax, ay, az, bx, by, bz) {
 
 function skinGeometry(geo, spec, skeleton) {
   const { s, w } = spec;
+  const armX = armXOf(spec);
+  const legX = legXOf(spec);
+  const shoulderX = shoulderXOf(spec);
   const segs = [];
   const add = (name, ax, ay, az, bx, by, bz, group = 'body', side = '') => {
     segs.push({
@@ -223,14 +299,14 @@ function skinGeometry(geo, spec, skeleton) {
 
   for (const side of ['L', 'R']) {
     const sx = side === 'L' ? -1 : 1;
-    const ax = sx * LAYOUT.armX * w;
-    add(`shoulder${side}`, sx * LAYOUT.shoulderX * w, 1.4 * s, 0, ax, 1.4 * s, 0, 'arm', side);
-    add(`upperArm${side}`, ax, 1.4 * s, 0, ax, 0.98 * s, 0, 'arm', side);
-    add(`forearm${side}`, ax, 0.98 * s, 0, ax, 0.6 * s, 0, 'arm', side);
-    add(`hand${side}`, ax, 0.6 * s, 0, ax, 0.48 * s, 0, 'arm', side);
-    add(`thigh${side}`, sx * LAYOUT.legX * w, 0.86 * s, 0, sx * LAYOUT.legX * w, 0.42 * s, 0, 'leg', side);
-    add(`shin${side}`, sx * LAYOUT.legX * w, 0.42 * s, 0, sx * LAYOUT.legX * w, 0.02 * s, 0, 'leg', side);
-    add(`foot${side}`, sx * LAYOUT.legX * w, 0.02 * s, 0, sx * LAYOUT.legX * w, 0.02 * s, 0.3 * w, 'leg', side);
+    const ax = sx * armX;
+    add(`shoulder${side}`, sx * shoulderX, 1.4 * s, 0, ax, 1.4 * s, 0, 'arm', side);
+    add(`upperArm${side}`, ax, 1.4 * s, 0, ax, 1.1 * s, 0, 'arm', side);
+    add(`forearm${side}`, ax, 1.1 * s, 0, ax, 0.83 * s, 0, 'arm', side);
+    add(`hand${side}`, ax, 0.83 * s, 0, ax, 0.74 * s, 0.01 * w, 'arm', side);
+    add(`thigh${side}`, sx * legX, 0.86 * s, 0, sx * legX, 0.42 * s, 0, 'leg', side);
+    add(`shin${side}`, sx * legX, 0.42 * s, 0, sx * legX, 0.02 * s, 0, 'leg', side);
+    add(`foot${side}`, sx * legX, 0.02 * s, 0, sx * legX, 0.02 * s, 0.3 * w, 'leg', side);
   }
 
   const pos = geo.attributes.position;
@@ -246,9 +322,9 @@ function skinGeometry(geo, spec, skeleton) {
   // Automatic distance weights alone let the arm bones claim the sides of the torso: the upper
   // arm bone is only ~5 cm from the chest wall, so swinging an arm dragged the chest with it.
   // Fade arm influence out inside the torso silhouette, and leg influence out above the hip.
-  const torsoHalf = 0.2 * w;
+  const torsoHalf = 0.18 * w * (spec.build?.chest ?? 1);
   const armStart = torsoHalf * 0.88;
-  const armEnd = torsoHalf * 1.08;
+  const armEnd = torsoHalf * 1.12;
   const legTop = 1.02 * s;
   const legFade = 0.16 * s;
 
@@ -314,7 +390,8 @@ function skinGeometry(geo, spec, skeleton) {
 }
 
 export function buildSkinnedHumanoid(seed, options = {}) {
-  setLowDetail(options.detail === 'low');
+  const lowDetail = options.detail === 'low';
+  setLowDetail(lowDetail);
   const spec = makeSpec(seed, options);
   spec.skipHead = true;
   const { s, w, archetype, accent } = spec;
@@ -333,7 +410,7 @@ export function buildSkinnedHumanoid(seed, options = {}) {
   const equipment = normalizeEquipment(defaultEquipment(spec, options));
 
   const group = new THREE.Group();
-  const skeleton = createSkeleton(s, w);
+  const skeleton = createSkeleton(spec);
 
   // Base body: skin and underlayer only. All clothing/armour is a separate skinned layer.
   const bodyGeo = baseBodyGeometry(spec);
@@ -354,7 +431,11 @@ export function buildSkinnedHumanoid(seed, options = {}) {
   // Outfit layer: rebuilt in place when a torso/legs/feet slot changes.
   let outfitMesh = null;
   const rebuildOutfit = () => {
+    // Rebuilds also happen at runtime (wardrobe swaps); keep the rig's detail tier so an NPC does
+    // not silently grow high-detail geometry when the player cycles its outfit.
+    setLowDetail(lowDetail);
     const geo = buildOutfit(spec, equipment);
+    setLowDetail(false);
     if (!geo) {
       if (outfitMesh) {
         group.remove(outfitMesh);
@@ -379,14 +460,17 @@ export function buildSkinnedHumanoid(seed, options = {}) {
   rebuildOutfit();
 
   // Head: authored asset on the player, procedural fallback on NPCs.
+  // The outfit rebuild above restores the global detail flag, so set it again for the head.
+  setLowDetail(lowDetail);
   const headGroup = new THREE.Group();
   skeleton.head.add(headGroup);
   if (options.headGeometry) {
     // The asset is already in head-local metres: neck pivot at (0,0,0), chin near the origin,
-    // crown at y≈0.245. The inner group fits it to the stylised body.
+    // crown at y≈0.245. The inner group fits it to the stylised body. 1.08 keeps the hero head in
+    // the same size class as the procedural NPC head instead of reading as a bobblehead.
     const fit = new THREE.Group();
-    fit.scale.setScalar(1.25);
-    fit.position.y = -0.03 * s;
+    fit.scale.setScalar(1.08);
+    fit.position.y = -0.02 * s;
     headGroup.add(fit);
 
     const headGeo = options.headGeometry.clone();
@@ -477,6 +561,7 @@ export function buildSkinnedHumanoid(seed, options = {}) {
     }
   };
   const rebuildGear = () => {
+    setLowDetail(lowDetail);
     for (const m of gearMeshes) {
       if (m.parent) m.parent.remove(m);
       m.geometry.dispose();
@@ -495,6 +580,7 @@ export function buildSkinnedHumanoid(seed, options = {}) {
       }
     }
     refreshSockets();
+    setLowDetail(false);
   };
   rebuildGear();
   setLowDetail(false);
@@ -663,8 +749,8 @@ export function buildSkinnedHumanoid(seed, options = {}) {
       group.updateMatrixWorld(true);
       const upper = arm.upper;
       const fore = arm.fore;
-      const L1 = 0.42 * s;
-      const L2 = 0.38 * s;
+      const L1 = 0.3 * s;
+      const L2 = 0.27 * s;
       upper.getWorldPosition(_ikUpper);
       _ikTarget.copy(target);
       _ikDir.subVectors(_ikTarget, _ikUpper);

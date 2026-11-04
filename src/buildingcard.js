@@ -11,15 +11,15 @@ import { RECIPES, recipeCap, recipeStock, nextRecipe } from './recipes.js';
  * for units, enemies, resources and movement, so the player is never surprised by a wall.
  */
 export class BuildingCard {
-  constructor({ ui, settlement, power, campFolk, scrapField, state, run, getSelected, screenOf, onRelayActivate, onSave }) {
+  constructor({ ui, settlement, power, campFolk, scrapField, state, comms, getSelected, screenOf, onBroadcast, onSave }) {
     this.ui = ui;
     this.settlement = settlement;
     this.power = power;
     this.campFolk = campFolk;
     this.scrapField = scrapField;
     this.state = state;
-    this.run = run || null;
-    this.onRelayActivate = onRelayActivate || (() => {});
+    this.comms = comms || null;
+    this.onBroadcast = onBroadcast || (() => {});
     this.getSelected = getSelected || (() => null);
     this.screenOf = screenOf;
     this.onSave = onSave || (() => {});
@@ -255,42 +255,18 @@ export class BuildingCard {
                 : `GATHERING WITHIN ${job.radius}M`;
       }
     } else if (def.id === 'relay') {
-      const assault = !!this.run?.assault;
-      const over = !!this.run?.over;
-      rows.push({ label: 'STATUS', value: over ? (this.run.won ? 'ONLINE' : 'LOST') : assault ? 'ONLINE' : b.powered ? 'READY' : 'NO POWER' });
-      if (assault) {
-        rows.push({ label: 'HOLD', value: `${Math.ceil(this.run.hold || 0)}S` });
-        rows.push({ label: 'WAVE', value: String(this.run.wave || 1) });
-      }
-      if (over) {
-        note = this.run.won ? 'THE RELAY IS ONLINE · THE CAMP HOLDS' : 'THE RELAY IS DARK';
-        noteBad = !this.run.won;
-      } else if (assault) {
-        note = b.powered ? 'HOLD THE RELAY · KEEP IT POWERED' : 'POWER LOST · RECONNECT THE GRID';
-        noteBad = !b.powered;
-      } else if (!b.powered) {
-        note = 'NO POWER · LINK IT TO A SOLAR ARRAY';
-        noteBad = true;
-      } else {
-        note = 'READY · ACTIVATE TO CALL HOME AND HOLD 90 SECONDS';
-      }
-    } else if (def.id === 'turret') {
-      const targets = b._targets || 0;
-      rows.push({ label: 'TARGETS', value: 'GHOULS ONLY' });
-      rows.push({ label: 'IN RANGE', value: String(targets) });
-      rows.push({ label: 'BELT', value: b.reload > 0 ? 'RELOADING' : `${Math.max(0, b.mag | 0)} / 250` });
+      const broadcastDay = this.comms?.broadcastDay ?? -1;
+      const today = broadcastDay === this.state.day;
+      rows.push({ label: 'STATUS', value: b.powered ? 'COMMAND CENTRE' : 'NO POWER' });
+      rows.push({ label: 'BROADCAST', value: today ? 'USED TODAY' : b.powered ? 'READY' : 'NEEDS POWER' });
+      rows.push({ label: 'COST', value: '10 SCRAP' });
       if (!b.powered) {
-        note = 'NO POWER · LINK IT TO A SOLAR ARRAY';
+        note = 'NO POWER · LINK THE RELAY TO THE GRID';
         noteBad = true;
-      } else if (b.reload > 0) {
-        note = 'RELOADING THE BELT · 4S';
-      } else if (targets > 0 && !b._clearLine) {
-        note = 'GHOULS IN RANGE · LINE OF FIRE BLOCKED';
-        noteBad = true;
-      } else if (targets > 0) {
-        note = `ENGAGING ${targets} GHOUL${targets === 1 ? '' : 'S'}`;
+      } else if (today) {
+        note = 'SIGNAL SENT · THE WASTES ANSWER TOMORROW';
       } else {
-        note = 'WATCHING · IT CANNOT IDENTIFY HUMANS';
+        note = 'BROADCAST TO ATTRACT A SURVIVOR · NEEDS A FREE BED';
       }
     } else if (def.id === 'tower') {
       rows.push({ label: 'GUNNER', value: gunner ? gunner.name : 'NONE' });
@@ -340,8 +316,14 @@ export class BuildingCard {
           });
         });
       }
-      if (def.id === 'relay' && b.powered && !this.run?.assault && !this.run?.over) {
-        actions.push({ id: 'activate', label: 'ACTIVATE', kind: 'primary' });
+      if (def.id === 'relay') {
+        const today = (this.comms?.broadcastDay ?? -1) === this.state.day;
+        actions.push({
+          id: 'broadcast',
+          label: today ? 'BROADCASTED TODAY' : b.powered ? 'BROADCAST' : 'NO POWER',
+          kind: b.powered && !today ? 'primary' : 'ghost',
+          disabled: !b.powered || today,
+        });
       }
       if (b.hp < b.maxHp) {
         actions.push({ id: 'repair', label: 'REPAIR', kind: 'ghost' });
@@ -356,15 +338,9 @@ export class BuildingCard {
         : b.hp < b.maxHp
           ? 'DAMAGED'
           : def.id === 'relay'
-            ? this.run?.over
-              ? this.run.won
-                ? 'ONLINE'
-                : 'LOST'
-              : this.run?.assault
-                ? 'ONLINE'
-                : b.powered
-                  ? 'READY'
-                  : 'NO POWER'
+            ? b.powered
+              ? 'COMMAND CENTRE'
+              : 'NO POWER'
           : job
             ? !workers.length
               ? 'NO WORKER'
@@ -461,8 +437,8 @@ export class BuildingCard {
       if (this.trade?.execute(index)) this.refresh(true);
       return;
     }
-    if (id === 'activate' && b.def.id === 'relay') {
-      this.onRelayActivate(b);
+    if (id === 'broadcast' && b.def.id === 'relay') {
+      this.onBroadcast(b);
       this.refresh(true);
       return;
     }

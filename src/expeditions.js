@@ -8,22 +8,25 @@ const SITE_LABEL = {
 };
 
 /**
- * Auto-resolving expeditions.
+ * Expeditions.
  *
- * A team leaves camp, travels to a known salvage site or cave, searches it, and returns with loot
- * and injuries. The camp keeps producing while they are away; this is the management-side answer
- * to the direct-control expedition loop.
+ * A team leaves camp, travels, and arrives at a runtime-generated cell. The player then commands
+ * the same survivors inside it: clear the hostiles, loot the cache, and return. Nothing resolves
+ * from a timer any more; the only automatic part is the walk out and the walk home.
  */
 export class ExpeditionSystem {
-  constructor({ campFolk, settlement, scrapField, cells, state, ui, onSave, onLoot }) {
+  constructor({ campFolk, settlement, scrapField, cells, state, ui, player, onSave, onLoot }) {
     this.campFolk = campFolk;
     this.settlement = settlement;
     this.scrapField = scrapField;
     this.cells = cells;
     this.state = state;
     this.ui = ui;
+    this.player = player;
     this.onSave = onSave || (() => {});
     this.onLoot = onLoot || (() => {});
+    this.onEnterCell = null;
+    this.onExitCell = null;
     this.rng = makeRng(deriveSeed('expeditions'));
     this.missions = [];
     this.nextId = 1;
@@ -100,6 +103,7 @@ export class ExpeditionSystem {
 
   cannotLaunchReason() {
     if (this.missions.length >= this.maxMissions) return 'BOTH EXPEDITION SLOTS ARE BUSY';
+    if (this.missions.some((m) => m.phase === 'exploring')) return 'A TEAM IS STILL IN THE FIELD';
     const target = this.targets().find((t) => t.id === this.selectedTargetId);
     if (!target) return 'PICK A DESTINATION';
     if (!this.selectedTeam.size) return 'PICK AT LEAST ONE SURVIVOR';
@@ -120,7 +124,8 @@ export class ExpeditionSystem {
 
     const camp = this.campCenter();
     const dist = Math.hypot(target.x - camp.x, target.z - camp.z);
-    const travel = Math.round(clamp(dist / 8, 10, 60));
+    const travel = Math.round(clamp(dist / 9, 8, 45));
+    const node = target.kind === 'site' ? this.scrapField.nodes[target.index] : null;
     const mission = {
       id: this.nextId++,
       targetId: target.id,
@@ -131,13 +136,12 @@ export class ExpeditionSystem {
       x: target.x,
       z: target.z,
       danger: target.danger,
+      scrap: node ? Math.min(node.remaining, 60) : 55,
+      components: target.kind === 'cave' ? 1 : 0,
       members: members.map((p) => this.campFolk.people.indexOf(p)),
       phase: 'outbound',
       timer: travel,
       travel,
-      search: 6,
-      loot: null,
-      success: false,
     };
 
     for (const p of members) {
@@ -166,69 +170,38 @@ export class ExpeditionSystem {
       .join(' · ');
   }
 
-  powerOf(mission) {
-    let power = 0;
-    for (const i of mission.members) {
-      const p = this.campFolk.people[i];
-      if (!p) continue;
-      power += (p.level || 1) * 2 + (p.weapon ? 3 : 0) + (p.damageScale || 1) * 2;
-    }
-    return power;
+  membersOf(mission) {
+    return mission.members.map((i) => this.campFolk.people[i]).filter(Boolean);
   }
 
-  resolve(mission) {
-    const members = mission.members.map((i) => this.campFolk.people[i]).filter(Boolean);
-    const power = this.powerOf(mission);
-    const chance = clamp(0.34 + power * 0.032 - mission.danger * 0.3, 0.12, 0.95);
-    const success = this.rng() < chance;
-    let scrap = 0;
-    let components = 0;
-
-    if (mission.kind === 'site') {
-      const node = this.scrapField.nodes[mission.index];
-      if (node && node.active && node.remaining > 0) {
-        const capacity = members.length * 20 + members.reduce((n, p) => n + (p.level || 1) * 3, 0);
-        scrap = Math.min(node.remaining, Math.round(capacity * (success ? 1 : 0.35)));
-        node.remaining -= scrap;
-        if (node.remaining <= 0) {
-          node.remaining = 0;
-          node.active = false;
-        }
-        this.scrapField.writeNode(node);
-        this.scrapField.updateMarkers(this.state.time, true);
-      }
-    } else if (mission.kind === 'cave' && !this.cells.clearedCaves.has(mission.caveId)) {
-      if (success) {
-        scrap = 50;
-        components = 1;
-        this.cells.clearedCaves.add(mission.caveId);
-      } else {
-        scrap = 15;
-      }
+  enter(mission) {
+    const members = this.membersOf(mission).filter((p) => !p.dead && !p.left);
+    if (!members.length) {
+      this.abandon(mission, 'THE TEAM WAS LOST');
+      return false;
     }
-
-    for (const p of members) {
-      if (!success) p.hp = Math.max(10, (p.hp || p.maxHp) - this.rng.range(20, 40));
-      this.campFolk.awardXp(p, success ? 45 : 18, 'expedition');
-    }
-
-    mission.success = success;
-    mission.loot = { scrap, components };
-    mission.resultText = success
-      ? `${mission.label} CLEARED · ${scrap} SCRAP${components ? ` · ${components} COMPONENT` : ''}`
-      : `${mission.label} WENT BAD · ${scrap} SCRAP RECOVERED`;
-    this.onSave();
+    if (!this.cells.enterExpedition(mission, members, this.player)) return false;
+    mission.phase = 'exploring';
+    mission.timer = 0;
+    this.onEnterCell?.(mission, members);
+    return true;
   }
 
-  complete(mission) {
+  /** Called by main when the player leaves the cell. */
+  completeFromCell(result) {
+    const mission = result?.mission;
+    if (!mission) return false;
+    const members = this.membersOf(mission);
     const camp = this.campCenter();
-    const members = mission.members.map((i) => this.campFolk.people[i]).filter(Boolean);
     members.forEach((p, n) => {
       p.onExpedition = false;
       p.home = null;
       p.job = null;
       p.carry = 0;
-      p.dead = false;
+      if (p.dead) {
+        p.dead = false;
+        p.hp = Math.max(1, Math.round(p.maxHp * 0.25));
+      }
       p.hp = Math.max(1, p.hp || p.maxHp);
       const a = n * 2.1;
       const x = camp.x + Math.cos(a) * 2.4;
@@ -240,34 +213,62 @@ export class ExpeditionSystem {
       p.rig.group.visible = true;
       p.rig.mesh.visible = true;
       if (p.farTier) p.farTier.visible = false;
+      this.campFolk.awardXp(p, result.cleared ? 55 : 20, 'expedition');
     });
 
-    const scrap = mission.loot?.scrap || 0;
-    const components = mission.loot?.components || 0;
-    this.onLoot(scrap, components, mission);
+    let banked = result.scrap || 0;
+    if (mission.kind === 'site') {
+      const node = this.scrapField.nodes[mission.index];
+      if (node && node.active) {
+        banked = Math.min(node.remaining, banked);
+        node.remaining -= banked;
+        if (node.remaining <= 0) {
+          node.remaining = 0;
+          node.active = false;
+        }
+        this.scrapField.writeNode(node);
+        this.scrapField.updateMarkers(this.state.time, true);
+      } else {
+        banked = 0;
+      }
+    } else if (mission.kind === 'cave' && result.cleared) {
+      this.cells.clearedCaves.add(mission.caveId);
+    }
+
+    this.onLoot(banked, result.components || 0, mission);
     this.ui.toast(
-      `${mission.success ? 'EXPEDITION RETURNED' : 'EXPEDITION LIMPED HOME'} · +${scrap} SCRAP${components ? ` · +${components} COMPONENT` : ''}`,
-      !mission.success,
+      result.cleared
+        ? `EXPEDITION RETURNED · +${banked} SCRAP${result.components ? ` · +${result.components} COMPONENT` : ''}`
+        : 'THE TEAM LIMPED HOME · NO LOOT',
+      !result.cleared,
     );
     this.missions = this.missions.filter((m) => m !== mission);
+    this.onExitCell?.(mission);
+    this.onSave();
+    return true;
+  }
+
+  abandon(mission, reason) {
+    const members = this.membersOf(mission);
+    for (const p of members) {
+      p.onExpedition = false;
+      p.dead = false;
+      p.hp = Math.max(1, Math.round(p.maxHp * 0.2));
+      p.rig.group.visible = true;
+      p.rig.mesh.visible = true;
+    }
+    this.missions = this.missions.filter((m) => m !== mission);
+    this.ui.toast(reason, true);
     this.onSave();
   }
 
   update(dt) {
     for (const mission of [...this.missions]) {
+      if (mission.phase !== 'outbound') continue;
       mission.timer -= dt;
       if (mission.timer > 0) continue;
-      if (mission.phase === 'outbound') {
-        mission.phase = 'searching';
-        mission.timer = mission.search;
-        this.ui.hint(`${this.memberNames(mission)} REACHED THE ${mission.label}`, 2600);
-      } else if (mission.phase === 'searching') {
-        this.resolve(mission);
-        mission.phase = 'returning';
-        mission.timer = mission.travel;
-      } else if (mission.phase === 'returning') {
-        this.complete(mission);
-      }
+      this.ui.hint(`${this.memberNames(mission)} REACHED THE ${mission.label}`, 2600);
+      if (!this.enter(mission)) continue;
     }
   }
 
@@ -280,13 +281,13 @@ export class ExpeditionSystem {
     for (const i of [...this.selectedTeam]) {
       if (!free.some((f) => f.index === i)) this.selectedTeam.delete(i);
     }
-    const phaseLabel = { outbound: 'OUTBOUND', searching: 'SEARCHING', returning: 'RETURNING' };
+    const phaseLabel = { outbound: 'ON THE ROAD', exploring: 'IN THE FIELD' };
     return {
       active: this.missions.map((m) => ({
         id: m.id,
         label: m.label,
         phase: phaseLabel[m.phase] || m.phase,
-        timer: Math.ceil(m.timer),
+        timer: m.phase === 'outbound' ? `${Math.ceil(m.timer)}S` : 'FIELD',
         members: this.memberNames(m),
         danger: m.danger > 0.6 ? 'HIGH RISK' : m.danger > 0.3 ? 'RISKY' : 'LOW RISK',
       })),
@@ -300,6 +301,7 @@ export class ExpeditionSystem {
         name: p.name,
         level: p.level || 1,
         armed: !!p.weapon,
+        busy: !!p.home || !!p.job,
         selected: this.selectedTeam.has(index),
       })),
       canLaunch: this.cannotLaunchReason() === '',
@@ -319,7 +321,9 @@ export class ExpeditionSystem {
     if (!data || typeof data !== 'object') return;
     this.nextId = Number.isFinite(data.nextId) ? data.nextId : 1;
     this.missions = Array.isArray(data.missions) ? data.missions.map((m) => ({ ...m })) : [];
+    // Saves are skipped while a team is inside a cell, so any restored mission is still travelling.
     for (const m of this.missions) {
+      if (m.phase === 'exploring') m.phase = 'outbound';
       for (const i of m.members) {
         const p = this.campFolk.people[i];
         if (!p) continue;

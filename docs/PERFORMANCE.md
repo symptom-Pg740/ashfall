@@ -1,4 +1,10 @@
-# Performance notes — 180 m world
+> **Update (command-only pass):** the world is now a 760 × 440 m rectangle with the highway ribbon
+> and a visible caravan. All static instanced scatter (not just rocks and grass) is split into
+> 55 m chunks, which brought the camp scene back to **~155k triangles / ~97 draw calls** in the
+> headless 390 × 844 portrait run. The anatomical NPC pass adds geometry to the three survivors;
+> measure the high preset on a physical phone before adding more scatter.
+>
+> # Performance notes — 180 m world
 
 **Status:** Phase 7 first slice. The goal was to decide whether the expanded 180 m map actually
 needs chunk streaming, and to remove any obvious waste before a physical-device test.

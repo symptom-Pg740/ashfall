@@ -2,6 +2,13 @@ import { BUILDINGS } from './settlement.js';
 import { clearSave } from './save.js';
 import { SLOTS, itemLabel } from './wardrobe.js';
 
+/**
+ * The mobile shell.
+ *
+ * One thumb rail (build / units / camp), a compact resource strip and a clipboard drawer replace the
+ * old always-on roster, vitals, objective and power panels. Every panel is a bottom sheet on a phone
+ * and a side drawer in landscape; nothing permanent covers the middle of the play field.
+ */
 export class UI {
   constructor() {
     this.cb = {};
@@ -11,33 +18,33 @@ export class UI {
       food: -1,
       waterCap: -1,
       foodCap: -1,
-      health: -1,
-      canGather: null,
-      gatherLabel: '',
       canPlace: null,
       reason: '',
     };
-    this.lastStrikeCooling = null;
     this.toastTimer = 0;
     this.hintTimer = 0;
     this.perfOpen = false;
     this.buildOpen = false;
-    this.wardrobeOpen = false;
     this.campOpen = false;
+    this.unitsOpen = false;
+    this.menuOpen = false;
     this.buildingCardOpen = false;
     this.wireActive = false;
     this.perfLastHistory = 0;
-    this.lastAmmo = '';
-    this.lastArmed = null;
-    this.lastMag = 0;
-    this.lastReserve = Infinity;
-    this.lastReloading = false;
-    this.lastMelee = false;
     this.lastRaid = '';
     this.hitTimer = 0;
-    this.commanderMode = 'command';
-    this._rosterKey = '';
-    this.toggleState = { adaptive: true, fog: true, grass: true, embers: true, shadows: true, ortho: true, sound: true, paths: false };
+    this._unitsKey = '';
+    this._objectiveKey = '';
+    this.toggleState = {
+      adaptive: true,
+      fog: true,
+      grass: true,
+      embers: true,
+      shadows: true,
+      ortho: true,
+      sound: true,
+      paths: false,
+    };
     this.orientationLock = null;
     this.compassDrag = null;
     this.compassAngle = 0;
@@ -47,18 +54,15 @@ export class UI {
       water: document.getElementById('hud-water'),
       food: document.getElementById('hud-food'),
       power: document.getElementById('hud-power'),
-      hpFill: document.getElementById('hp-fill'),
-      hpText: document.getElementById('hp-text'),
+      powerChip: document.getElementById('power-chip'),
       hint: document.getElementById('hint'),
       toast: document.getElementById('toast'),
       flash: document.getElementById('flash'),
-      death: document.getElementById('death-screen'),
       raidResult: document.getElementById('raid-result'),
       raidResultTitle: document.getElementById('raid-result-title'),
       raidResultSub: document.getElementById('raid-result-sub'),
-      gather: document.getElementById('gather-btn'),
       build: document.getElementById('build-btn'),
-      strike: document.getElementById('strike-btn'),
+      unitsBtn: document.getElementById('units-btn'),
       buildBar: document.getElementById('build-bar'),
       buildList: document.getElementById('build-list'),
       buildClose: document.getElementById('build-close'),
@@ -68,56 +72,40 @@ export class UI {
       placeStatus: document.getElementById('place-status'),
       placeConfirm: document.getElementById('place-confirm'),
       placeCancel: document.getElementById('place-cancel'),
+      menuBtn: document.getElementById('menu-btn'),
+      menuSheet: document.getElementById('menu-sheet'),
       perfBtn: document.getElementById('perf-btn'),
-      outfitBtn: document.getElementById('outfit-btn'),
       campBtn: document.getElementById('camp-btn'),
       campPanel: document.getElementById('camp-panel'),
       campClose: document.getElementById('camp-close'),
       campSummary: document.getElementById('camp-summary'),
-      campSurvivors: document.getElementById('camp-survivors'),
+      campWarnings: document.getElementById('camp-warnings'),
       campExpeditions: document.getElementById('camp-expeditions'),
       campTargets: document.getElementById('camp-targets'),
       campTeam: document.getElementById('camp-team'),
       campLaunch: document.getElementById('camp-launch'),
-      wardrobePanel: document.getElementById('wardrobe-panel'),
-      wardrobeList: document.getElementById('wardrobe-list'),
-      armory: document.getElementById('armory'),
-      armoryWeapon: document.getElementById('armory-weapon'),
-      armoryAmmo: document.getElementById('armory-ammo'),
-      armoryUpgrades: document.getElementById('armory-upgrades'),
-      armoryScrap: document.getElementById('armory-scrap'),
-      rosterBar: document.getElementById('roster-bar'),
-      roster: document.getElementById('roster'),
+      unitsPanel: document.getElementById('units-panel'),
+      unitsClose: document.getElementById('units-close'),
+      unitsList: document.getElementById('units-list'),
+      unitsCount: document.getElementById('units-count'),
+      unitDetail: document.getElementById('unit-detail'),
       unitCard: document.getElementById('unit-card'),
       unitName: document.getElementById('unit-name'),
       unitRole: document.getElementById('unit-role'),
       unitHp: document.getElementById('unit-hp'),
       unitHpFill: document.getElementById('unit-hp-fill'),
-      unitLevel: document.getElementById('unit-level'),
-      unitXpText: document.getElementById('unit-xp-text'),
-      unitXpFill: document.getElementById('unit-xp-fill'),
-      unitStatsLine: document.getElementById('unit-stats-line'),
-      unitPerk: document.getElementById('unit-perk'),
+      unitMoodFill: document.getElementById('unit-mood-fill'),
+      unitStatus: document.getElementById('unit-status'),
+      unitDetails: document.getElementById('unit-details'),
+      unitClose: document.getElementById('unit-close'),
       enemyCard: document.getElementById('enemy-card'),
       enemyName: document.getElementById('enemy-name'),
       enemyLevel: document.getElementById('enemy-level'),
       enemyHp: document.getElementById('enemy-hp'),
       enemyHpFill: document.getElementById('enemy-hp-fill'),
       enemyStats: document.getElementById('enemy-stats'),
-      unitStatus: document.getElementById('unit-status'),
-      unitControl: document.getElementById('unit-control'),
-      unitPost: document.getElementById('unit-post'),
-      gridPanel: document.getElementById('grid-panel'),
       gridDay: document.getElementById('grid-day'),
       gridClock: document.getElementById('grid-clock'),
-      gridPower: document.getElementById('grid-power'),
-      gridStored: document.getElementById('grid-stored'),
-      gridBarFill: document.getElementById('grid-bar-fill'),
-      gridNote: document.getElementById('grid-note'),
-      objective: document.getElementById('objective'),
-      objStep: document.getElementById('obj-step'),
-      objDetail: document.getElementById('obj-detail'),
-      objBarFill: document.getElementById('obj-bar-fill'),
       endScreen: document.getElementById('end-screen'),
       endKicker: document.getElementById('end-kicker'),
       endTitle: document.getElementById('end-title'),
@@ -144,19 +132,22 @@ export class UI {
       wireLayer: document.getElementById('wire-layer'),
       wireLine: document.getElementById('wire-line'),
       wireCancel: document.getElementById('wire-cancel'),
-      unitClose: document.getElementById('unit-close'),
-      wardrobeClose: document.getElementById('wardrobe-close'),
-      ammo: document.getElementById('hud-ammo'),
+      cellHud: document.getElementById('cell-hud'),
+      cellTitle: document.getElementById('cell-title'),
+      cellEnemies: document.getElementById('cell-enemies'),
+      cellNote: document.getElementById('cell-note'),
+      cellLoot: document.getElementById('cell-loot'),
+      cellLeave: document.getElementById('cell-leave'),
       raidBanner: document.getElementById('raid-banner'),
       raidCount: document.getElementById('raid-count'),
       raidKind: document.getElementById('raid-kind'),
-      ammoChip: document.getElementById('ammo-chip'),
       hitMarker: document.getElementById('hit-marker'),
       pSeed: document.getElementById('p-seed'),
       seedReroll: document.getElementById('seed-reroll'),
       saveReset: document.getElementById('save-reset'),
       fsBtn: document.getElementById('fs-btn'),
       orientBtn: document.getElementById('orient-btn'),
+      soundBtn: document.getElementById('sound-btn'),
       compass: document.getElementById('compass'),
       compassNeedle: document.getElementById('compass-needle'),
       compassHome: document.getElementById('compass-home'),
@@ -198,6 +189,7 @@ export class UI {
       card.dataset.type = def.id;
       card.dataset.cost = String(def.cost);
       card.dataset.components = String(def.components || 0);
+      card.dataset.group = def.group || 'camp';
       const parts = [`${def.cost} ⬡`];
       if (def.components) parts.push(`${def.components} ⚙`);
       card.innerHTML = `
@@ -235,6 +227,14 @@ export class UI {
       e.preventDefault();
       this.cb.buildToggle?.();
     });
+    this.el.unitsBtn?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.toggleUnits();
+    });
+    this.el.unitsClose?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.toggleUnits(false);
+    });
     this.el.buildClose.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.cb.buildClose?.();
@@ -248,22 +248,15 @@ export class UI {
       this.cb.cancelPlace?.();
     });
 
-    this.el.strike.addEventListener('pointerdown', (e) => {
+    this.el.menuBtn?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      this.cb.strike?.();
+      e.stopPropagation();
+      this.toggleMenu();
     });
-    this.el.gather.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      this.cb.gather?.();
-    });
-
     this.el.perfBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      this.toggleMenu(false);
       this.togglePerf();
-    });
-    this.el.outfitBtn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      this.toggleWardrobe();
     });
     this.el.campBtn?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -277,15 +270,10 @@ export class UI {
       e.preventDefault();
       this.cb.campLaunch?.();
     });
-    this.el.unitControl?.addEventListener('pointerdown', (e) => {
+    this.el.unitDetails?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.cb.unitControl?.();
-    });
-    this.el.unitPost?.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.cb.unitPost?.();
+      this.toggleUnits(true);
     });
     this.el.unitClose?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -302,13 +290,26 @@ export class UI {
       e.stopPropagation();
       this.cb.wireCancel?.();
     });
-    this.el.wardrobeClose.addEventListener('pointerdown', (e) => {
+    this.el.cellLoot?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      this.toggleWardrobe(false);
+      e.stopPropagation();
+      if (!this.el.cellLoot.disabled) this.cb.cellLoot?.();
+    });
+    this.el.cellLeave?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.cb.cellLeave?.();
     });
     this.el.fsBtn.addEventListener('click', (e) => {
       e.preventDefault();
+      this.toggleMenu(false);
       this.handleFullscreenGesture();
+    });
+    this.el.soundBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.toggleState.sound = !this.toggleState.sound;
+      this.el.soundBtn.textContent = this.toggleState.sound ? 'SOUND ON' : 'SOUND OFF';
+      this.cb.toggle?.('sound', this.toggleState.sound);
     });
     this.el.seedReroll.addEventListener('click', (e) => {
       e.preventDefault();
@@ -325,6 +326,7 @@ export class UI {
     });
     this.el.orientBtn.addEventListener('click', (e) => {
       e.preventDefault();
+      this.toggleMenu(false);
       this.toggleOrientation();
     });
     this.bindCompass();
@@ -339,8 +341,7 @@ export class UI {
     this.el.qualitySeg.querySelectorAll('button').forEach((btn) => {
       btn.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        const q = btn.dataset.q;
-        this.cb.quality?.(q);
+        this.cb.quality?.(btn.dataset.q);
       });
     });
 
@@ -362,10 +363,27 @@ export class UI {
     });
 
     // Stop taps on UI chrome from ever reaching the world.
-    for (const root of [this.el.buildBar, this.el.perfPanel, this.el.wardrobePanel, this.el.campPanel, document.querySelector('.hud-top'), document.querySelector('.actions'), document.querySelector('.joystick-wrap')]) {
+    for (const root of [
+      this.el.buildBar,
+      this.el.perfPanel,
+      this.el.campPanel,
+      this.el.unitsPanel,
+      this.el.menuSheet,
+      document.querySelector('.hud-top'),
+      document.querySelector('.action-rail'),
+      this.el.unitCard,
+      this.el.buildingCard,
+      this.el.cellHud,
+    ]) {
       if (!root) continue;
       root.addEventListener('pointerdown', (e) => e.stopPropagation());
     }
+
+    document.addEventListener('pointerdown', (e) => {
+      if (!this.menuOpen) return;
+      if (e.target.closest('#menu-sheet') || e.target.closest('#menu-btn')) return;
+      this.toggleMenu(false);
+    });
   }
 
   start() {
@@ -375,33 +393,56 @@ export class UI {
     this.cb.started?.();
   }
 
+  // -------------------------------------------------------------------------
+  // panels
+  // -------------------------------------------------------------------------
+
+  toggleMenu(force) {
+    this.menuOpen = typeof force === 'boolean' ? force : !this.menuOpen;
+    this.el.menuSheet?.classList.toggle('hidden', !this.menuOpen);
+    this.el.menuBtn?.setAttribute('aria-expanded', String(this.menuOpen));
+  }
+
   togglePerf(force) {
     this.perfOpen = typeof force === 'boolean' ? force : !this.perfOpen;
     this.el.perfPanel.classList.toggle('hidden', !this.perfOpen);
+    document.body.classList.toggle('perf-open', this.perfOpen);
     if (this.perfOpen) {
-      this.toggleWardrobe(false);
       this.toggleCamp(false);
-    }
-  }
-
-  toggleWardrobe(force) {
-    this.wardrobeOpen = typeof force === 'boolean' ? force : !this.wardrobeOpen;
-    this.el.wardrobePanel.classList.toggle('hidden', !this.wardrobeOpen);
-    if (this.wardrobeOpen) {
-      this.togglePerf(false);
-      this.toggleCamp(false);
+      this.toggleUnits(false);
+      this.toggleMenu(false);
     }
   }
 
   toggleCamp(force) {
     this.campOpen = typeof force === 'boolean' ? force : !this.campOpen;
+    if (this.campOpen && this.buildOpen) this.cb.buildClose?.();
     this.el.campPanel?.classList.toggle('hidden', !this.campOpen);
+    document.body.classList.toggle('camp-open', this.campOpen);
     if (this.campOpen) {
       this.togglePerf(false);
-      this.toggleWardrobe(false);
+      this.toggleUnits(false);
+      this.toggleMenu(false);
       this.cb.campRefresh?.();
     }
   }
+
+  toggleUnits(force) {
+    this.unitsOpen = typeof force === 'boolean' ? force : !this.unitsOpen;
+    if (this.unitsOpen && this.buildOpen) this.cb.buildClose?.();
+    this.el.unitsPanel?.classList.toggle('hidden', !this.unitsOpen);
+    document.body.classList.toggle('units-open', this.unitsOpen);
+    if (this.unitsOpen) {
+      this.togglePerf(false);
+      this.toggleCamp(false);
+      this.toggleMenu(false);
+      this.cb.unitsRefresh?.();
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // camp panel
+  // -------------------------------------------------------------------------
 
   campRow({ tag = 'button', className = '', strong = '', small = '', right = '', onClick = null }) {
     const row = document.createElement(tag);
@@ -442,34 +483,29 @@ export class UI {
       this.el.campSummary.appendChild(cell);
     }
 
-    const survivors = this.el.campSurvivors;
-    survivors.innerHTML = '';
-    for (const p of view.survivors || []) {
-      const right = p.expedition ? 'AWAY' : `${p.hp}/${p.maxHp}`;
-      survivors.appendChild(this.campRow({
-        className: (p.expedition ? 'away ' : '') + (p.selected ? 'selected' : ''),
-        strong: `${p.name} · LV ${p.level}`,
-        small: `${p.role}${p.home ? ` · ${p.home}` : ''}${p.armed ? ' · ARMED' : ''} · F${p.hunger} W${p.thirst}`,
-        right,
-        onClick: p.expedition ? null : () => this.cb.campSelect?.(p.index),
-      }));
-    }
-    if (!view.survivors?.length) {
-      const empty = document.createElement('div');
-      empty.className = 'camp-empty';
-      empty.textContent = 'NO SURVIVORS';
-      survivors.appendChild(empty);
+    if (this.el.campWarnings) {
+      this.el.campWarnings.innerHTML = '';
+      const warnings = view.warnings || [];
+      this.el.campWarnings.classList.toggle('hidden', !warnings.length);
+      for (const w of warnings) {
+        const line = document.createElement('p');
+        line.className = `camp-warning ${w.bad ? 'bad' : ''}`;
+        line.textContent = w.text;
+        this.el.campWarnings.appendChild(line);
+      }
     }
 
     const missions = this.el.campExpeditions;
     missions.innerHTML = '';
     for (const m of view.expedition?.active || []) {
-      missions.appendChild(this.campRow({
-        tag: 'div',
-        strong: m.label,
-        small: `${m.phase} · ${m.members}`,
-        right: `${m.timer}S`,
-      }));
+      missions.appendChild(
+        this.campRow({
+          tag: 'div',
+          strong: m.label,
+          small: `${m.phase} · ${m.members}`,
+          right: m.timer,
+        }),
+      );
     }
     if (!view.expedition?.active?.length) {
       const empty = document.createElement('div');
@@ -481,13 +517,15 @@ export class UI {
     const targets = this.el.campTargets;
     targets.innerHTML = '';
     for (const t of view.expedition?.targets || []) {
-      targets.appendChild(this.campRow({
-        className: t.selected ? 'selected' : '',
-        strong: t.label,
-        small: `${t.detail} · ${t.dangerText}`,
-        right: `${Math.round(t.dist)}m`,
-        onClick: () => this.cb.campTarget?.(t.id),
-      }));
+      targets.appendChild(
+        this.campRow({
+          className: t.selected ? 'selected' : '',
+          strong: t.label,
+          small: `${t.detail} · ${t.dangerText}`,
+          right: `${Math.round(t.dist)}m`,
+          onClick: () => this.cb.campTarget?.(t.id),
+        }),
+      );
     }
     if (!view.expedition?.targets?.length) {
       const empty = document.createElement('div');
@@ -499,13 +537,15 @@ export class UI {
     const team = this.el.campTeam;
     team.innerHTML = '';
     for (const p of view.expedition?.team || []) {
-      team.appendChild(this.campRow({
-        className: p.selected ? 'selected' : '',
-        strong: `${p.name} · LV ${p.level}`,
-        small: p.armed ? 'ARMED' : 'UNARMED',
-        right: p.selected ? 'ON TEAM' : '+ ADD',
-        onClick: () => this.cb.campMember?.(p.index),
-      }));
+      team.appendChild(
+        this.campRow({
+          className: p.selected ? 'selected' : '',
+          strong: `${p.name} · LV ${p.level}`,
+          small: `${p.armed ? 'ARMED' : 'UNARMED'}${p.busy ? ' · BUSY' : ''}`,
+          right: p.selected ? 'ON TEAM' : '+ ADD',
+          onClick: () => this.cb.campMember?.(p.index),
+        }),
+      );
     }
     if (!view.expedition?.team?.length) {
       const empty = document.createElement('div');
@@ -523,132 +563,238 @@ export class UI {
     }
   }
 
-  setWeapon(armed, name) {
-    if (armed === this.lastArmed) return;
-    this.lastArmed = armed;
-    if (!armed) this.lastMelee = false;
-    this.el.strike.classList.toggle('is-firearm', !!armed && !this.lastMelee);
-    if (name) this.el.strike.title = name;
-    this.renderStrikeLabel();
+  // -------------------------------------------------------------------------
+  // clipboard: survivors, equipment and armory
+  // -------------------------------------------------------------------------
+
+  showUnits(view) {
+    if (!view || !this.el.unitsPanel) return;
+    const units = view.units || [];
+    const key = units
+      .map(
+        (u) =>
+          `${u.key}:${Math.round(u.hp)}:${Math.round(u.morale)}:${u.selected ? 1 : 0}:${u.status}:${u.role}:${u.level}:${u.warning || ''}:${JSON.stringify(u.equipment || {})}`,
+      )
+      .join('|');
+    const selectionKey = `${view.selectedKey || ''}|${view.armory?.name || ''}|${view.armory?.reserve ?? ''}`;
+    if (key !== this._unitsKey || selectionKey !== this._unitsSelectionKey) {
+      this._unitsSelectionKey = selectionKey;
+      this._unitsKey = key;
+      this.el.unitsCount.textContent = `${view.living ?? units.length}/${view.cap ?? '?'}`;
+      this.el.unitsList.innerHTML = '';
+      for (const u of units) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = `unit-row${u.selected ? ' selected' : ''}${u.dead ? ' down' : ''}`;
+        const head = document.createElement('div');
+        head.className = 'unit-row-head';
+        const name = document.createElement('strong');
+        name.textContent = u.name;
+        const lv = document.createElement('b');
+        lv.textContent = `LV ${u.level}`;
+        head.append(name, lv);
+        const meta = document.createElement('small');
+        meta.textContent = `${u.role}${u.home ? ` · ${u.home}` : ''}`;
+        const status = document.createElement('span');
+        status.className = 'unit-row-status';
+        status.textContent = u.warning || u.status;
+        const bars = document.createElement('div');
+        bars.className = 'unit-row-bars';
+        const hp = document.createElement('i');
+        hp.className = 'mini-hp';
+        hp.style.width = `${Math.max(0, Math.min(100, (u.hp / u.maxHp) * 100))}%`;
+        const mood = document.createElement('i');
+        mood.className = 'mini-mood';
+        mood.style.width = `${Math.max(0, Math.min(100, u.morale))}%`;
+        bars.append(hp, mood);
+        row.append(head, meta, status, bars);
+        row.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.cb.unitsSelect?.(u.key);
+        });
+        this.el.unitsList.appendChild(row);
+      }
+      if (!units.length) {
+        const empty = document.createElement('div');
+        empty.className = 'camp-empty';
+        empty.textContent = 'NO SURVIVORS';
+        this.el.unitsList.appendChild(empty);
+      }
+      this.renderUnitDetail(view);
+    }
+    this.el.unitsCount.textContent = `${view.living ?? units.length}/${view.cap ?? '?'}`;
   }
 
-  setAmmo(state) {
-    if (!this.el.ammo || !this.el.ammoChip) return;
-    const reserve = state.reserve;
-    const melee = state.melee ?? (!!state.armed && state.mag <= 0 && !(reserve > 0));
-    this.lastArmed = state.armed;
-    this.lastMelee = melee;
-    this.lastMag = state.mag;
-    this.lastReserve = reserve;
-    this.lastReloading = !!state.reloading;
-    this.el.strike.classList.toggle('is-firearm', !!state.armed && !melee);
-    const key = `${state.armed}|${state.mag}|${reserve}|${state.reloading}|${melee}`;
-    if (key !== this.lastAmmo) {
-      this.lastAmmo = key;
-      this.el.ammoChip.classList.toggle('hidden', !state.armed || melee);
-      this.el.ammoChip.classList.toggle('reloading', !!state.reloading);
-      this.el.ammoChip.classList.toggle('dry', state.armed && state.mag <= 0 && reserve <= 0);
-      const mag = state.reloading ? '··' : String(state.mag);
-      this.el.ammo.textContent = Number.isFinite(reserve) ? `${mag}/${reserve}` : mag;
-      this.renderStrikeLabel();
+  renderUnitDetail(view) {
+    const detail = this.el.unitDetail;
+    if (!detail) return;
+    const u = (view.units || []).find((x) => x.key === view.selectedKey);
+    if (!u) {
+      detail.innerHTML = '<p class="camp-empty">SELECT A SURVIVOR</p>';
+      return;
+    }
+    detail.innerHTML = '';
+
+    const head = document.createElement('div');
+    head.className = 'detail-head';
+    const title = document.createElement('div');
+    const name = document.createElement('strong');
+    name.textContent = u.name;
+    const sub = document.createElement('small');
+    sub.textContent = `${u.role} · LV ${u.level} · ${u.home || 'FREE'}`;
+    title.append(name, sub);
+    const status = document.createElement('b');
+    status.className = 'detail-status';
+    status.textContent = u.warning || u.status;
+    head.append(title, status);
+    detail.appendChild(head);
+
+    detail.appendChild(this.detailBar('HP', u.hp, u.maxHp, 'hp'));
+    detail.appendChild(this.detailBar('MOOD', u.morale, 100, 'mood'));
+    if (u.xpNeed > 0) detail.appendChild(this.detailBar('XP', u.xp, u.xpNeed, 'xp'));
+
+    const rows = document.createElement('div');
+    rows.className = 'detail-rows';
+    const addRow = (label, value) => {
+      const line = document.createElement('div');
+      const l = document.createElement('span');
+      l.textContent = label;
+      const v = document.createElement('b');
+      v.textContent = value;
+      line.append(l, v);
+      rows.appendChild(line);
+    };
+    addRow('DAMAGE', String(u.damage));
+    addRow('RANGE', u.rangeText);
+    addRow('SPEED', u.speedText);
+    addRow('WEAPON', u.weaponText);
+    addRow('AMMO', u.ammoText);
+    addRow('CARRY', u.carryText);
+    if (u.perk) addRow('PERK', u.perk);
+    detail.appendChild(rows);
+
+    if (u.moraleFactors?.length) {
+      const factors = document.createElement('p');
+      factors.className = 'detail-factors';
+      factors.textContent = u.moraleFactors.join(' · ');
+      detail.appendChild(factors);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'detail-actions';
+    const actionDefs = [
+      { id: 'focus', label: 'FOCUS' },
+      { id: 'release', label: 'RELEASE POST', disabled: !u.home },
+      { id: 'guard', label: 'GUARD POST', disabled: !u.canMan },
+    ];
+    for (const a of actionDefs) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `bcard-action ${a.id === 'focus' ? 'primary' : 'ghost'}`;
+      btn.textContent = a.label;
+      btn.disabled = !!a.disabled;
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.disabled) return;
+        this.cb.unitAction?.(u.key, a.id);
+      });
+      actions.appendChild(btn);
+    }
+    detail.appendChild(actions);
+
+    const equip = document.createElement('div');
+    equip.className = 'detail-section';
+    const equipLabel = document.createElement('span');
+    equipLabel.className = 'group-label';
+    equipLabel.textContent = 'EQUIPMENT';
+    equip.appendChild(equipLabel);
+    for (const slot of SLOTS) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'wardrobe-row';
+      const label = document.createElement('small');
+      label.textContent = slot.label;
+      const value = document.createElement('b');
+      value.textContent = itemLabel(slot.id, u.equipment?.[slot.id] || 'none');
+      row.append(label, value);
+      row.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.cb.unitEquip?.(u.key, slot.id, e.shiftKey ? -1 : 1);
+      });
+      equip.appendChild(row);
+    }
+    detail.appendChild(equip);
+
+    if (view.armory) {
+      const arm = document.createElement('div');
+      arm.className = 'detail-section';
+      const armLabel = document.createElement('span');
+      armLabel.className = 'group-label';
+      armLabel.textContent = 'ARMORY';
+      arm.appendChild(armLabel);
+      const ammo = view.armory.ammo;
+      if (ammo) {
+        const line = document.createElement('div');
+        line.className = 'wardrobe-row ammo-row static';
+        const label = document.createElement('small');
+        label.textContent = ammo.label;
+        const value = document.createElement('b');
+        value.textContent = `${ammo.reserve} / ${ammo.max}`;
+        const source = document.createElement('span');
+        source.className = 'buy';
+        source.textContent = 'WORKSHOP';
+        line.append(label, value, source);
+        arm.appendChild(line);
+      }
+      for (const track of view.armory.tracks || []) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'wardrobe-row upgrade-row';
+        row.disabled = !track.next;
+        const label = document.createElement('small');
+        label.textContent = `${track.label} ${track.tier}/${track.maxTier}`;
+        const value = document.createElement('b');
+        value.textContent = track.next ? `${track.next.from} → ${track.next.to}` : track.value;
+        const cost = document.createElement('span');
+        cost.className = 'buy';
+        cost.textContent = track.next ? `${track.next.cost}` : 'MAX';
+        row.append(label, value, cost);
+        row.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.cb.armoryUpgrade?.(track.id);
+        });
+        arm.appendChild(row);
+      }
+      detail.appendChild(arm);
     }
   }
 
-  renderStrikeLabel() {
-    const label = this.el.strike.querySelector('span:last-child');
-    if (!label) return;
-    if (!this.lastArmed || this.lastMelee) label.textContent = 'STRIKE';
-    else if (this.lastReloading) label.textContent = 'RELOAD';
-    else if (this.lastMag <= 0 && this.lastReserve <= 0) label.textContent = 'STRIKE';
-    else if (this.lastMag <= 0) label.textContent = 'RELOAD';
-    else if (Number.isFinite(this.lastReserve)) label.textContent = `FIRE ${this.lastMag}/${this.lastReserve}`;
-    else label.textContent = `FIRE ${this.lastMag}`;
+  detailBar(label, value, max, kind) {
+    const wrap = document.createElement('div');
+    wrap.className = `detail-bar ${kind}`;
+    const head = document.createElement('div');
+    const l = document.createElement('span');
+    l.textContent = label;
+    const v = document.createElement('b');
+    v.textContent = kind === 'xp' ? `${Math.round(value)}/${Math.round(max)}` : `${Math.max(0, Math.round(value))}/${Math.round(max)}`;
+    head.append(l, v);
+    const track = document.createElement('i');
+    const fill = document.createElement('u');
+    fill.style.width = `${Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100))}%`;
+    track.appendChild(fill);
+    wrap.append(head, track);
+    return wrap;
   }
 
-  /** Raid outcome card: victory on clear, defeat when the camp overruns the player. */
-  showRaidResult(win, sub = '') {
-    const el = this.el.raidResult;
-    if (!el) return;
-    this.el.raidResultTitle.textContent = win ? 'RAID CLEARED' : 'RAID LOST';
-    this.el.raidResultSub.textContent = sub;
-    el.classList.toggle('win', !!win);
-    el.classList.toggle('lose', !win);
-    el.classList.remove('hidden');
-    clearTimeout(this.raidResultTimer);
-    this.raidResultTimer = setTimeout(() => el.classList.add('hidden'), win ? 2800 : 2400);
-  }
+  // -------------------------------------------------------------------------
+  // unit card and enemy card
+  // -------------------------------------------------------------------------
 
-  setObjective(view) {
-    if (!this.el.objective || !view) return;
-    const key = `${view.step}|${view.detail}|${Math.round((view.progress || 0) * 100)}|${view.tone || ''}`;
-    if (key === this._objectiveKey) return;
-    this._objectiveKey = key;
-    this.el.objStep.textContent = view.step;
-    this.el.objDetail.textContent = view.detail || '';
-    this.el.objBarFill.style.width = `${Math.max(0, Math.min(100, (view.progress || 0) * 100))}%`;
-    this.el.objective.classList.toggle('active', view.tone === 'active');
-    this.el.objective.classList.toggle('done', view.tone === 'done');
-  }
-
-  showRunEnd(win, title, sub, stats = {}) {
-    if (!this.el.endScreen) return;
-    this.el.endScreen.classList.remove('hidden');
-    this.el.endScreen.classList.toggle('lose', !win);
-    this.el.endTitle.textContent = title;
-    this.el.endSub.textContent = sub;
-    this.el.endKicker.textContent = win ? 'RELAY PROTOCOL · COMPLETE' : 'RELAY PROTOCOL · FAILED';
-    this.el.endDay.textContent = String(stats.day ?? 1);
-    this.el.endSurvivors.textContent = String(stats.survivors ?? 0);
-    this.el.endKills.textContent = String(stats.kills ?? 0);
-    this.el.death?.classList.add('hidden');
-  }
-
-  hideRunEnd() {
-    this.el.endScreen?.classList.add('hidden');
-  }
-
-  setClock(info) {
-    if (!this.el.gridClock || !info) return;
-    const key = `${info.clock}|${info.day}|${info.night}`;
-    if (key === this._clockKey) return;
-    this._clockKey = key;
-    this.el.gridDay.textContent = `DAY ${info.day}`;
-    this.el.gridClock.textContent = info.clock;
-    this.el.gridPanel?.classList.toggle('night', !!info.night);
-  }
-
-  setPower(info) {
-    if (!info) return;
-    const key = `${info.output.toFixed(1)}|${info.demand.toFixed(1)}|${Math.round(info.battery)}|${info.capacity}|${info.powered}|${info.hasGrid}|${info.note}`;
-    if (key === this._powerKey) return;
-    this._powerKey = key;
-    if (this.el.power) {
-      this.el.power.textContent = info.output.toFixed(1);
-      this.el.power.parentElement?.setAttribute(
-        'title',
-        `Energy production ${info.output.toFixed(1)} · stored ${Math.round(info.battery)}/${Math.round(info.capacity)}`,
-      );
-    }
-    if (this.el.gridPower) this.el.gridPower.textContent = info.output.toFixed(1);
-    if (this.el.gridStored) this.el.gridStored.textContent = `${Math.round(info.battery)} / ${Math.round(info.capacity)}`;
-    if (this.el.gridBarFill) {
-      const fill = info.capacity > 0 ? info.battery / info.capacity : info.powered ? 1 : 0;
-      this.el.gridBarFill.style.width = `${Math.max(0, Math.min(100, fill * 100))}%`;
-    }
-    if (this.el.gridNote) this.el.gridNote.textContent = info.note;
-    this.el.gridPanel?.classList.toggle('low', !!info.hasGrid && !info.powered);
-  }
-
-  setCommanderMode(mode) {
-    this.commanderMode = mode;
-    document.body.classList.toggle('command-mode', mode === 'command');
-    if (this.el.unitControl) {
-      this.el.unitControl.textContent = mode === 'direct' ? 'RELEASE' : 'TAKE CONTROL';
-      this.el.unitControl.classList.toggle('release', mode === 'direct');
-    }
-  }
-
-  showUnitCard(view, mode = this.commanderMode) {
+  showUnitCard(view) {
     if (!view || !this.el.unitCard) return;
     this.el.unitCard.classList.remove('hidden');
     this.el.unitName.textContent = view.name;
@@ -656,44 +802,21 @@ export class UI {
       view.role + (view.armed ? ' · ARMED' : '') + (view.home ? ` · ${view.home}` : '');
     this.el.unitHp.textContent = `${Math.max(0, Math.round(view.hp))}/${Math.round(view.maxHp)}`;
     this.el.unitHpFill.style.width = `${Math.max(0, Math.min(100, (view.hp / view.maxHp) * 100))}%`;
-    this.el.unitStatus.textContent = view.status;
-    if (this.el.unitLevel) this.el.unitLevel.textContent = String(view.level || 1);
-    if (this.el.unitXpText) {
-      this.el.unitXpText.textContent =
-        view.xpNeed > 0 ? `${Math.round(view.xp || 0)}/${view.xpNeed} XP` : 'MAX LEVEL';
+    if (this.el.unitMoodFill) {
+      this.el.unitMoodFill.style.width = `${Math.max(0, Math.min(100, view.morale ?? 100))}%`;
+      this.el.unitMoodFill.classList.toggle('low', (view.morale ?? 100) < 35);
     }
-    if (this.el.unitXpFill) {
-      this.el.unitXpFill.style.width = `${Math.max(0, Math.min(100, (view.xpProgress || 0) * 100))}%`;
-    }
-    if (this.el.unitStatsLine) {
-      this.el.unitStatsLine.textContent = `DMG ${view.damage ?? '—'} · RNG ${view.rangeText || '—'} · SPD ${view.speedText || '—'}`;
-    }
-    if (this.el.unitPerk) {
-      this.el.unitPerk.textContent = view.perk || '';
-      this.el.unitPerk.classList.toggle('hidden', !view.perk);
-    }
-    this.el.unitControl.disabled = !view.canControl;
-    this.el.unitControl.textContent = mode === 'direct' ? 'RELEASE' : 'TAKE CONTROL';
-    this.el.unitControl.classList.toggle('release', mode === 'direct');
-    if (this.el.unitPost) {
-      const show = !!view.canWork;
-      this.el.unitPost.classList.toggle('hidden', !show);
-      if (show) {
-        this.el.unitPost.textContent =
-          view.role === 'BUILDER' ? 'RELEASE BUILDER' : view.home ? 'RELEASE POST' : 'MAKE BUILDER';
-      }
-    }
+    this.el.unitStatus.textContent = view.warning || view.status;
   }
 
-  updateUnitCard(view, mode) {
-    this.showUnitCard(view, mode);
+  updateUnitCard(view) {
+    this.showUnitCard(view);
   }
 
   hideUnitCard() {
     this.el.unitCard?.classList.add('hidden');
   }
 
-  /** Brief inspection card when a hostile is tapped. */
   showEnemyCard(info) {
     if (!info || !this.el.enemyCard) return;
     this.el.enemyName.textContent = info.name || 'HOSTILE';
@@ -852,35 +975,56 @@ export class UI {
     this.el.wireLine?.classList.add('hidden');
   }
 
-  setRoster(units = []) {
-    if (!this.el.roster) return;
-    const key = units
-      .map((u) => `${u.key}:${Math.round(u.hp)}:${u.selected ? 1 : 0}:${u.dead ? 1 : 0}`)
-      .join('|');
-    if (key === this._rosterKey) return;
-    this._rosterKey = key;
-    this.el.roster.innerHTML = '';
-    for (const unit of units) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `roster-btn${unit.selected ? ' selected' : ''}${unit.dead ? ' dead' : ''}${unit.leader ? ' leader' : ''}`;
-      btn.title = unit.name;
-      const initial = document.createElement('b');
-      initial.textContent = unit.initial;
-      const name = document.createElement('small');
-      name.textContent = unit.name;
-      const bar = document.createElement('span');
-      bar.className = 'r-hp';
-      const fill = document.createElement('i');
-      fill.style.width = `${Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100))}%`;
-      bar.appendChild(fill);
-      btn.append(initial, name, bar);
-      btn.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.cb.rosterSelect?.(unit.key);
-      });
-      this.el.roster.appendChild(btn);
+  // -------------------------------------------------------------------------
+  // expedition cell HUD
+  // -------------------------------------------------------------------------
+
+  showCell(view) {
+    if (!this.el.cellHud) return;
+    this.el.cellHud.classList.toggle('hidden', !view);
+    if (!view) {
+      this._cellKey = '';
+      return;
+    }
+    const key = `${view.title}|${view.enemies}|${view.note}|${view.canLoot}|${view.looted}|${view.canLeave}`;
+    if (key === this._cellKey) return;
+    this._cellKey = key;
+    this.el.cellTitle.textContent = view.title || 'EXPEDITION';
+    this.el.cellEnemies.textContent = `${view.enemies ?? 0} HOSTILES`;
+    this.el.cellNote.textContent = view.note || '';
+    this.el.cellLoot.disabled = !view.canLoot;
+    this.el.cellLoot.textContent = view.looted ? 'CACHE EMPTY' : 'LOOT CACHE';
+    this.el.cellLeave.textContent = view.canLeave ? 'RETURN TO CAMP' : 'LEAVE';
+    this.el.cellLeave.disabled = !view.canLeave;
+  }
+
+  hideCell() {
+    this.el.cellHud?.classList.add('hidden');
+  }
+
+  // -------------------------------------------------------------------------
+  // clocks, power, raid
+  // -------------------------------------------------------------------------
+
+  setClock(info) {
+    if (!this.el.gridClock || !info) return;
+    const key = `${info.clock}|${info.day}|${info.night}`;
+    if (key === this._clockKey) return;
+    this._clockKey = key;
+    this.el.gridDay.textContent = `DAY ${info.day}`;
+    this.el.gridClock.textContent = info.clock;
+    document.body.classList.toggle('night', !!info.night);
+  }
+
+  setPower(info) {
+    if (!info) return;
+    const key = `${info.output.toFixed(1)}|${info.demand.toFixed(1)}|${Math.round(info.battery)}|${info.capacity}|${info.powered}|${info.hasGrid}|${info.note}`;
+    if (key === this._powerKey) return;
+    this._powerKey = key;
+    if (this.el.power) this.el.power.textContent = info.output.toFixed(1);
+    if (this.el.powerChip) {
+      this.el.powerChip.title = `Output ${info.output.toFixed(1)} · demand ${info.demand.toFixed(1)} · stored ${Math.round(info.battery)}/${Math.round(info.capacity)} · ${info.note}`;
+      this.el.powerChip.classList.toggle('low', !!info.hasGrid && !info.powered);
     }
   }
 
@@ -893,8 +1037,20 @@ export class UI {
     if (count > 0 && this.el.raidCount) this.el.raidCount.textContent = String(count);
     if (this.el.raidKind) {
       this.el.raidKind.textContent =
-        kind === 'ghouls' ? 'GHOULS' : kind === 'bats' ? 'BATS' : kind === 'assault' ? 'FINAL ASSAULT' : 'RAIDERS';
+        kind === 'ghouls' ? 'GHOULS' : kind === 'bats' ? 'BATS' : kind === 'assault' ? 'ASSAULT' : 'RAIDERS';
     }
+  }
+
+  showRaidResult(win, sub = '') {
+    const el = this.el.raidResult;
+    if (!el) return;
+    this.el.raidResultTitle.textContent = win ? 'RAID CLEARED' : 'RAID LOST';
+    this.el.raidResultSub.textContent = sub;
+    el.classList.toggle('win', !!win);
+    el.classList.toggle('lose', !win);
+    el.classList.remove('hidden');
+    clearTimeout(this.raidResultTimer);
+    this.raidResultTimer = setTimeout(() => el.classList.add('hidden'), win ? 2800 : 2400);
   }
 
   hitMarker(kill = false) {
@@ -908,77 +1064,29 @@ export class UI {
     this.hitTimer = setTimeout(() => el.classList.remove('hit', 'kill'), 140);
   }
 
-  buildWardrobe(equipment, armory = null) {
-    if (!this.el.wardrobeList) return;
-    this.el.wardrobeList.innerHTML = '';
-    for (const slot of SLOTS) {
-      const row = document.createElement('button');
-      row.className = 'wardrobe-row';
-      row.type = 'button';
-      const label = document.createElement('small');
-      label.textContent = slot.label;
-      const value = document.createElement('b');
-      value.textContent = itemLabel(slot.id, equipment?.[slot.id] || 'none');
-      row.append(label, value);
-      row.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.cb.wardrobeCycle?.(slot.id, e.shiftKey ? -1 : 1);
-      });
-      this.el.wardrobeList.appendChild(row);
-    }
-    this.buildArmory(armory, armory?.scrap ?? 0);
+  // -------------------------------------------------------------------------
+  // run end (the camp is lost, never won)
+  // -------------------------------------------------------------------------
+
+  showRunEnd(win, title, sub, stats = {}) {
+    if (!this.el.endScreen) return;
+    this.el.endScreen.classList.remove('hidden');
+    this.el.endScreen.classList.toggle('lose', !win);
+    this.el.endTitle.textContent = title;
+    this.el.endSub.textContent = sub;
+    this.el.endKicker.textContent = 'CAMP PROTOCOL · ENDED';
+    this.el.endDay.textContent = String(stats.day ?? 1);
+    this.el.endSurvivors.textContent = String(stats.survivors ?? 0);
+    this.el.endKills.textContent = String(stats.kills ?? 0);
   }
 
-  /** Ammo stock (filled at the workshop) and per-weapon upgrade tracks. */
-  buildArmory(view, scrap = 0) {
-    if (!this.el.armory) return;
-    this.el.armory.classList.toggle('hidden', !view);
-    if (!view) return;
-    if (this.el.armoryWeapon) this.el.armoryWeapon.textContent = view.name;
-    if (this.el.armoryScrap) this.el.armoryScrap.innerHTML = `SCRAP <b>${scrap}</b>`;
-
-    if (this.el.armoryAmmo) {
-      this.el.armoryAmmo.innerHTML = '';
-      if (view.ammo) {
-        const row = document.createElement('div');
-        row.className = 'wardrobe-row ammo-row static';
-        const label = document.createElement('small');
-        label.textContent = view.ammo.label;
-        const value = document.createElement('b');
-        value.textContent = `${view.reserve} / ${view.ammo.max}`;
-        const source = document.createElement('span');
-        source.className = 'buy';
-        source.textContent = 'WORKSHOP';
-        row.append(label, value, source);
-        this.el.armoryAmmo.appendChild(row);
-      }
-    }
-
-    if (this.el.armoryUpgrades) {
-      this.el.armoryUpgrades.innerHTML = '';
-      for (const track of view.tracks) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = 'wardrobe-row upgrade-row';
-        row.disabled = !track.next;
-        const label = document.createElement('small');
-        label.textContent = `${track.label} ${track.tier}/${track.maxTier}`;
-        const value = document.createElement('b');
-        value.textContent = track.next ? `${track.next.from} → ${track.next.to}` : track.value;
-        const cost = document.createElement('span');
-        cost.className = 'buy';
-        cost.textContent = track.next ? `${track.next.cost}` : 'MAX';
-        row.append(label, value, cost);
-        row.addEventListener('pointerdown', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.cb.armoryUpgrade?.(track.id);
-        });
-        this.el.armoryUpgrades.appendChild(row);
-      }
-    }
+  hideRunEnd() {
+    this.el.endScreen?.classList.add('hidden');
   }
+
+  // -------------------------------------------------------------------------
+  // compass / fullscreen / orientation
+  // -------------------------------------------------------------------------
 
   bindCompass() {
     const el = this.el.compass;
@@ -1046,9 +1154,7 @@ export class UI {
     this.el.fsBtn.classList.toggle('is-fs', active);
     this.el.fsBtn.setAttribute('aria-pressed', String(active));
     this.el.fsBtn.title = active ? 'Exit fullscreen' : 'Fullscreen';
-    // Leaving fullscreen also releases the orientation lock on every browser that supports it.
     if (!active && this.orientationLock) this.clearOrientationLock();
-    // The viewport changes when browser chrome disappears; reframe on the next tick.
     setTimeout(() => window.dispatchEvent(new Event('resize')), 120);
   }
 
@@ -1125,6 +1231,10 @@ export class UI {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // build tray and placement
+  // -------------------------------------------------------------------------
+
   showBuildMenu(open) {
     this.buildOpen = open;
     this.el.buildBar.classList.toggle('hidden', !open);
@@ -1132,6 +1242,7 @@ export class UI {
     if (open) {
       this.el.toast.classList.remove('show');
       this.el.buildList.scrollLeft = 0;
+      this.toggleMenu(false);
     } else {
       this.el.toast.style.bottom = '';
       this.showPlacement(false);
@@ -1179,7 +1290,14 @@ export class UI {
     this.el.toggles.forEach((b) => {
       if (b.dataset.toggle === key) b.classList.toggle('on', value);
     });
+    if (key === 'sound' && this.el.soundBtn) {
+      this.el.soundBtn.textContent = value ? 'SOUND ON' : 'SOUND OFF';
+    }
   }
+
+  // -------------------------------------------------------------------------
+  // HUD resources
+  // -------------------------------------------------------------------------
 
   updateHUD(state) {
     const cap = state.scrapCap || 0;
@@ -1208,27 +1326,6 @@ export class UI {
       this.last.foodCap = foodCap;
       this.el.food.textContent = `${state.food}/${foodCap}`;
     }
-    const hp = Math.max(0, Math.round(state.health));
-    if (hp !== this.last.health) {
-      this.last.health = hp;
-      this.el.hpFill.style.width = `${(hp / state.maxHealth) * 100}%`;
-      this.el.hpText.textContent = String(hp);
-    }
-  }
-
-  setGather(visible, label = 'GATHER') {
-    if (visible === this.last.canGather && label === this.last.gatherLabel) return;
-    this.last.canGather = visible;
-    this.last.gatherLabel = label;
-    this.el.gather.classList.toggle('hidden', !visible);
-    const text = this.el.gather.querySelector('span:last-child');
-    if (text) text.textContent = label;
-  }
-
-  setStrikeCooling(cooling) {
-    if (cooling === this.lastStrikeCooling) return;
-    this.lastStrikeCooling = cooling;
-    this.el.strike.classList.toggle('cooling', cooling);
   }
 
   toast(msg, bad = false) {
@@ -1268,9 +1365,9 @@ export class UI {
     this.flashTimer = setTimeout(() => el.classList.remove('hit'), 90);
   }
 
-  showDeath(show) {
-    this.el.death.classList.toggle('hidden', !show);
-  }
+  // -------------------------------------------------------------------------
+  // perf lab
+  // -------------------------------------------------------------------------
 
   updatePerf(perf, ghouls) {
     const s = perf.stats;
@@ -1284,9 +1381,7 @@ export class UI {
     this.el.pDpr.textContent = s.dpr.toFixed(2);
     this.el.pGhouls.textContent = String(ghouls);
     this.el.pGpu.textContent = s.gpu;
-    if (perf.history.length !== this.perfLastHistory) {
-      this.perfLastHistory = perf.history.length;
-    }
+    if (perf.history.length !== this.perfLastHistory) this.perfLastHistory = perf.history.length;
     if (this.perfOpen) this.drawGraph(perf.history);
   }
 

@@ -1,8 +1,17 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { box, cyl, merge, paint, shadowTexture } from './geo.js';
 import { makeRng } from './rng.js';
+import {
+  ball,
+  capsule,
+  getLowDetail,
+  loft,
+  pose,
+  rbox,
+  ring,
+  smoothMerge,
+  sphereCap,
+} from './charparts.js';
 
 /**
  * Parametric humanoid generator.
@@ -12,10 +21,15 @@ import { makeRng } from './rng.js';
  * mesh per bone, so an NPC costs six draws: torso, head, two arms, two legs.
  */
 
+/**
+ * Archetypes differ in build, not just in scale. `shoulder` moves the arm sockets and the deltoids,
+ * `chest` deepens the ribcage, `limb` thickens arms and legs, `hip` widens the pelvis and stance,
+ * and `posture` leans the upper torso (positive = forward).
+ */
 export const SHAPES = {
-  lean: { s: 0.98, w: 0.92, head: 1.0 },
-  stocky: { s: 0.94, w: 1.14, head: 1.04 },
-  tall: { s: 1.08, w: 0.94, head: 0.97 },
+  lean: { s: 0.98, w: 0.94, head: 1.0, shoulder: 0.96, chest: 0.94, limb: 0.94, hip: 0.96, posture: 0.018, neck: 1.03 },
+  stocky: { s: 0.94, w: 1.06, head: 1.04, shoulder: 1.02, chest: 1.08, limb: 1.07, hip: 1.05, posture: -0.014, neck: 0.92 },
+  tall: { s: 1.08, w: 0.95, head: 0.97, shoulder: 1.0, chest: 0.97, limb: 0.98, hip: 0.98, posture: 0.03, neck: 1.07 },
 };
 
 const SKIN = ['#c08d60', '#a8734d', '#8a5a3d', '#d1a077', '#6f4a35'];
@@ -134,7 +148,19 @@ export function makeSpec(seed, options = {}) {
     ...(options.gear || {}),
   };
 
-  return { rng, archetype, s, w, head, skin, coat, accent, belt, coatDark, pants, pantsDark, wrap, gear, hair: options.hair || rng.pick(HAIR) };
+  // Keep the palette draws above untouched so a seed still picks the same colours; the build jitter
+  // is drawn last, after the hair colour, which is the final random pick.
+  const hair = options.hair || rng.pick(HAIR);
+  const build = {
+    shoulder: shape.shoulder * rng.range(0.97, 1.03),
+    chest: shape.chest * rng.range(0.97, 1.03),
+    limb: shape.limb * rng.range(0.96, 1.04),
+    hip: shape.hip * rng.range(0.97, 1.03),
+    posture: shape.posture + rng.range(-0.004, 0.004),
+    neck: shape.neck,
+  };
+
+  return { rng, archetype, s, w, head, build, skin, coat, accent, belt, coatDark, pants, pantsDark, wrap, gear, hair };
 }
 
 export function buildHumanoid(seed, options = {}) {
@@ -236,49 +262,21 @@ export function buildHumanoid(seed, options = {}) {
 
 // ---------------------------------------------------------------------------
 // Smooth (R1) variant
+//
+// The primitives now come from charparts.js so this variant, the skinned body and the wardrobe
+// all share the low-detail switching and the loft/profile system.
 // ---------------------------------------------------------------------------
 
-function pose(g, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
-  if (rx) g.rotateX(rx);
-  if (ry) g.rotateY(ry);
-  if (rz) g.rotateZ(rz);
-  g.translate(x, y, z);
-  return g;
-}
-
-function rbox(w, h, d, r, color, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
-  const g = new RoundedBoxGeometry(w, h, d, 3, Math.min(r, Math.min(w, h, d) * 0.45));
-  paint(g, color);
-  return pose(g, x, y, z, rx, ry, rz);
-}
-
-function capsule(r, h, color, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
-  const g = new THREE.CapsuleGeometry(r, h, 5, 12);
-  paint(g, color);
-  return pose(g, x, y, z, rx, ry, rz);
-}
-
-function ball(r, color, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) {
-  const g = new THREE.SphereGeometry(r, 16, 12);
+/** Small facial forms do not need a full-resolution sphere; keep the head cheap. */
+function smallSphere(r, color, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) {
+  const g = new THREE.SphereGeometry(r, 8, 6);
   g.scale(sx, sy, sz);
   paint(g, color);
   g.translate(x, y, z);
   return g;
 }
 
-function ring(r, tube, color, x = 0, y = 0, z = 0) {
-  const g = new THREE.TorusGeometry(r, tube, 8, 20);
-  paint(g, color);
-  return pose(g, x, y, z, Math.PI / 2);
-}
 
-function smoothMerge(parts) {
-  const geo = merge(parts);
-  const welded = mergeVertices(geo, 1e-3);
-  welded.computeVertexNormals();
-  welded.computeBoundingSphere();
-  return welded;
-}
 
 function smoothTorso(spec) {
   const { s, w, skin, coat, coatDark, belt, accent, gear } = spec;
@@ -314,39 +312,64 @@ function smoothTorso(spec) {
 
 export function smoothHead(spec) {
   const { s, head, skin, wrap, accent, gear } = spec;
+  const low = getLowDetail();
+  const seg = low ? 10 : 16;
   const p = [];
-  p.push(ball(0.19 * head, skin, 0, 0.17 * s, 0.01, 1, 1.08, 1));
-  p.push(ball(0.145 * head, skin, 0, 0.08 * s, 0.04, 1, 0.8, 0.95));
-  p.push(capsule(0.032 * head, 0.05 * s, skin, 0, 0.15 * s, 0.19 * head, 0.3, 0, 0));
-  p.push(rbox(0.3 * head, 0.035 * s, 0.05 * head, 0.015 * head, shade(skin, 0.92), 0, 0.235 * s, 0.16 * head));
-  p.push(ball(0.045 * head, skin, -0.185 * head, 0.17 * s, 0, 0.32, 1.0, 0.66));
-  p.push(ball(0.045 * head, skin, 0.185 * head, 0.17 * s, 0, 0.32, 1.0, 0.66));
 
-  p.push(ball(0.034 * head, '#e8e2d2', -0.075 * head, 0.19 * s, 0.155 * head, 1, 1, 0.6));
-  p.push(ball(0.034 * head, '#e8e2d2', 0.075 * head, 0.19 * s, 0.155 * head, 1, 1, 0.6));
-  p.push(ball(0.016 * head, '#2e2b26', -0.075 * head, 0.19 * s, 0.19 * head, 1, 1, 0.6));
-  p.push(ball(0.016 * head, '#2e2b26', 0.075 * head, 0.19 * s, 0.19 * head, 1, 1, 0.6));
-  p.push(rbox(0.09 * head, 0.02 * s, 0.02, 0.008, '#5e3d33', 0, 0.1 * s, 0.18 * head));
+  // Skull as one loft: chin, jaw, cheekbone, brow, forehead and crown share a surface. The old
+  // version stacked three squashed balls, which is what gave the head its snowman silhouette.
+  // Heights are in `s` and widths in `head`, so a broad archetype gets a broad face, not a taller one.
+  const skull = [
+    [0.0, 0.034, 0.04],
+    [0.028, 0.066, 0.07],
+    [0.068, 0.088, 0.091],
+    [0.112, 0.103, 0.106],
+    [0.158, 0.108, 0.111],
+    [0.2, 0.103, 0.107],
+    [0.236, 0.082, 0.092],
+    [0.258, 0.044, 0.055],
+  ].map(([y, rx, rz]) => ({ y: y * s, rx: rx * head, rz: rz * head }));
+  p.push(loft(skull, skin, { segments: seg, round: 0.12, capStart: 0.005 * s, capEnd: 0.012 * s }));
 
+  // Cheek planes, brow ridge, nose and ears: the forms that read as a face at 2x zoom.
+  for (const sx of [-1, 1]) {
+    p.push(smallSphere(0.05 * head, skin, sx * 0.064 * head, 0.104 * s, 0.068 * head, 0.9, 0.74, 0.62));
+    p.push(smallSphere(0.037 * head, skin, sx * 0.106 * head, 0.145 * s, -0.008 * head, 0.3, 1.0, 0.64));
+  }
+  p.push(rbox(0.138 * head, 0.014 * s, 0.03 * head, 0.007 * head, shade(skin, 0.97), 0, 0.163 * s, 0.086 * head));
+  p.push(capsule(0.012 * head, 0.04 * s, skin, 0, 0.127 * s, 0.099 * head));
+  p.push(smallSphere(0.022 * head, skin, 0, 0.099 * s, 0.102 * head, 1.0, 0.78, 0.9));
+  p.push(rbox(0.058 * head, 0.013 * s, 0.013 * head, 0.005 * head, '#5e3d33', 0, 0.064 * s, 0.094 * head));
+  p.push(rbox(0.056 * head, 0.02 * s, 0.02 * head, 0.008 * head, shade(skin, 0.94), 0, 0.03 * s, 0.082 * head));
+
+  // Eyes: ~4.6 cm spheres, small enough to stop reading as googly at zoom.
+  for (const sx of [-1, 1]) {
+    p.push(smallSphere(0.023 * head, '#ddd6c6', sx * 0.043 * head, 0.145 * s, 0.093 * head, 1, 0.92, 0.72));
+    p.push(smallSphere(0.0105 * head, '#241f1a', sx * 0.043 * head, 0.145 * s, 0.106 * head, 1, 1, 0.7));
+    p.push(rbox(0.058 * head, 0.009 * s, 0.014 * head, 0.004 * head, shade(spec.hair, 0.9), sx * 0.045 * head, 0.172 * s, 0.096 * head, 0, 0, sx * -0.08));
+  }
+
+  // Headwear is a shell over the skull, not a second ball: it leaves the brow and eyes visible.
   if (gear.headwrap) {
-    p.push(ball(0.2 * head, wrap, 0, 0.32 * s, 0, 1.04, 0.4, 1.04));
-    p.push(ring(0.2 * head, 0.025 * head, wrap, 0, 0.3 * s, 0));
+    p.push(sphereCap(0.118 * head, wrap, 0, 0.181 * s, -0.006 * head, 1.0, 0.93, 1.04, 0.46));
+    p.push(ring(0.112 * head, 0.016 * head, shade(wrap, 0.88), 0, 0.186 * s, -0.004 * head));
   } else {
-    p.push(ball(0.2 * head, shade('#3a332b', 1), 0, 0.32 * s, 0, 1.04, 0.4, 1.04));
+    p.push(sphereCap(0.117 * head, shade('#3a332b', 1), 0, 0.181 * s, -0.006 * head, 1.0, 0.93, 1.04, 0.46));
+    p.push(smallSphere(0.083 * head, shade('#3a332b', 1), 0, 0.11 * s, -0.045 * head, 1.0, 0.95, 0.8));
   }
   if (gear.scarf) {
-    p.push(ring(0.16 * head, 0.05 * head, accent, 0, 0.02 * s, 0));
-    p.push(rbox(0.12 * head, 0.26 * s, 0.08 * head, 0.02, shade(accent, 0.86), 0.09 * head, -0.08 * s, -0.16 * head, 0.15, 0, 0.1));
+    p.push(ring(0.062 * s, 0.02 * s, accent, 0, 0.004 * s, 0));
+    p.push(rbox(0.085 * s, 0.19 * s, 0.028 * s, 0.012, shade(accent, 0.86), 0.042 * s, -0.1 * s, -0.045 * s, 0.15, 0, 0.1));
   }
   if (gear.goggles) {
     const lens = (x) => {
-      const g = new THREE.CylinderGeometry(0.045 * head, 0.045 * head, 0.03 * head, 12);
+      const g = new THREE.CylinderGeometry(0.042 * head, 0.042 * head, 0.028 * head, low ? 8 : 12);
       paint(g, '#2e2b26');
-      return pose(g, x, 0.29 * s, 0.19 * head, Math.PI / 2, 0, 0);
+      return pose(g, x, 0.172 * s, 0.098 * head, Math.PI / 2, 0, 0);
     };
-    p.push(lens(-0.075 * head));
-    p.push(lens(0.075 * head));
-    p.push(ring(0.2 * head, 0.015, '#4a4438', 0, 0.29 * s, 0));
+    p.push(lens(-0.065 * head));
+    p.push(lens(0.065 * head));
+    p.push(ring(0.114 * head, 0.013, '#4a4438', 0, 0.176 * s, 0));
   }
   return smoothMerge(p);
 }
