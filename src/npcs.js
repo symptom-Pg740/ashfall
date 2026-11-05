@@ -8,7 +8,27 @@ import { RECIPES } from './recipes.js';
 import { canAttack } from './actors.js';
 import { levelInfo, perkFor, statScale, XP } from './levels.js';
 import { evaluateSurvivorNeeds } from './core/needs.js';
-import { canIssueJob, syncActivity, welcomePatch, removePatch, canWelcome, canExpel, JOB } from './features/survivors/index.js';
+import {
+  canIssueJob,
+  syncActivity,
+  welcomePatch,
+  removePatch,
+  canWelcome,
+  canExpel,
+  JOB,
+  arrivedAtMove,
+  arrivedAtRally,
+  arrivedAtNode,
+  withinWorkRange,
+  withinManRange,
+  nextBuildProgress,
+  nextRepairHp,
+  workLoopKind,
+  workPost,
+  atWorkPost,
+  canAssignWorkplace,
+  advanceWorkTimer,
+} from './features/survivors/index.js';
 
 const NAMES = ['MARA', 'SILAS', 'REN', 'ODA', 'JUNO', 'KADE'];
 
@@ -256,8 +276,8 @@ export class CampFolk {
   /** Put a survivor on a building's job slot. Clears any builder role and manual job. */
   assignWorkplace(person, building) {
     const job = building?.def?.job;
-    if (!person || !person.active || person.dead || person.pending || person.onExpedition || !job || !building.built || building.destroyed) return false;
-    if (person.home !== building && this.workersOf(building).length >= job.slots) return false;
+    const check = canAssignWorkplace(person, building, this.workersOf(building).length);
+    if (!check.ok) return false;
     if (person.manning) this.releaseTower(person);
     person.home = building;
     person.role = (job.label || job.role).toLowerCase();
@@ -344,15 +364,16 @@ export class CampFolk {
       this.freeLoop(person, buildings);
       return;
     }
-    const job = b.def?.job;
-    if (!b.built || b.destroyed || !job) {
+    const kind = workLoopKind(b);
+    if (!kind) {
       this.releaseWorkplace(person, true);
       return;
     }
-    if (job.role === 'scavenger') this.scavengerLoop(person, b, job, time);
-    else if (job.role === 'water') this.wellLoop(person, b, job, dt);
-    else if (job.role === 'farmer') this.farmLoop(person, b, job, dt);
-    else if (job.role === 'artisan') this.workshopLoop(person, b, job, dt);
+    const job = b.def.job;
+    if (kind === 'scavenger') this.scavengerLoop(person, b, job, time);
+    else if (kind === 'water') this.wellLoop(person, b, job, dt);
+    else if (kind === 'farmer') this.farmLoop(person, b, job, dt);
+    else if (kind === 'artisan') this.workshopLoop(person, b, job, dt);
   }
 
   /** Stand at the wheel and draw water. Production pauses away from the post or when full. */
@@ -361,23 +382,23 @@ export class CampFolk {
       person.attention = 'STORAGE FULL';
       return;
     }
-    const post = job.post || { x: 2.2, z: 0.4 };
+    const fallback = { x: 2.2, z: 0.4 };
+    const post = workPost(building, job, fallback);
     const pos = person.rig.group.position;
-    const d = Math.hypot(building.x + post.x - pos.x, building.z + post.z - pos.z);
-    if (d > building.radius + 1.5) {
+    if (!atWorkPost(pos, building, job, fallback)) {
       if (person.attention === 'NO PATH') return;
       person.attention = null;
-      person.target = { x: building.x + post.x, z: building.z + post.z };
+      person.target = post;
       person.workTimer = 0;
-      this.issueJob(person, { type: 'move', x: building.x + post.x, z: building.z + post.z });
+      this.issueJob(person, { type: JOB.MOVE, x: post.x, z: post.z });
       return;
     }
     person.attention = null;
-    person.target = { x: building.x + post.x, z: building.z + post.z };
+    person.target = post;
     person.timer = 3;
-    person.workTimer += dt * (person.workScale || 1);
-    if (person.workTimer >= 4) {
-      person.workTimer -= 4;
+    const step = advanceWorkTimer(person.workTimer, dt, person.workScale, 4);
+    person.workTimer = step.timer;
+    if (step.produced) {
       this.onWaterProduced?.(1, building);
       this.awardXp(person, XP.produce, 'water');
     }
@@ -393,32 +414,30 @@ export class CampFolk {
       person.attention = 'NO WATER';
       return;
     }
-    const post = job.post || { x: 0, z: 3.3 };
+    const fallback = { x: 0, z: 3.3 };
+    const post = workPost(building, job, fallback);
     const pos = person.rig.group.position;
-    const d = Math.hypot(building.x + post.x - pos.x, building.z + post.z - pos.z);
-    if (d > building.radius + 1.2) {
+    if (!atWorkPost(pos, building, job, fallback, 1.2)) {
       if (person.attention === 'NO PATH') return;
       person.attention = null;
-      person.target = { x: building.x + post.x, z: building.z + post.z };
+      person.target = post;
       person.workTimer = 0;
       person.waterTimer = 0;
-      this.issueJob(person, { type: 'move', x: building.x + post.x, z: building.z + post.z });
+      this.issueJob(person, { type: JOB.MOVE, x: post.x, z: post.z });
       return;
     }
     person.attention = null;
-    person.target = { x: building.x + post.x, z: building.z + post.z };
+    person.target = post;
     person.timer = 3;
-    person.workTimer += dt * (person.workScale || 1);
-    person.waterTimer += dt;
-    if (person.waterTimer >= 20) {
-      if (!this.takeWater?.(1)) {
-        person.attention = 'NO WATER';
-        return;
-      }
-      person.waterTimer -= 20;
+    const water = advanceWorkTimer(person.waterTimer, dt, 1, 20);
+    person.waterTimer = water.timer;
+    if (water.produced && !this.takeWater?.(1)) {
+      person.attention = 'NO WATER';
+      return;
     }
-    if (person.workTimer >= 7) {
-      person.workTimer -= 7;
+    const step = advanceWorkTimer(person.workTimer, dt, person.workScale, 7);
+    person.workTimer = step.timer;
+    if (step.produced) {
       this.onFoodProduced?.(1, building);
       this.awardXp(person, XP.produce, 'food');
     }
@@ -438,24 +457,24 @@ export class CampFolk {
       person.workTimer = 0;
       return;
     }
-    const post = job.post || { x: 0, z: 2.75 };
+    const fallback = { x: 0, z: 2.75 };
+    const post = workPost(building, job, fallback);
     const pos = person.rig.group.position;
-    const d = Math.hypot(building.x + post.x - pos.x, building.z + post.z - pos.z);
-    if (d > building.radius + 1.5) {
+    if (!atWorkPost(pos, building, job, fallback)) {
       if (person.attention === 'NO PATH') return;
       person.attention = null;
-      person.target = { x: building.x + post.x, z: building.z + post.z };
+      person.target = post;
       person.workTimer = 0;
-      this.issueJob(person, { type: 'move', x: building.x + post.x, z: building.z + post.z });
+      this.issueJob(person, { type: JOB.MOVE, x: post.x, z: post.z });
       return;
     }
     person.attention = null;
-    person.target = { x: building.x + post.x, z: building.z + post.z };
+    person.target = post;
     person.timer = 3;
-    person.workTimer += dt * (person.workScale || 1);
-    if (person.workTimer >= recipe.time) {
+    const step = advanceWorkTimer(person.workTimer, dt, person.workScale, recipe.time);
+    person.workTimer = step.timer;
+    if (step.produced) {
       if (this.doCraft?.(recipe.id)) {
-        person.workTimer -= recipe.time;
         this.onCraft?.(recipe, building);
         this.awardXp(person, XP.craft, 'craft');
       } else {
@@ -943,7 +962,7 @@ export class CampFolk {
     const distTo = (x, z) => Math.hypot(x - pos.x, z - pos.z);
 
     if (j.type === 'move') {
-      if (distTo(j.x, j.z) < 0.6) {
+      if (arrivedAtMove(distTo(j.x, j.z))) {
         p.job = null;
         p.holdTimer = 4 + Math.random() * 3;
         return null;
@@ -952,7 +971,7 @@ export class CampFolk {
     }
 
     if (j.type === JOB.RALLY) {
-      if (distTo(j.x, j.z) < 0.75) {
+      if (arrivedAtRally(distTo(j.x, j.z))) {
         p.job = null;
         p.holdTimer = j.hold || 20;
         p.heading = Math.atan2(j.fire.x - pos.x, j.fire.z - pos.z);
@@ -973,7 +992,7 @@ export class CampFolk {
           p.job = null;
           return null;
         }
-        if (distTo(node.x, node.z) < 2.2) {
+        if (arrivedAtNode(distTo(node.x, node.z))) {
           j.phase = 'harvest';
           j.timer = 1.2;
           return null;
@@ -1025,9 +1044,10 @@ export class CampFolk {
         p.job = null;
         return null;
       }
-      if (distTo(b.x, b.z) > b.radius + 1.5) return { x: b.x, z: b.z };
-      b.hp = Math.min(b.maxHp, b.hp + dt * 14 * (p.workScale || 1));
-      if (b.hp >= b.maxHp) {
+      if (!withinWorkRange(distTo(b.x, b.z), b.radius)) return { x: b.x, z: b.z };
+      const repair = nextRepairHp(b.hp, dt, p.workScale, b.maxHp);
+      b.hp = repair.hp;
+      if (repair.complete) {
         p.job = null;
         p.holdTimer = 2;
         this.onBuildingRepaired?.(b);
@@ -1042,11 +1062,12 @@ export class CampFolk {
         p.job = null;
         return null;
       }
-      if (distTo(b.x, b.z) > b.radius + 1.5) {
+      if (!withinWorkRange(distTo(b.x, b.z), b.radius)) {
         return { x: b.x, z: b.z };
       }
-      b.buildProgress = Math.min(1, (b.buildProgress || 0) + (dt * (p.workScale || 1)) / Math.max(0.5, b.buildTime));
-      if (b.buildProgress >= 1) {
+      const build = nextBuildProgress(b.buildProgress, dt, p.workScale, b.buildTime);
+      b.buildProgress = build.progress;
+      if (build.complete) {
         p.job = null;
         p.holdTimer = 2;
         this.onBuildComplete?.(b);
@@ -1065,7 +1086,7 @@ export class CampFolk {
         p.job = null;
         return null;
       }
-      if (distTo(tower.x, tower.z) < 3.0) {
+      if (withinManRange(distTo(tower.x, tower.z))) {
         this.mountTower(p, tower);
         return null;
       }
