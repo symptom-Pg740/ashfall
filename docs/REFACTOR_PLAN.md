@@ -53,7 +53,11 @@ continue to work until the last caller is migrated.
 Suggested order:
 
 1. **survivors** — unit model, needs, morale, jobs, assignments, recruitment. Highest game-logic
-   complexity and the source of most “why did they do that?” questions.
+   complexity and the source of most “why did they do that?” questions. **Started:** explicit
+   activity/status derivation, job kinds (`gather` vs `rally`), job validation and
+   newcomer/removal transitions live in `features/survivors/`; `npcs.js` and `commander.js` use
+   them. This pass also fixed a real bug where the call-to-fire job was caught by the scrap-gather
+   handler. Next: move job phases and work loops into the feature, then assignments/recruitment.
 2. **economy** — stockpile, production, hauling, workshop, trade. Removes direct `state.scrap`
    mutation from the rest of the game.
 3. **camp** — buildings, placement, construction, demolition, warehouse clusters.

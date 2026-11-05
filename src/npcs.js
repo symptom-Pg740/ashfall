@@ -8,6 +8,7 @@ import { RECIPES } from './recipes.js';
 import { canAttack } from './actors.js';
 import { levelInfo, perkFor, statScale, XP } from './levels.js';
 import { evaluateSurvivorNeeds } from './core/needs.js';
+import { canIssueJob, syncActivity, welcomePatch, removePatch, canWelcome, canExpel, JOB } from './features/survivors/index.js';
 
 const NAMES = ['MARA', 'SILAS', 'REN', 'ODA', 'JUNO', 'KADE'];
 
@@ -123,6 +124,7 @@ export class CampFolk {
         heading: rig.group.rotation.y,
         phase: rng() * 6.28,
         role: armed ? 'guard' : 'scavenger',
+        activity: 'idle',
         armed,
         weapon,
         job: null,
@@ -215,7 +217,8 @@ export class CampFolk {
   }
 
   issueJob(person, job) {
-    if (!person || person.dead || person.pending) return false;
+    const check = canIssueJob(person, job);
+    if (!check.ok) return false;
     if (person.manning && job?.type !== 'man') this.releaseTower(person);
     person.job = job;
     person.holdTimer = 0;
@@ -229,6 +232,7 @@ export class CampFolk {
     person.replan = 0;
     person.stuckCount = 0;
     if (person.aim) person.aim.setLock(job?.type === 'attack' ? job.target?.id ?? null : null);
+    syncActivity(person);
     return true;
   }
 
@@ -487,6 +491,7 @@ export class CampFolk {
     p.dead = false;
     p.left = false;
     p.pending = pending;
+    p.activity = pending ? 'pending' : 'idle';
     p.onExpedition = false;
     p.hp = p.maxHp;
     p.role = pending ? 'newcomer' : 'scavenger';
@@ -523,24 +528,15 @@ export class CampFolk {
 
   /** Accept a newcomer waiting at the fire. */
   welcome(person) {
-    if (!person || !person.pending || person.left) return false;
-    person.pending = false;
-    person.active = true;
-    person.dead = false;
-    person.left = false;
-    person.role = person.armed ? 'guard' : 'scavenger';
-    person.holdTimer = 0;
-    person.attention = null;
-    person.hp = Math.max(1, person.hp || person.maxHp);
-    person.morale = 65;
-    person.leaveWarn = '';
+    if (!canWelcome(person)) return false;
+    Object.assign(person, welcomePatch(person));
     this.onWelcome?.(person);
     return true;
   }
 
   /** Turn a newcomer away; they walk off and the pool slot is freed. */
   reject(person) {
-    if (!person || !person.pending) return false;
+    if (!person?.pending) return false;
     this.removeUnit(person);
     this.onReject?.(person);
     return true;
@@ -548,7 +544,7 @@ export class CampFolk {
 
   /** Remove an accepted survivor from the camp. They do not leave on their own. */
   expel(person) {
-    if (!person || person.pending || person.left) return false;
+    if (!canExpel(person)) return false;
     this.removeUnit(person);
     this.onExpel?.(person);
     return true;
@@ -557,13 +553,7 @@ export class CampFolk {
   removeUnit(person) {
     if (person.manning) this.releaseTower(person);
     if (person.home) this.releaseWorkplace(person, true);
-    person.active = false;
-    person.dead = false;
-    person.left = true;
-    person.pending = false;
-    person.job = null;
-    person.carry = 0;
-    person.attention = 'LEFT CAMP';
+    Object.assign(person, removePatch());
     person.rig.group.visible = false;
     person.rig.mesh.visible = false;
     if (person.farTier) person.farTier.visible = false;
@@ -671,7 +661,7 @@ export class CampFolk {
       const a = p.fireAngle + i * 2.399963;
       const r = 2.0 + (i % 3) * 0.7;
       this.issueJob(p, {
-        type: 'gather',
+        type: JOB.RALLY,
         x: fire.x + Math.cos(a) * r,
         z: fire.z + Math.sin(a) * r,
         hold: all ? 30 : 45,
@@ -686,7 +676,7 @@ export class CampFolk {
   dismissFire(fire) {
     let n = 0;
     for (const p of this.people) {
-      if (p.job?.type !== 'gather' || p.job.fire !== fire) continue;
+      if (p.job?.type !== JOB.RALLY || p.job.fire !== fire) continue;
       p.job = null;
       p.holdTimer = 0;
       p.attention = null;
@@ -961,7 +951,7 @@ export class CampFolk {
       return { x: j.x, z: j.z };
     }
 
-    if (j.type === 'gather') {
+    if (j.type === JOB.RALLY) {
       if (distTo(j.x, j.z) < 0.75) {
         p.job = null;
         p.holdTimer = j.hold || 20;
@@ -971,7 +961,7 @@ export class CampFolk {
       return { x: j.x, z: j.z };
     }
 
-    if (j.type === 'gather') {
+    if (j.type === JOB.GATHER) {
       const field = this.scrapField;
       const node = field?.nodes[j.node];
       if (!node) {
@@ -1228,6 +1218,7 @@ export class CampFolk {
     for (const p of this.people) {
       if (!p.active) continue;
       if (this.activeFilter && !this.activeFilter.includes(p)) continue;
+      syncActivity(p);
       if (p.possessed) continue;
       if (p.onExpedition && !this.inCell) continue;
       if (p.manning) {
@@ -1461,6 +1452,7 @@ export class CampFolk {
 
       this.resolveCollisions(p, solids);
       pos.y = heightAt(pos.x, pos.z);
+      syncActivity(p, pos);
 
       // Stuck detection. A unit that is trying to move but not covering ground is wedged on
       // wreckage, a building corner or another body. Replan once; if that fails, report `NO PATH`.

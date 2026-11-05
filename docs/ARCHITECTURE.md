@@ -6,7 +6,9 @@ bundle; the folder structure below is the destination, not a claim that every fi
 **Current migration state:** `core/stockpile`, `core/needs`, `core/random` and `core/save` exist with
 tests. `rng.js` is now a world-seed adapter; `save.js` is a compatibility shim over
 `adapters/storage/localSave.js`. `campFolk.evaluateMorale`, `grantScrap` and `settlement.syncStorage`
-call core rules. The next slices are reason codes, placement/jobs rules and the survivors feature.
+call core rules. `features/survivors/` now owns explicit activity/status derivation, job kinds, job validation and
+newcomer/removal transitions; `npcs.js` and `commander.js` consume it. The next slices are job phases
+and work loops, then placement/power rules.
 
 This document exists because Ashfall grew from a rendering prototype into a settlement game with
 survivors, needs, morale, jobs, power, raids, expeditions and a save format. The current problem is

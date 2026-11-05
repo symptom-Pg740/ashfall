@@ -10,6 +10,6 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["src/core/**/*.js", "src/shared/**/*.js", "tests/**/*.js"],
+  "include": ["src/core/**/*.js", "src/features/**/*.js", "src/shared/**/*.js", "tests/**/*.js"],
   "exclude": ["node_modules", "dist"]
 }

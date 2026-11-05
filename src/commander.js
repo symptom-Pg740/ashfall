@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { canAttack } from './actors.js';
 import { levelInfo, perkFor } from './levels.js';
+import { survivorStatus, deriveActivity } from './features/survivors/index.js';
 
 /**
  * Command layer: selection and contextual orders. There is no direct-control mode any more.
@@ -112,6 +113,7 @@ export class Commander {
       hp: unit.hp,
       maxHp: unit.maxHp,
       status: this.statusOf(unit),
+      activity: deriveActivity(unit, unit.rig?.group?.position || null),
       warning: this.warningOf(unit),
       morale,
       moraleFactors: unit.moraleFactors || [],
@@ -160,42 +162,8 @@ export class Commander {
   }
 
   statusOf(unit) {
-    if (!unit) return 'IDLE';
-    if (unit.dead) return 'DOWN';
-    if (unit.pending) return 'WAITING AT THE FIRE';
-    if (unit.manning) return 'ON THE GUARD POST';
-    if (unit.onExpedition && !this.inCell) return 'ON EXPEDITION';
-    if (unit.attention && !unit.job) return unit.attention;
-    const job = unit.job;
-    if (!job) {
-      if (unit.carry > 0) return `CARRYING ${unit.carry}`;
-      if (unit.home) return `AT ${unit.home.def.name}`;
-      return unit.armed ? 'ON WATCH' : 'FREE';
-    }
-    if (job.type === 'move') return 'MOVING';
-    if (job.type === 'gather') return 'GATHERING AT THE FIRE';
-    if (job.type === 'attack') return 'ENGAGING';
-    if (job.type === 'gather') {
-      if (job.phase === 'harvest') return 'SCAVENGING';
-      if (job.phase === 'return') return `HAULING ${unit.carry}`;
-      return 'TO THE PILE';
-    }
-    if (job.type === 'man') return 'TO THE GUARD POST';
-    if (job.type === 'repair') {
-      return job.building &&
-        Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) <
-          job.building.radius + 1.6
-        ? `REPAIRING ${job.building.def.name}`
-        : `TO REPAIR ${job.building?.def.name || 'STRUCTURE'}`;
-    }
-    if (job.type === 'build') {
-      return job.building &&
-        Math.hypot(job.building.x - unit.rig.group.position.x, job.building.z - unit.rig.group.position.z) <
-          job.building.radius + 1.6
-        ? `BUILDING ${job.building.def.name}`
-        : `TO THE ${job.building?.def.name || 'SITE'}`;
-    }
-    return 'WORKING';
+    const pos = unit?.rig?.group?.position || null;
+    return survivorStatus(unit, pos).status;
   }
 
   /** Compact list data for the old roster callers and the clipboard. */
