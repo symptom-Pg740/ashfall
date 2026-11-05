@@ -7,6 +7,7 @@ import { makeRng, deriveSeed, damp } from './rng.js';
 import { RECIPES } from './recipes.js';
 import { canAttack } from './actors.js';
 import { levelInfo, perkFor, statScale, XP } from './levels.js';
+import { evaluateSurvivorNeeds } from './core/needs.js';
 
 const NAMES = ['MARA', 'SILAS', 'REN', 'ODA', 'JUNO', 'KADE'];
 
@@ -598,87 +599,45 @@ export class CampFolk {
    */
   evaluateMorale(day, state, settlement) {
     const living = this.people.filter((p) => p.active && !p.dead && !p.left);
-    const pop = living.length;
-    const beds = 3 + (settlement?.count ? settlement.count('house') : 0);
-    const chapel = !!(settlement?.count && settlement.count('chapel') > 0);
-    const fire = !!(settlement?.count && settlement.count('campfire') > 0);
-    const defended = !!(
-      settlement?.buildings?.some((b) => b.type === 'turret' && b.built && !b.destroyed) ||
-      settlement?.buildings?.some((b) => b.manned)
-    );
+    const camp = {
+      population: living.length,
+      beds: 3 + (settlement?.count ? settlement.count('house') : 0),
+      chapel: !!(settlement?.count && settlement.count('chapel') > 0),
+      campfire: !!(settlement?.count && settlement.count('campfire') > 0),
+      defended: !!(
+        settlement?.buildings?.some((b) => b.type === 'turret' && b.built && !b.destroyed) ||
+        settlement?.buildings?.some((b) => b.manned)
+      ),
+    };
     const warnings = [];
     const left = [];
     for (const p of living) {
-      if (p.pending) continue;
-      let target = 55;
-      const factors = [];
-      if (p.hunger > 0) {
-        target -= 22 * p.hunger;
-        factors.push(`HUNGRY ${p.hunger}/2`);
-      } else {
-        target += 10;
-        factors.push('FED');
-      }
-      if (p.thirst > 0) {
-        target -= 22 * p.thirst;
-        factors.push(`THIRSTY ${p.thirst}/2`);
-      } else {
-        target += 10;
-        factors.push('WATERED');
-      }
-      if (p.home) {
-        target += 6;
-        factors.push('EMPLOYED');
-      } else if (!p.onExpedition) {
-        target -= 4;
-        factors.push('NO POST');
-      }
-      if (pop > beds) {
-        target -= 14;
-        factors.push('NO BED');
-      } else {
-        target += 5;
-        factors.push('SHELTERED');
-      }
-      if (chapel) {
-        target += 8;
-        factors.push('FAITH');
-      }
-      if (fire) {
-        target += 4;
-        factors.push('FIRELIGHT');
-      }
-      if (defended) {
-        target += 3;
-        factors.push('DEFENDED');
-      }
-      if (p.hp < p.maxHp * 0.5) {
-        target -= 10;
-        factors.push('WOUNDED');
-      }
-      target = Math.max(0, Math.min(100, target));
-      p.moraleTarget = target;
-      p.morale = Math.round((p.morale ?? 70) * 0.35 + target * 0.65);
-      p.moraleFactors = factors;
-      const moraleFactor = p.morale < 25 ? 0.85 : 1;
-      p.speed = p.baseSpeed * ((p.hunger > 0 || p.thirst > 0) ? 0.8 : 1) * (1 + 0.02 * ((p.level || 1) - 1)) * moraleFactor;
-
-      // Accepted survivors do not leave on their own. Hunger and misery hurt morale, speed and
-      // work, but only the player can expel them.
-      if (p.hunger >= 2 || p.thirst >= 2) {
-        p.leaveWarn = p.hunger >= 2 ? 'STARVING' : 'DEHYDRATED';
-        warnings.push({ name: p.name, text: `${p.name} IS ${p.hunger >= 2 ? 'STARVING' : 'DEHYDRATED'} · MORALE AND WORK ARE SUFFERING` });
-      } else if (p.hunger > 0 || p.thirst > 0) {
-        p.leaveWarn = p.hunger > 0 ? `HUNGRY ${p.hunger}/2` : `THIRSTY ${p.thirst}/2`;
-        warnings.push({ name: p.name, text: `${p.name} IS ${p.hunger > 0 ? 'HUNGRY' : 'THIRSTY'} · FEED THEM AT DAWN` });
-      } else if (p.morale <= 30) {
-        p.leaveWarn = 'UNHAPPY';
-        warnings.push({ name: p.name, text: `${p.name} IS UNHAPPY · ${factors.join(' · ')}` });
-      } else {
-        p.leaveWarn = '';
+      const result = evaluateSurvivorNeeds(
+        {
+          hunger: p.hunger || 0,
+          thirst: p.thirst || 0,
+          hp: p.hp || 0,
+          maxHp: p.maxHp || 1,
+          hasHome: !!p.home,
+          onExpedition: !!p.onExpedition,
+          pending: !!p.pending,
+          morale: p.morale ?? 70,
+          level: p.level || 1,
+          baseSpeed: p.baseSpeed || 0,
+        },
+        camp,
+      );
+      if (!result) continue;
+      p.moraleTarget = result.moraleTarget;
+      p.morale = result.morale;
+      p.moraleFactors = result.factors;
+      p.leaveWarn = result.leaveWarn;
+      p.speed = result.speed;
+      if (result.warning) {
+        warnings.push({ name: p.name, text: `${p.name} ${result.warning}` });
       }
     }
-    return { warnings, left, pop, beds };
+    return { warnings, left, pop: camp.population, beds: camp.beds };
   }
 
   scavengerLoop(person, building, job, time) {

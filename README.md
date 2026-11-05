@@ -521,6 +521,8 @@ building gives them a repeating job — build, scavenge, draw water, farm, craft
 temporary overrides. The map grows, the camp is mud-and-scrap, and old-world ruins keep their own
 language.
 
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — the target modular monolith, dependency rules, pure-core boundary, testing and AI-agent workflow.
+- **[docs/REFACTOR_PLAN.md](docs/REFACTOR_PLAN.md)** — the phased strangler-fig migration and gates.
 - **[docs/GAME_PLAN.md](docs/GAME_PLAN.md)** — the full plan: control model, building cards,
   workplaces, warehouse/economy, day/night, electricity, Vickers turret, guard post assignment,
   progression and map scale. It includes the phased build order and gates. (Command-only and the

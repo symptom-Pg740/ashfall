@@ -37,6 +37,7 @@ import { TargetRegistry, canAttack } from './actors.js';
 import { Firearms } from './firearms.js';
 import { FX } from './fx.js';
 import { XP } from './levels.js';
+import { addResource } from './core/stockpile.js';
 
 // ---------------------------------------------------------------------------
 // renderer / scene
@@ -1028,10 +1029,9 @@ function doPlace() {
 }
 
 function grantScrap(amount) {
-  const cap = state.scrapCap || 80;
-  const accepted = Math.max(0, Math.min(amount, cap - state.scrap));
-  state.scrap += accepted;
-  return accepted;
+  const result = addResource(state.scrap, amount, state.scrapCap || 80);
+  state.scrap = result.value;
+  return result.accepted;
 }
 
 function doStress(kind) {

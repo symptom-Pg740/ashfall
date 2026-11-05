@@ -4,6 +4,7 @@ import { box, cyl, dodeca, merge, paint, bakeBaseAO, glowTexture, PALETTE } from
 import { buildAdobeHouse } from './kit.js';
 import { makeRng, deriveSeed, hash32, WORLD_SEED } from './rng.js';
 import { makeDetailSet } from './textures.js';
+import { storageCapacity, clampResource } from './core/stockpile.js';
 
 const CAMP_RADIUS = 110;
 const GRID = 1;
@@ -1992,7 +1993,7 @@ export class Settlement {
 
   /** Base field stock plus one warehouse's capacity per warehouse. */
   storageCap() {
-    return 80 + 120 * this.count('warehouse');
+    return storageCapacity(this.count('warehouse'));
   }
 
   syncStorage() {
@@ -2000,9 +2001,9 @@ export class Settlement {
     this.state.scrapCap = cap;
     this.state.waterCap = cap;
     this.state.foodCap = cap;
-    if (this.state.scrap > cap) this.state.scrap = cap;
-    if (this.state.water > cap) this.state.water = cap;
-    if (this.state.food > cap) this.state.food = cap;
+    this.state.scrap = clampResource(this.state.scrap, cap);
+    this.state.water = clampResource(this.state.water, cap);
+    this.state.food = clampResource(this.state.food, cap);
     return cap;
   }
 
