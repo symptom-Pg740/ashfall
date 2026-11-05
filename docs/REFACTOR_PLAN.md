@@ -3,7 +3,7 @@
 This is the migration plan for `docs/ARCHITECTURE.md`. The game stays playable after every phase.
 No big-bang rewrite.
 
-## Phase 0 — Guardrails and vocabulary (this pass)
+## Phase 0 — Guardrails and vocabulary (done)
 
 - [x] Write `docs/ARCHITECTURE.md`.
 - [x] Add ADRs for the decisions that agents must not undo.
@@ -11,9 +11,9 @@ No big-bang rewrite.
 - [x] Add Vitest + TypeScript `checkJs` for `src/core` and tests.
 - [x] Add a boundary/cycle checker.
 - [x] Add `npm run check`.
-- [ ] Make CI run `npm run check` on every push (follow-up).
+- [x] Make CI run `npm run check` on every push and pull request (`.github/workflows/ci.yml`).
 
-**Gate:** `npm run check` passes; the game still builds and boots.
+**Gate:** `npm run check` passes locally and in CI; the game still builds and boots.
 
 ## Phase 1 — Pure core rules (started)
 
@@ -27,9 +27,9 @@ Move rules that can be expressed without Three.js, DOM or storage.
 - [x] `src/core/save.js` — schema version, parsing and validation.
 - [x] `src/adapters/storage/localSave.js` — localStorage adapter; `src/save.js` is a temporary shim.
 - [ ] `src/core/reasons.js` — reason codes, migrate attention strings.
-- [ ] `src/core/placement.js` — building placement and warehouse adjacency predicates.
+- [x] `src/core/placement.js` — building placement and warehouse adjacency predicates. `settlement.validate` delegates to it.
 - [ ] `src/core/jobs.js` — job shapes and transitions.
-- [ ] `src/core/power.js` — power graph rules (no Three.js wires).
+- [x] `src/core/power.js` — power graph rules and solver (no Three.js wires). `src/power.js` keeps the wire/scene adapter.
 
 **Gate:** the rules have unit tests, and legacy modules call them instead of duplicating the rule.
 
@@ -37,8 +37,8 @@ Move rules that can be expressed without Three.js, DOM or storage.
 
 Move data out of logic files:
 
-- [ ] `content/buildings.js` — costs, footprints, HP, job slots, power, visuals key.
-- [ ] `content/recipes.js` — workshop recipes and caps.
+- [x] `content/buildings.js` — costs, footprints, HP, job slots, power, visuals key. Settlement owns the geometry map.
+- [x] `content/recipes.js` — workshop recipes and component cap; helpers remain in `recipes.js`.
 - [ ] `content/items.js` — wardrobe items and weapon specs.
 - [ ] `content/encounters.js` — encounter composition and levels.
 - [ ] `content/balance.js` — day length, raid pressure, morale weights, storage capacity.
@@ -65,8 +65,11 @@ Suggested order:
    owns scrap/water/food/components, capacity, atomic spending and component caps. Construction,
    crafting, trade, power links, armory upgrades, raid loot and dawn upkeep now go through it. Next:
    move workshop/recipe stock and production output behind the same API, then hauling.
-3. **camp** — buildings, placement, construction, demolition, warehouse clusters.
-4. **power** — graph, poles, batteries, consumers, broadcast power requirement.
+3. **camp** — buildings, placement, construction, demolition, warehouse clusters. **Started:** building
+   data and placement rules are extracted; settlement still owns construction visuals and warehouse
+   cluster rendering.
+4. **power** — graph, poles, batteries, consumers, broadcast power requirement. **Started:** pure
+   graph/link/solver rules are in `core/power.js`; `power.js` is now the Three.js/UI adapter.
 5. **threats** — ghouls, raiders, bats, raids, damage, guards.
 6. **expeditions** — travel, runtime cells, loot, return.
 7. **world** — terrain, props, resources, encounters, road traffic.
@@ -79,7 +82,8 @@ boots and the relevant browser scenario passes.
 
 - [ ] Move `main.js` wiring into `app/bootstrap.js`.
 - [ ] Move the frame loop into `app/loop.js`.
-- [ ] Move debug hooks into `app/debug.js`.
+- [x] Move debug hooks into `app/debug.js`.
+- [x] Move quality/shadow selection into `app/quality.js`.
 - [ ] Introduce a fixed-step simulation accumulator with render interpolation.
 - [ ] Replace the remaining callback web with commands + domain events.
 

@@ -10,8 +10,11 @@ call core rules. `features/survivors/` now owns explicit activity/status derivat
 newcomer/removal transitions, roster predicates, recruit-pool/newcomer creation, job-phase helpers,
 work-loop selection and assignment validation; `npcs.js`, `commander.js`, `buildingcard.js` and
 expeditions consume it. `features/economy/` now owns the camp stockpile and its capacity; construction,
-crafting, trade, power links, upgrades, raid loot and dawn upkeep go through it. The next slice is
-placement/power rules, then workshop production and hauling.
+crafting, trade, power links, upgrades, raid loot and dawn upkeep go through it. Building data and
+placement rules live in `content/buildings.js` and `core/placement.js`; power graph/solver rules live
+in `core/power.js` with `power.js` as the Three.js adapter. Debug hooks and quality selection moved
+to `app/`. The next slices are camp construction visuals, workshop production/hauling and the
+composition root/loop split.
 
 This document exists because Ashfall grew from a rendering prototype into a settlement game with
 survivors, needs, morale, jobs, power, raids, expeditions and a save format. The current problem is

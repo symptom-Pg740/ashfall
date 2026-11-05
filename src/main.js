@@ -37,7 +37,9 @@ import { TargetRegistry, canAttack } from './actors.js';
 import { Firearms } from './firearms.js';
 import { FX } from './fx.js';
 import { XP } from './levels.js';
-import { Economy } from './features/economy/index.js';
+import { Economy, canProduce, applyProduction } from './features/economy/index.js';
+import { createQualityController } from './app/quality.js';
+import { installDebugHooks } from './app/debug.js';
 
 // ---------------------------------------------------------------------------
 // renderer / scene
@@ -392,6 +394,17 @@ expeditions.onExitCell = () => exitExpeditionCell();
 const nav = new NavGrid({ settlement, wasteland });
 campFolk.nav = nav;
 const perf = new Perf(renderer);
+const quality = createQualityController({
+  atmosphere,
+  scene,
+  particles,
+  wasteland,
+  enemies,
+  fx,
+  audio,
+  ui,
+  perf,
+});
 const firearms = new Firearms({ enemies, settlement, wasteland, fx, registry });
 settlement.los = (x1, y1, z1, x2, y2, z2) => firearms.hasLineOfSight(x1, y1, z1, x2, y2, z2);
 settlement.onTurretShot = (x, z) => {
@@ -527,22 +540,24 @@ campFolk.takeWater = (n = 1) => economy.take('water', n) >= n;
 campFolk.canCraft = (id) => {
   const recipe = RECIPES[id];
   if (!recipe) return { ok: false, reason: 'NO RECIPE' };
-  if (!economy.canAfford({ scrap: recipe.scrap })) return { ok: false, reason: 'NO SCRAP' };
-  const stock = recipeStock(state, recipe);
-  if (stock + recipe.amount > recipeCap(recipe)) return { ok: false, reason: 'STORAGE FULL' };
-  return { ok: true };
+  return canProduce(recipe, {
+    scrap: economy.amount('scrap'),
+    stock: recipeStock(state, recipe),
+    cap: recipeCap(recipe),
+  });
 };
 campFolk.doCraft = (id) => {
   const recipe = RECIPES[id];
   if (!recipe) return false;
   const check = campFolk.canCraft(id);
   if (!check.ok) return false;
+  const next = applyProduction(recipe, {
+    scrap: economy.amount('scrap'),
+    stock: recipeStock(state, recipe),
+  });
   if (!economy.spend({ scrap: recipe.scrap })) return false;
-  if (recipe.ammo) {
-    state.ammo[recipe.ammo] = (state.ammo[recipe.ammo] || 0) + recipe.amount;
-  } else {
-    economy.add('components', recipe.amount);
-  }
+  if (recipe.ammo) state.ammo[recipe.ammo] = next.stock;
+  else economy.set('components', next.stock);
   return true;
 };
 campFolk.onCraft = () => {
@@ -650,7 +665,6 @@ const input = new Input(canvas, activeCamera, {
 });
 
 let nearScrap = -1;
-let shadowsOn = true;
 let shadowAutoFallback = false;
 let autoLowTime = 0;
 window.__ashfall = {
@@ -695,7 +709,7 @@ window.__ashfall = {
   actions: {
     doPlace,
     doStress,
-    applyQuality,
+    applyQuality: quality.applyQuality,
     setOrtho,
     rotateBy,
     saveGame,
@@ -846,7 +860,7 @@ ui.on('cellLoot', () => {
   }
 });
 ui.on('cellLeave', () => leaveExpeditionCell());
-ui.on('quality', (name) => applyQuality(name));
+ui.on('quality', (name) => quality.applyQuality(name));
 ui.on('toggle', (key, value) => {
   if (key === 'adaptive') {
     perf.setAdaptive(value);
@@ -857,7 +871,7 @@ ui.on('toggle', (key, value) => {
   } else if (key === 'embers') {
     particles.setEmbersVisible(value);
   } else if (key === 'shadows') {
-    applyShadowState(value, QUALITY[perf.quality].shadowSize);
+    quality.applyShadowState(value, QUALITY[perf.quality].shadowSize);
   } else if (key === 'ortho') {
     setOrtho(value);
   } else if (key === 'sound') {
@@ -885,63 +899,6 @@ ui.on('armoryUpgrade', (trackId) => {
   refreshUnits();
   saveGame();
 });
-
-function applyShadowState(enabled, size) {
-  const changed = enabled !== shadowsOn;
-  shadowsOn = enabled;
-  atmosphere.setShadowQuality(enabled, size);
-  if (changed) {
-    // Shadow defines are baked into compiled programs; refresh once on toggle.
-    scene.traverse((obj) => {
-      const material = obj.material;
-      if (!material) return;
-      const materials = Array.isArray(material) ? material : [material];
-      for (const m of materials) m.needsUpdate = true;
-    });
-  }
-}
-
-function applyQuality(name, silent = false) {
-  if (!QUALITY[name]) return;
-  perf.setQuality(name);
-  const q = QUALITY[name];
-  if (wasteland.setGrassQuality) wasteland.setGrassQuality(q.grass);
-  particles.setEmberCount(q.embers);
-  scene.fog.density = ui.toggleState.fog ? q.fogDensity : 0.0001;
-  enemies.maxActive = q.enemies;
-  applyShadowState(q.shadows, q.shadowSize);
-  fx.setQuality(name);
-  audio.setQuality(name);
-  ui.setQuality(name);
-  ui.setToggle('adaptive', perf.adaptive);
-  ui.setToggle('shadows', q.shadows);
-  if (!silent) {
-    ui.toast(`QUALITY · ${name.toUpperCase()}`);
-    try {
-      localStorage.setItem('ashfall-quality', name);
-    } catch {
-      /* ignore */
-    }
-  }
-}
-
-function pickQuality(coarse) {
-  const params = new URLSearchParams(window.location.search);
-  const forced = params.get('quality');
-  if (QUALITY[forced]) return forced;
-  try {
-    const saved = localStorage.getItem('ashfall-quality');
-    if (QUALITY[saved]) return saved;
-  } catch {
-    /* ignore */
-  }
-  const memory = navigator.deviceMemory || 4;
-  const cores = navigator.hardwareConcurrency || 4;
-  if (coarse && (memory <= 3 || cores <= 4)) return 'low';
-  if (coarse) return 'balanced';
-  if (memory >= 8 && cores >= 8) return 'high';
-  return 'balanced';
-}
 
 // ---------------------------------------------------------------------------
 // actions
@@ -1830,13 +1787,13 @@ function simulate(dt) {
 
   // Last-resort mobile fallback: if adaptive resolution is already at the floor
   // and we still cannot hold ~40 fps, drop the shadow pass before the experience degrades.
-  if (shadowsOn && perf.adaptive && !shadowAutoFallback && perf.scale <= 0.51) {
+  if (quality.shadowsOn && perf.adaptive && !shadowAutoFallback && perf.scale <= 0.51) {
     if (perf.stats.fps > 0 && perf.stats.fps < 40) autoLowTime += dt;
     else autoLowTime = 0;
     if (autoLowTime > 3) {
       shadowAutoFallback = true;
       autoLowTime = 0;
-      applyShadowState(false, 0);
+      quality.applyShadowState(false, 0);
       ui.setToggle('shadows', false);
       ui.toast('SHADOWS OFF · KEEPING FRAME RATE');
     }
@@ -1941,13 +1898,13 @@ function loop(now) {
 // ---------------------------------------------------------------------------
 
 const coarse = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
-const initialQuality = pickQuality(coarse);
-applyQuality(initialQuality, true);
+const initialQuality = quality.pickQuality(coarse);
+quality.applyQuality(initialQuality, true);
 ui.setToggle('adaptive', perf.adaptive);
 ui.setToggle('fog', true);
 ui.setToggle('grass', true);
 ui.setToggle('embers', true);
-ui.setToggle('shadows', shadowsOn);
+ui.setToggle('shadows', quality.shadowsOn);
 ui.setToggle('ortho', orthoMode);
 ui.setToggle('sound', !audio.muted);
 const showPaths = new URLSearchParams(window.location.search).has('paths');
@@ -1962,6 +1919,8 @@ input.camera = activeCamera;
 ui.updateHUD(state);
 ui.setQuality(initialQuality);
 
+// `?fresh` is a boot-time save reset: it must run before loadGame(), so it cannot live in the
+// post-boot debug hooks. The rest of the URL test hooks are installed below via app/debug.js.
 if (new URLSearchParams(window.location.search).has('fresh')) clearSave(false);
 resumedGame = loadGame();
 if (!resumedGame || settlement.count('campfire') === 0) settlement.seedStartingCamp();
@@ -1986,153 +1945,34 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', saveGame);
 
-// Development-only framing helpers. These are inert unless present in the URL.
-const debugParams = new URLSearchParams(window.location.search);
-if (debugParams.has('zoom')) {
-  const z = THREE.MathUtils.clamp(parseFloat(debugParams.get('zoom')) || 1, 0.8, 8);
-  viewZoom = viewZoomTarget = z;
-  orthoCamera.zoom = z;
-  orthoCamera.updateProjectionMatrix();
-}
-if (debugParams.has('heading')) {
-  const h = parseFloat(debugParams.get('heading')) || 0;
-  player.heading = h;
-  player.targetHeading = h;
-  player.group.rotation.y = h;
-}
-if (debugParams.get('hide') === 'body') player.rig.mesh.visible = false;
-if (debugParams.get('hide') === 'outfit' && player.rig.outfit) player.rig.outfit.visible = false;
-if (debugParams.has('raider')) {
-  const r = raiders.people[0];
-  r.active = true;
-  r.dead = false;
-  r.hp = r.maxHp;
-  r.mag = r.weapon.magazine;
-  r.reloadTimer = 0;
-  r.cooldown = 0;
-  r.recoil = 0;
-  r.aim.target = null;
-  r.aim._initialised = false;
-  const x = player.x + 7;
-  const z = player.z;
-  const face = Math.atan2(player.x - x, player.z - z);
-  r.rig.group.position.set(x, heightAt(x, z), z);
-  r.rig.group.rotation.y = face;
-  r.heading = face;
-  r.rig.group.visible = true;
-  r.rig.mesh.visible = true;
-  if (r.farTier) r.farTier.visible = false;
-  r.isFar = false;
-}
-if (debugParams.has('raid')) {
-  setTimeout(() => startRaid('raiders', 2, 9), 1200);
-}
-if (debugParams.has('raidghoul')) {
-  setTimeout(() => startRaid('ghouls', 3, 9), 1200);
-}
-if (debugParams.has('bats')) {
-  setTimeout(() => startRaid('bats', 4, 10), 1200);
-}
-if (debugParams.has('raidclear')) {
-  setTimeout(() => {
-    startRaid('raiders', 2, 10);
-    setTimeout(() => {
-      for (const p of raiders.people) {
-        if (p.active) raiders.damage(p.target.ref, 999);
-      }
-    }, 400);
-  }, 800);
-}
-if (debugParams.has('guardtest')) {
-  const n = campFolk.people[0];
-  const nx = player.x + 1.2;
-  const nz = player.z + 0.4;
-  n.rig.group.position.set(nx, heightAt(nx, nz), nz);
-  n.rig.group.rotation.y = 0;
-  n.heading = 0;
-}
-if (debugParams.has('compare')) {
-  const n = campFolk.people[0];
-  const nx = player.x + 1.15;
-  n.rig.group.position.set(nx, heightAt(nx, player.z), player.z);
-  n.rig.group.rotation.y = 0;
-  campFolk.update = () => {};
-}
-if (debugParams.has('ghoul')) {
-  const g = enemies.pool[0];
-  g.active = true;
-  g.x = player.x;
-  g.z = player.z + 7;
-  g.y = heightAt(g.x, g.z);
-  g.hp = 46;
-  g.scale = 1;
-  g.speed = 0;
-  g.attackCd = 999;
-}
-if (debugParams.has('weapon')) {
-  const unit = commander.selected || campFolk.people[0];
-  unit.rig.equip('weapon', debugParams.get('weapon'));
-  unit.weapon = WEAPONS[debugParams.get('weapon')] || unit.weapon;
-  commander.refresh(unit);
-  refreshUnits();
-}
-if (debugParams.has('hurt')) {
-  setTimeout(() => damageSelected(Number(debugParams.get('hurt')) || 35), 1000);
-}
-if (debugParams.has('noammo')) {
-  setTimeout(() => {
-    for (const key of Object.keys(state.ammo)) state.ammo[key] = 0;
-    for (const key of Object.keys(WEAPONS)) state.mags[key] = 0;
-  }, 400);
-}
-if (debugParams.has('audiotest')) {
-  setTimeout(() => {
-    const seq = [
-      () => audio.shot('pistol', 0, 0),
-      () => audio.shot('rifle', 0, 0),
-      () => audio.shot('shotgun', 0, 0),
-      () => audio.shot('rifle', 35, -0.4),
-      () => audio.impact('stone', 2, 0.3),
-      () => audio.impact('flesh', 2, 0),
-      () => audio.reload('rifle'),
-      () => audio.dry(),
-    ];
-    seq.forEach((fn, i) => setTimeout(fn, i * 900));
-  }, 1200);
-}
-if (debugParams.has('armory')) {
-  setTimeout(() => openUnits(), 500);
-}
-if (debugParams.has('upgrade')) {
-  setTimeout(() => {
-    economy.set('scrap', Math.max(state.scrap, 200));
-    ui.updateHUD(state);
-    ui.cb.armoryUpgrade?.(debugParams.get('upgrade'));
-    openUnits();
-  }, 600);
-}
-if (debugParams.has('fire')) {
-  setTimeout(() => window.__ashfall.actions.doStrike(), 1500);
-}
-if (debugParams.has('autostart')) {
-  requestAnimationFrame(() => document.getElementById('start-btn')?.click());
-}
-if (debugParams.has('fastforward')) {
-  // Deterministic headless step: rAF advances very slowly under virtual time.
-  setTimeout(() => {
-    const seconds = Math.min(60, Number(debugParams.get('fastforward')) || 5);
-    const steps = Math.round(seconds * 60);
-    for (let i = 0; i < steps; i++) {
-      if (!state.started) break;
-      simulate(1 / 60);
-      campFolk.solids = settlement.solids();
-      campFolk.update(1 / 60, state.time, player, settlement.buildings);
-      raiders.update(1 / 60, state.time, player, livingTargets);
-      fx.update(1 / 60);
-    }
-    ui.updateHUD(state);
-    ui.hint(`SIM +${seconds}s`, 1800);
-  }, Number(debugParams.get('ffdelay')) || 700);
-}
+// Development-only URL test hooks. Inert unless present in the URL. Installed here, after the
+// systems exist and the save is loaded, so the hooks see the same objects the loop uses.
+installDebugHooks({
+  params: new URLSearchParams(window.location.search),
+  player,
+  state,
+  raiders,
+  enemies,
+  campFolk,
+  commander,
+  ui,
+  audio,
+  economy,
+  settlement,
+  fx,
+  weapons: WEAPONS,
+  startRaid,
+  simulate,
+  damageSelected,
+  openUnits,
+  refreshUnits,
+  livingTargets,
+  heightAt,
+  setViewZoom(z) {
+    viewZoom = viewZoomTarget = z;
+    orthoCamera.zoom = z;
+    orthoCamera.updateProjectionMatrix();
+  },
+});
 
 requestAnimationFrame(loop);

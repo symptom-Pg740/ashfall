@@ -5,8 +5,15 @@ import { buildAdobeHouse } from './kit.js';
 import { makeRng, deriveSeed, hash32, WORLD_SEED } from './rng.js';
 import { makeDetailSet } from './textures.js';
 import { storageCapacity } from './core/stockpile.js';
+import { validatePlacement } from './core/placement.js';
+import { BUILDINGS } from './content/buildings.js';
+
+// Compatibility shim: `main.js` and `ui.js` still import BUILDINGS from this module. Remove once the
+// camp feature slice exposes its own public index.
+export { BUILDINGS };
 
 const CAMP_RADIUS = 110;
+const SLOPE_LIMIT = 0.26;
 const GRID = 1;
 const POWER_SPAN = 14;
 const WALL_SPAN = 4.4;
@@ -796,175 +803,6 @@ function wallPost() {
   return bakeBaseAO(merge(p), 0.5, 0.3);
 }
 
-export const BUILDINGS = [
-  {
-    id: 'wall',
-    name: 'WALL',
-    cost: 3,
-    radius: 0.55,
-    desc: 'Auto-connects to nearby wall.',
-    group: 'defence',
-  },
-  {
-    id: 'barricade',
-    name: 'BARRICADE',
-    cost: 4,
-    radius: 1.35,
-    desc: 'Scrap cover.',
-  },
-  {
-    id: 'campfire',
-    name: 'CAMPFIRE',
-    cost: 8,
-    hp: 260,
-    radius: 1.15,
-    desc: 'Heals in its light.',
-    geometry: null,
-  },
-  {
-    id: 'catcher',
-    name: 'RAIN CATCHER',
-    cost: 12,
-    radius: 1.45,
-    desc: '+1 water / 6s.',
-    geometry: null,
-  },
-  {
-    id: 'house',
-    name: 'ADOBE HOUSE',
-    cost: 18,
-    radius: 3.45,
-    desc: '+1 scrap / 9s · +1 survivor.',
-    geometry: null,
-  },
-  {
-    id: 'warehouse',
-    name: 'WAREHOUSE',
-    cost: 22,
-    radius: 3.15,
-    desc: '+120 storage.',
-    geometry: null,
-  },
-  {
-    id: 'scavenger',
-    name: 'SCAVENGER HUT',
-    cost: 16,
-    radius: 2.1,
-    desc: 'Assign scavengers. 26m.',
-    job: { role: 'scavenger', label: 'SCAVENGER', slots: 2, radius: 26 },
-    geometry: null,
-  },
-  {
-    id: 'well',
-    name: 'WELL WHEEL',
-    cost: 20,
-    radius: 1.9,
-    desc: 'Assign a water carrier.',
-    job: { role: 'water', label: 'WATER CARRIER', slots: 1, radius: 2.6, post: { x: 2.2, z: 0.4 }, output: '1 WATER / 4S' },
-    geometry: null,
-  },
-  {
-    id: 'farm',
-    name: 'FARM',
-    cost: 24,
-    radius: 3.0,
-    desc: 'Assign farmers. Uses water.',
-    job: { role: 'farmer', label: 'FARMER', slots: 2, radius: 3.2, post: { x: 0, z: 3.3 }, output: '1 FOOD / 7S', waterUse: '1 / 20S' },
-    geometry: null,
-  },
-  {
-    id: 'workshop',
-    name: 'WORKSHOP',
-    cost: 26,
-    radius: 2.4,
-    desc: 'Scrap into ammo.',
-    job: { role: 'artisan', label: 'ARTISAN', slots: 2, radius: 2.4, post: { x: 0, z: 2.75 } },
-    geometry: null,
-  },
-  {
-    id: 'trade',
-    name: 'TRADE POST',
-    cost: 28,
-    hp: 180,
-    radius: 2.8,
-    desc: 'Caravan stop. Trade goods for scrap.',
-    geometry: null,
-  },
-  {
-    id: 'relay',
-    name: 'RELAY',
-    cost: 40,
-    components: 8,
-    hp: 520,
-    radius: 2.0,
-    desc: 'Command centre. Broadcast for survivors.',
-    power: { kind: 'consumer', demand: 0.8, priority: 6, attach: 2.8 },
-    geometry: null,
-  },
-  {
-    id: 'solar',
-    name: 'SOLAR ARRAY',
-    cost: 14,
-    radius: 1.75,
-    desc: 'Generates 2.2 power.',
-    power: { kind: 'source', output: 2.2, attach: 1.0 },
-    geometry: null,
-  },
-  {
-    id: 'pole',
-    name: 'POWER POLE',
-    cost: 3,
-    radius: 0.8,
-    desc: 'Carries power 14m.',
-    power: { kind: 'relay', attach: 3.25 },
-    geometry: null,
-  },
-  {
-    id: 'battery',
-    name: 'BATTERY BANK',
-    cost: 16,
-    radius: 1.25,
-    desc: 'Stores 150 power.',
-    power: { kind: 'storage', capacity: 150, attach: 1.0 },
-    geometry: null,
-  },
-  {
-    id: 'light',
-    name: 'YARD LIGHT',
-    cost: 8,
-    radius: 0.7,
-    desc: 'Burns power at night.',
-    power: { kind: 'consumer', demand: 0.5, nightOnly: true, attach: 2.8 },
-    geometry: null,
-  },
-  {
-    id: 'turret',
-    name: 'VICKERS',
-    cost: 26,
-    radius: 1.5,
-    desc: 'Ghouls + bats only. 1.2 power.',
-    power: { kind: 'consumer', demand: 1.2, priority: 5, attach: 1.05 },
-    geometry: null,
-  },
-  {
-    id: 'tower',
-    name: 'GUARD POST',
-    cost: 20,
-    hp: 240,
-    radius: 1.65,
-    desc: 'Assign a gunner. +6m, cover.',
-    geometry: null,
-  },
-  {
-    id: 'chapel',
-    name: 'CHAPEL',
-    cost: 32,
-    radius: 3.7,
-    desc: '+25 max vitality.',
-    geometry: null,
-  },
-];
-
 const GEO_BUILDERS = {
   wall: wallPost,
   barricade,
@@ -1025,9 +863,7 @@ export class Settlement {
     this.houseMat.normalScale = new THREE.Vector2(0.45, 0.45);
     this.geos = {};
     for (const def of BUILDINGS) {
-      const geo = GEO_BUILDERS[def.id]();
-      def.geometry = geo;
-      this.geos[def.id] = geo;
+      this.geos[def.id] = GEO_BUILDERS[def.id]();
     }
     this.turretHeadGeo = vickersHead();
 
@@ -1225,7 +1061,7 @@ export class Settlement {
     this.selected = def;
     this.placing = true;
     this.ghostHeading = 0;
-    this.ghost.geometry = def.geometry;
+    this.ghost.geometry = this.geos[def.id];
     this.ghost.visible = true;
     this.ghostMat.color.set(0x9fdc86);
     this.ring.visible = true;
@@ -1366,36 +1202,22 @@ export class Settlement {
     }
     const gx = this.ghost.position.x;
     const gz = this.ghost.position.z;
-    let reason = '';
 
-    if (def.cost > this.state.scrap) reason = 'NOT ENOUGH SCRAP';
-    else if (Math.hypot(gx, gz) > CAMP_RADIUS) reason = 'OUTSIDE THE CAMP';
-    else if (slopeAt(gx, gz, 1.1) > 0.26) reason = 'UNEVEN GROUND';
-    else {
-      for (const b of this.buildings) {
-        // Warehouses may be placed tight against another warehouse so the two sheds merge into a
-        // larger depot. Everything else keeps the normal footprint clearance.
-        const minDist =
-          def.id === 'warehouse' && b.type === 'warehouse'
-            ? 5.2
-            : b.radius + def.radius + 0.15;
-        if (Math.hypot(b.x - gx, b.z - gz) < minDist) {
-          reason = 'BLOCKED BY STRUCTURE';
-          break;
-        }
-      }
-      if (!reason) {
-        for (const o of this.obstacles) {
-          if (Math.hypot(o.x - gx, o.z - gz) < o.r + def.radius) {
-            reason = 'BLOCKED BY WRECKAGE';
-            break;
-          }
-        }
-      }
-    }
+    const result = validatePlacement({
+      def,
+      x: gx,
+      z: gz,
+      buildings: this.buildings,
+      obstacles: this.obstacles,
+      campRadius: CAMP_RADIUS,
+      scrap: this.state.scrap,
+      components: this.state.components,
+      slope: slopeAt(gx, gz, 1.1),
+      slopeLimit: SLOPE_LIMIT,
+    });
 
-    this.canPlace = !reason;
-    this.reason = reason;
+    this.canPlace = result.ok;
+    this.reason = result.reason;
     const color = this.canPlace ? 0x9fdc86 : 0xe17151;
     this.ghostMat.color.setHex(color);
     this.ringMat.color.setHex(color);
@@ -1411,7 +1233,7 @@ export class Settlement {
     const model = new THREE.Group();
     group.add(model);
 
-    let geo = def.geometry;
+    let geo = this.geos[def.id];
     if (def.id === 'house') {
       const seed = hash32(WORLD_SEED, 'house', this.buildSeq++, Math.round(x * 8), Math.round(z * 8));
       const rng = makeRng(seed);

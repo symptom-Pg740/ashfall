@@ -88,9 +88,9 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 
 The camera is a **fixed-pitch orthographic rig** — no free pitch or zoom. One finger drags the ground
 to **pan**; the compass ring is the only touch control that **rotates** the camera (drag it, or tap
-to face north). Tapping the compass centre re-centres the camera on the player. Movement stays
-screen-relative, so `W` is always "up", and during placement the same ground drag aims the ghost
-instead of panning.
+to face north). Tapping the compass centre re-centres the camera on the selected survivor (or the
+campfire when nothing is selected). Movement stays screen-relative, so `W` is always "up", and during
+placement the same ground drag aims the ghost instead of panning.
 
 **Command mode is the only mode.** There is no player body and no joystick: every survivor is the
 same kind of unit, and you command them. Idle units stay near their own post or anchor; the
@@ -113,8 +113,8 @@ crowded.
 2. Build a **Warehouse** (22) early: **+120 storage** and the hauling drop point. It is an open
    stockpile: the roof lifts off when goods are inside, and separate piles show scrap, water, food
    and components at a glance. Warehouses built tight together open their facing walls and read as
-   one larger depot. Placing a structure marks a **site**; a survivor with the **builder**
-   role walks there and finishes it. A **Barricade** (4) gives solid cover.
+   one larger depot. Placing a structure marks a **site**; any free survivor takes the oldest site
+   and walks there to finish it. A **Barricade** (4) gives solid cover.
 3. Power the camp: a **Solar Array** (14), a **Power Pole** (3), a **Battery Bank** (16, stores
    **150 power**) and a **Yard Light** (8). Wires cost scrap per metre. The lower-right panel shows
    **energy production** and **stored power** separately. By day the panels charge the battery; by
@@ -140,8 +140,8 @@ crowded.
    camp is quiet again.
 9. **Fallback melee** is always available: a survivor with an empty gun, or no gun at all, closes
    and swings instead of standing uselessly. The action label changes from `FIRE` to `STRIKE`.
-10. The world is much larger than the old camp disc. Terrain is streamed in 64 m chunks as the camera
-   moves, so the map can extend well beyond the buildable camp radius without loading it all at once.
+10. The playable world is a **760 × 440 m rectangle**. Terrain is streamed in 64 m chunks as the
+    camera moves, so the whole map does not load at once.
 
 ---
 
@@ -195,7 +195,7 @@ hostile to see its level, HP and combat stats in a short inspection card.
 - The world encounter groups carry levels 1–3 based on distance from the starting camp.
 
 Placement is ghost-previewed, grid-snapped, slope-checked, and blocked by structures and wreckage.
-Structures are solid to both the player and ghouls.
+Structures are solid to both survivors and ghouls.
 
 ---
 
@@ -229,14 +229,14 @@ The graph keeps the last ~45 seconds.
 ## What is implemented
 
 - **Procedural terrain** — a seeded 700² height/slope/moisture/road field (fBm, domain warp, ridged
-  rim, soft terraces, droplet erosion) drives the props, player, buildings and enemies. The playable
-  disc is **800 m across** (radius 400). Terrain is built as streamed **64 m tiles** with
+  rim, soft terraces, droplet erosion) drives the props, survivors, buildings and enemies. The playable
+  world is a **760 × 440 m rectangle**. Terrain is built as streamed **64 m tiles** with
   vertex-coloured generated sand albedo + normal map, winding dirt road, cross street and ash/rust
   patches.
 - **Art direction** — sun-bleached sand, warm key light, cool fill, **real-time crisp shadows**,
   red adobe, cream stucco, terracotta roofs, blue shutters, exposed beams, cacti, shrubs and mesas.
-- **World scale and navigation** — the playable disc is **800 m across** (radius 400). The nav grid
-  uses 2 m cells over the larger map, inflates buildings and wreckage, biases paths away from walls
+- **World scale and navigation** — the playable world is a **760 × 440 m rectangle**. The nav grid
+  uses **1.5 m cells**, inflates buildings and wreckage, biases paths away from walls
   with a soft clearance field, and uses binary-heap A* with a direct-line fast path. Units replan
   once when wedged, then report `NO PATH` instead of walking into scenery. `PATHS` in the perf panel
   (or `?paths=1`) draws the live paths.
@@ -262,10 +262,11 @@ The graph keeps the last ~45 seconds.
   and contextual orders: tap an enemy to engage, a salvage site to gather/haul, or the ground to
   move. There is no direct-control mode and no joystick. `UNITS` opens a clipboard with the roster,
   morale, stats, assignment, outfit and equipment; `CAMP` manages expeditions.
-- **Warehouse and storage (Phase 2)** — a 4×4 shed with a growing crate stack. Base field stock is
-  80; each warehouse adds 120. Gatherers haul to the nearest warehouse (or to you if there is none)
-  and wait at the door when it is full. The HUD shows `stored/capacity`, and the build costs are the
-  sink.
+- **Warehouse and storage (Phase 2)** — an open stockpile floor with separate material piles for
+  scrap, water, food and components. The roof lifts off when goods are inside, and adjacent
+  warehouses open their facing walls to read as one larger depot. Base field stock is 80; each
+  warehouse adds 120. Gatherers haul to the nearest warehouse (or to camp if there is none) and wait
+  at the door when it is full. The HUD shows `stored/capacity`, and the build costs are the sink.
 - **Construction jobs** — a placed structure is a **site**, not an instant building: a pad, scaffold
   and progress bar. **Any free survivor** (no workplace, no manual job) takes the oldest unclaimed
   site and finishes it; there is no dedicated builder role and no unit parked "just in case". Tapping
@@ -333,9 +334,9 @@ The graph keeps the last ~45 seconds.
   `LINK` enters wire mode: nearby power nodes are ringed green (valid) or red (why not), a range ring
   shows the 14 m span, and you drag or tap to connect; the line shows the span and scrap cost before
   you release. Failed wires explain themselves. Auto-link on completion remains a convenience
-  fallback, never the only path. The card's `REPAIR`, `BUILD`, `ASSIGN` and `RELEASE` actions replace
-  the old tap-a-building contextual guesses; contextual orders remain for units, enemies, resources
-  and movement.
+  fallback, never the only path. The card's `REPAIR`, `BUILD`, `ASSIGN`, `RELEASE`, `DEMOLISH` and
+  `CANCEL SITE` actions replace the old tap-a-building contextual guesses; contextual orders remain
+  for units, enemies, resources and movement.
 - **Defences (Phase 4)** — the **Vickers turret** is a power consumer (1.2) with a **360° traverse**
   (the old hidden 220° arc was removed), 18 m range and 8-round bursts. Its card shows power, belt,
   `TARGETS: GHOULS ONLY`, how many are in range and whether the line of fire is blocked, and opening
@@ -347,7 +348,7 @@ The graph keeps the last ~45 seconds.
   is a low sandbagged fighting position with a gun rest, scrap blast shield and camo net — not a
   tall tower. The gunner's own shots ignore the post, so bullets no longer collide with the
   structure they are standing in; incoming fire can still reach the gunner above the parapet.
-  A 1 m A* navigation grid routes ordered units around houses and rock clusters.
+  A 1.5 m A* navigation grid routes ordered units around houses and rock clusters.
 - **Procedural humanoids** — a parametric generator with lean/stocky/tall archetypes and proportion
   jitter. The survivors use the same 20-bone skinned builder with automatic weights, two-bone foot
   IK, PBR-lite, IBL and a character atlas with skin/cloth/leather/metal regions. The latest
@@ -364,24 +365,26 @@ The graph keeps the last ~45 seconds.
   magazine, 360 rpm, 1.3 s reload). The wardrobe also carries the **pipe rifle**, a slow single-shot
   weapon: 60 damage (one-shots a ghoul), 0.3° spread, 35 m, one round with a 1.1 s reload after each
   shot. Shots are hitscan rays tested against analytic ghoul capsules; a shared target registry
-  auto-aims the character, while firing stays on the player's input. The shot is presented with a
-  travelling tracer, muzzle flash and smoke, surface-specific impacts and ground decals, a brass
-  casing with a bounce, a hybrid gunshot (six short recorded close layers over synthesised sub,
-  action and a generated convolution tail), a floating damage number and a brief hit-stop on kills.
+  auto-aims the character, and the selected survivor's combat controller handles firing. The shot is
+  presented with a travelling tracer, muzzle flash and smoke, surface-specific impacts and ground
+  decals, a brass casing with a bounce, a hybrid gunshot (six short recorded close layers over
+  synthesised sub, action and a generated convolution tail), a floating damage number and a brief
+  hit-stop on kills.
   Impacts, reloads, dry fire, casings, footsteps and a low wind bed are synthesised; **SOUND** in the
   PERF panel mutes everything and the choice persists. The six gunshot recordings are the only
   audio assets — see [public/audio/CREDITS.md](public/audio/CREDITS.md). The rifle
   is **two-handed**: its left hand is solved onto the foregrip with a two-bone arm IK, while the
   right hand holds the grip. One camp folk is armed with a pistol and **auto-engages ghouls** using
   the same aim controller. After about a minute a small **raider squad** attacks the camp: hostile
-  skinned riflemen use the same auto-aim/fire path, can hit the player and the camp guard, and the
+  skinned riflemen use the same auto-aim/fire path, can hit survivors and the camp guard, and the
   guard can go down and respawn. The **RAID** banner tracks the remaining hostiles; clearing the
-  squad awards +10 scrap. Raiders that lose line of sight move to a firing position around the
-  player instead of standing behind cover, and a raider that survives a hit flinches to a new firing
+  squad awards +10 scrap. Raiders that lose line of sight move to a firing position around their
+  target instead of standing behind cover, and a raider that survives a hit flinches to a new firing
   position and holds fire briefly (**suppression**). The wardrobe also carries a **sawn-off shotgun**
   (6×9 pellets, 2 shells, close range, two-handed). Clearing a raid shows a **RAID CLEARED** card
   (+10 scrap); dying during one shows **RAID LOST**. Melee remains available by equipping the
-  blade/club. There are no automatic player weapons yet.
+  blade/club. Survivors fire automatically once ordered onto a target; there is no manual fire
+  button.
 - **Ammo and upgrades** — a finite reserve per caliber (rifle rounds, pistol rounds, shells) is
   carried in the save; every gun keeps the magazine you left in it, and reloading draws from the
   shared reserve. The **workshop is the only ammo source**: it converts scrap into rounds, shells or
@@ -401,8 +404,8 @@ The graph keeps the last ~45 seconds.
 - **Combat** — an instanced ghoul pool, chase/attack/knockback, separation, solid buildings and
   wreckage, strike arc, loot, death and respawn.
 - **Atmosphere** — warm dusk sky, dust motes, campfire glow pools, contact shadows, fog, vignette.
-- **Mobile shell** — safe-area-aware HUD, large touch targets, virtual stick, horizontally scrollable
-  6-card build tray, keyboard hints hidden on touch, no page zoom/scroll/bounce, **fullscreen button**,
+- **Mobile shell** — safe-area-aware HUD, large touch targets, horizontally scrollable build tray,
+  keyboard hints hidden on touch, no page zoom/scroll/bounce, **fullscreen button**,
   HUD that fades in after the start screen.
 
 | Start screen |
@@ -415,19 +418,24 @@ The graph keeps the last ~45 seconds.
 
 ```
 index.html            UI shell + start screen + fullscreen button
-src/main.js           bootstrap, state, game loop, wiring
+src/main.js           legacy bootstrap, state, game loop, wiring
+src/core/             pure rules: save schema, stockpile, needs, seeded random
+src/content/          building and recipe data
+src/features/         vertical slices: survivors, economy
+src/adapters/         localStorage save adapter
+src/app/              debug and quality helpers
 src/terrain.js        shared height field, terrain mesh, cracked-earth texture
 src/sky.js            sky dome shader, lights, fog, shadow configuration
 src/props.js          instanced scenery, landmarks, contact shadows, mesas
 src/resources.js      finite salvage sites, markers, depletion
-src/cells.js         cave entrances, separate interior scene, cave ghouls, cache
-src/expeditions.js   auto-resolving salvage/cave expeditions and team management
+src/cells.js          cave entrances, separate interior scene, cave ghouls, cache
+src/expeditions.js    playable expedition cells and team management
 src/player.js         procedural survivor + animation
 src/enemies.js        instanced ghoul pool + AI
-src/settlement.js     six structures, merged geometry, ghost, placement, production
+src/settlement.js     structures, merged geometry, ghost, placement, production
 src/particles.js      dust/embers and pooled bursts
 src/perf.js           FPS sampling, quality presets, adaptive resolution
-src/input.js          virtual stick, keyboard, ground raycast
+src/input.js          pointer pan/pinch, keyboard, ground raycast
 src/ui.js             HUD, build tray, perf lab, fullscreen
 src/geo.js            primitive/merge/colour helpers, procedural canvas textures
 src/rng.js            seeded RNG, easing helpers
@@ -512,8 +520,8 @@ suggests Add to Home Screen instead. iPad, Android Chrome and desktop browsers s
 ## Direction: from prototype to game
 
 Ashfall is moving from a single-character prototype to a **settlement command game**. The camp
-survivors become a roster of units you order around; you can still take direct control of any one of
-them. Resources are hauled to a warehouse, and defences run on a solar → pole → wire → turret power
+survivors are a roster of units you order around; there is no direct control of any one of them.
+Resources are hauled to a warehouse, and defences run on a solar → pole → wire → turret power
 chain. The turret only engages non-humans; human raids are your units' problem.
 
 The bigger direction is **workplaces, not task orders**: assign a survivor to a building and the
@@ -532,7 +540,7 @@ language.
 - **[docs/ART_DIRECTION.md](docs/ART_DIRECTION.md)** — mud + scrap for the camp; concrete/glass for
   old-world ruins; salvaged tech on camp-made mounts.
 - **[docs/REALISM.md](docs/REALISM.md)** — the deferred realism backlog, with cost and priority.
-- **[docs/PERFORMANCE.md](docs/PERFORMANCE.md)** — the 180 m map measurements, chunked prop
+- **[docs/PERFORMANCE.md](docs/PERFORMANCE.md)** — the map measurements, chunked prop
   culling, quality tiers and the decision not to stream yet.
 - **[docs/BALANCE.md](docs/BALANCE.md)** — current economy/assault numbers and what to watch in a
   playtest.
@@ -540,8 +548,8 @@ language.
 **Phases 1–7 are in:** buildings are placed anywhere in the camp and built by units; the floating
 building card, manual wire dragging with pole ports and the 360° turret fix are shipped; raids
 alternate between daytime raiders and night ghouls, and raiders go for the warehouse and the grid;
-the world is a 180 m disc with spread-out scatter and clearance-aware navigation that reports
-`NO PATH`; the Scavenger Hut, Well Wheel, Farm, Workshop, daily needs, morale, ammo crafting,
+the world is a **760 × 440 m rectangle** with spread-out scatter and clearance-aware navigation that
+reports `NO PATH`; the Scavenger Hut, Well Wheel, Farm, Workshop, daily needs, morale, ammo crafting,
 recruitment and saved roles are live. The relay is now a command centre with a daily broadcast
 instead of a win condition, and expeditions are playable runtime cells rather than timers. Phase 7
 added chunked prop culling, device-tier quality and the first balance sheet. The next slice is
@@ -566,21 +574,22 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
 - Building HP is saved and repair works, but repair is free and there is no engineer role yet.
 - Ghouls target living things only and never damage buildings; mixed raider/ghoul assaults are not
   implemented.
-- Navigation is a 1 m grid; gaps narrower than about two cells can still be unreachable, and very
+- Navigation is a **1.5 m grid**; gaps narrower than about two cells can still be unreachable, and very
   large detours cost a short A* search. The debug overlay and `NO PATH` report make this visible.
-- The 180 m world is not streamed; it is one terrain mesh plus culled instanced chunks. Revisit when
-  draw calls exceed ~180 or the map outgrows the single-mesh design (see PERFORMANCE.md).
-- Construction cannot be cancelled or refunded yet, and a wire cannot be removed (destroying an
-  endpoint still removes its wires).
+- The **760 × 440 m** world streams 64 m terrain tiles, but props are still one mesh plus culled
+  instanced chunks. Revisit when draw calls exceed ~180 or the map outgrows the single-mesh design
+  (see PERFORMANCE.md).
+- A wire cannot be removed yet (destroying an endpoint still removes its wires). Construction sites
+  can be cancelled, and built structures can be demolished, both with a scrap refund.
 - A site with no free survivor waits; any free survivor picks up the queue automatically, oldest
   first. The Scavenger Hut, Well Wheel, Farm and Workshop are live.
 - iPhone Safari does not support element fullscreen; use Add to Home Screen.
 - Shadow cost on older mobile GPUs is still the main unknown. Chunked prop culling, a 144-segment
   terrain and the device-tier presets reduce the load, but a physical-phone profile is still needed;
   adaptive resolution is the safety valve.
-- Circle collisions over a 1 m A* grid. Dense wreckage can still wedge a unit briefly, but it now
+- Circle collisions over a 1.5 m A* grid. Dense wreckage can still wedge a unit briefly, but it now
   replans and reports `NO PATH` instead of grinding forever.
-- Needs tick at dawn only; there is no continuous hunger drain or morale system yet (Phase 8).
+- Needs and morale are evaluated at dawn only; there is no continuous hunger drain yet (Phase 8).
 - The continuous camp has no end goal by design; only losing every survivor ends a run. Balance is
   still provisional and needs long-session playtests.
 - Expeditions are saved while travelling; a team already inside a cell is not saved (the save is
@@ -588,7 +597,8 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
 - Recruitment needs a house and 2 spare days of food/water; newcomers are welcomed or rejected from
   the `UNITS` clipboard, and accepted survivors can be expelled from the same place.
 - Workshop recipes run while staffed; there is no production queue or per-artisan assignment.
-- No building removal or rotation; weapon upgrades exist but there is no settlement tech tree.
+- Buildings can be rotated in 45° steps and demolished; weapon upgrades exist but there is no
+  settlement tech tree.
 - Ghouls, hostile rifle raiders and the camp guard only; pistol, pipe rifle and sawn-off.
 - Procedural low-poly art, not production art. Six recorded gunshot layers are the only assets.
 - `window.__ashfall` is deliberately exposed for tuning. It is not part of the game UI.
@@ -603,8 +613,8 @@ Append to the URL:
 | `?autostart=1` | skip the title screen |
 | `?zoom=2.4` | camera zoom |
 | `?weapon=rifle` | equip a weapon (`pistol`, `rifle`, `shotgun`, or melee) |
-| `?ghoul=1` | one stationary ghoul in front of the player |
-| `?raider=1` | one hostile raider beside the player |
+| `?ghoul=1` | one stationary ghoul in front of the selected survivor |
+| `?raider=1` | one hostile raider beside the selected survivor |
 | `?raid=1` | start a raider raid immediately |
 | `?raidghoul=1` | start a ghoul raid immediately |
 | `?raidclear=1` | spawn and immediately clear a raid |

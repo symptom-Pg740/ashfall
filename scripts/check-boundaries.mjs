@@ -57,7 +57,36 @@ for (const file of files.filter((f) => f.startsWith(path.join(root, 'core')))) {
   }
 }
 
-// 2. Cycles across src.
+// 2. Content purity: data only, no Three.js/DOM/features/adapters.
+for (const file of files.filter((f) => f.startsWith(path.join(root, 'content')))) {
+  const source = fs.readFileSync(file, 'utf8');
+  for (const spec of importsOf(file)) {
+    if (!spec.startsWith('.')) {
+      errors.push(`${path.relative(root, file)}: content may not import package "${spec}"`);
+      continue;
+    }
+    const resolved = resolveLocal(file, spec);
+    if (!resolved) {
+      errors.push(`${path.relative(root, file)}: unresolved import "${spec}"`);
+      continue;
+    }
+    if (
+      !resolved.startsWith(path.join(root, 'content')) &&
+      !resolved.startsWith(path.join(root, 'core')) &&
+      !resolved.startsWith(path.join(root, 'shared'))
+    ) {
+      errors.push(`${path.relative(root, file)}: content may only import content/core/shared (got ${spec})`);
+    }
+  }
+  const code = stripComments(source);
+  for (const token of ['window', 'document', 'localStorage', 'navigator', 'requestAnimationFrame']) {
+    if (new RegExp(`\\b${token}\\b`).test(code)) {
+      errors.push(`${path.relative(root, file)}: content may not reference ${token}`);
+    }
+  }
+}
+
+// 3. Cycles across src.
 const graph = new Map();
 for (const file of files) {
   const deps = [];
@@ -87,7 +116,7 @@ function visit(file) {
 for (const file of files) visit(file);
 for (const cycle of cycles) errors.push(`import cycle: ${cycle}`);
 
-// 3. Feature internals (future-proofing).
+// 4. Feature internals (future-proofing).
 for (const file of files) {
   const rel = path.relative(root, file);
   const m = rel.match(/^features\/([^/]+)\//);
