@@ -22,10 +22,11 @@ function attachY(b) {
 }
 
 export class PowerNetwork {
-  constructor({ scene, settlement, state, ui }) {
+  constructor({ scene, settlement, state, economy = null, ui }) {
     this.scene = scene;
     this.settlement = settlement;
     this.state = state;
+    this.economy = economy;
     this.ui = ui;
     this.links = [];
     this.wires = new Map();
@@ -78,7 +79,8 @@ export class PowerNetwork {
     if (this.linksAt(a) >= this.maxPorts(a)) return { ok: false, reason: `${a.def.name} PORTS FULL` };
     if (this.linksAt(b) >= this.maxPorts(b)) return { ok: false, reason: `${b.def.name} PORTS FULL` };
     const cost = Math.max(1, Math.ceil(d * WIRE_COST_PER_M));
-    if (this.state.scrap < cost) return { ok: false, reason: `NEED ${cost} SCRAP`, cost };
+    const scrap = this.economy ? this.economy.amount('scrap') : this.state.scrap;
+    if (scrap < cost) return { ok: false, reason: `NEED ${cost} SCRAP`, cost };
     return { ok: true, reason: '', cost, distance: d };
   }
 
@@ -139,7 +141,8 @@ export class PowerNetwork {
       if (!quiet) this.ui.toast(check.reason, true);
       return false;
     }
-    this.state.scrap -= check.cost;
+    if (!this.economy) return false;
+    this.economy.take('scrap', check.cost);
     this.links.push({ a: a.id, b: b.id });
     this.addWire(a, b);
     this.ui.updateHUD(this.state);

@@ -37,7 +37,7 @@ import { TargetRegistry, canAttack } from './actors.js';
 import { Firearms } from './firearms.js';
 import { FX } from './fx.js';
 import { XP } from './levels.js';
-import { addResource } from './core/stockpile.js';
+import { Economy } from './features/economy/index.js';
 
 // ---------------------------------------------------------------------------
 // renderer / scene
@@ -194,8 +194,11 @@ const comms = {
   lastResult: '',
 };
 
+// The camp stockpile has one owner. The flat state fields remain for the HUD/save compatibility.
+const economy = new Economy({ state, componentCap: COMPONENT_CAP });
+
 // Ammo reserve, per-weapon magazines and upgrade tiers live in the save state.
-const armory = new Armory(state);
+const armory = new Armory(state, economy);
 const audio = new AudioFx();
 const dayCycle = new DayCycle({ atmosphere, scene, renderer, state });
 player.setArmory(armory);
@@ -284,6 +287,7 @@ const commander = new Commander({
   scrapField,
   registry,
   state,
+  economy,
   ui,
   particles,
   scene,
@@ -300,7 +304,7 @@ const settlement = new Settlement({
   particles,
   state,
   onWater: (n) => {
-    state.water = Math.min(state.waterCap || 80, state.water + n);
+    economy.add('water', n);
   },
   onKill: (x, z) => {
     state.kills++;
@@ -312,8 +316,10 @@ const settlement = new Settlement({
   },
   obstacles: wasteland.obstacles,
 });
-const power = new PowerNetwork({ scene, settlement, state, ui });
-const trade = new TradeNetwork({ settlement, state, ui, onSave: () => saveGame() });
+economy.setCapacity(settlement.storageCap());
+settlement.onStorageChanged = (cap) => economy.setCapacity(cap);
+const power = new PowerNetwork({ scene, settlement, state, economy, ui });
+const trade = new TradeNetwork({ settlement, state, economy, ui, onSave: () => saveGame() });
 trade.onArrive = () => ui.hint('A CARAVAN IS COMING DOWN THE HIGHWAY', 4200);
 trade.onDepart = () => ui.toast('THE CARAVAN MOVES ON');
 const buildingCard = new BuildingCard({
@@ -369,12 +375,13 @@ const expeditions = new ExpeditionSystem({
   scrapField,
   cells,
   state,
+  economy,
   ui,
   player,
   onSave: () => saveGame(),
   onLoot: (scrap, components) => {
     const gained = grantScrap(scrap);
-    if (components) state.components = Math.min(COMPONENT_CAP, (state.components || 0) + components);
+    if (components) economy.add('components', components);
     ui.updateHUD(state);
     if (gained !== scrap) ui.toast('EXPEDITION LOOT · STORAGE WAS FULL', true);
   },
@@ -432,18 +439,9 @@ campFolk.attachCombat({
 raiders.attachCombat({ registry, firearms });
 raiders.settlement = settlement;
 raiders.onLoot = (kind, amount, building) => {
-  if (kind === 'scrap') {
-    const lost = Math.min(state.scrap, amount);
-    state.scrap -= lost;
-    ui.toast(`RAIDERS LOOTED ${lost} SCRAP`, true);
-  } else if (kind === 'water') {
-    const lost = Math.min(state.water, amount);
-    state.water -= lost;
-    ui.toast(`RAIDERS LOOTED ${lost} WATER`, true);
-  } else if (kind === 'food') {
-    const lost = Math.min(state.food, amount);
-    state.food -= lost;
-    ui.toast(`RAIDERS TOOK ${lost} FOOD`, true);
+  if (kind === 'scrap' || kind === 'water' || kind === 'food') {
+    const lost = economy.take(kind, amount);
+    ui.toast(kind === 'food' ? `RAIDERS TOOK ${lost} FOOD` : `RAIDERS LOOTED ${lost} ${kind.toUpperCase()}`, true);
   }
   particles.burst(building.x, building.y + 1, building.z, '#c4644a', 10, 2.2);
   ui.updateHUD(state);
@@ -525,15 +523,11 @@ campFolk.isStorageFull = () => state.scrap >= (state.scrapCap || 80);
 campFolk.isWaterFull = () => state.water >= (state.waterCap || 80);
 campFolk.isFoodFull = () => state.food >= (state.foodCap || 80);
 campFolk.isWaterEmpty = () => state.water <= 0;
-campFolk.takeWater = (n = 1) => {
-  if (state.water < n) return false;
-  state.water -= n;
-  return true;
-};
+campFolk.takeWater = (n = 1) => economy.take('water', n) >= n;
 campFolk.canCraft = (id) => {
   const recipe = RECIPES[id];
   if (!recipe) return { ok: false, reason: 'NO RECIPE' };
-  if (state.scrap < recipe.scrap) return { ok: false, reason: 'NO SCRAP' };
+  if (!economy.canAfford({ scrap: recipe.scrap })) return { ok: false, reason: 'NO SCRAP' };
   const stock = recipeStock(state, recipe);
   if (stock + recipe.amount > recipeCap(recipe)) return { ok: false, reason: 'STORAGE FULL' };
   return { ok: true };
@@ -543,11 +537,11 @@ campFolk.doCraft = (id) => {
   if (!recipe) return false;
   const check = campFolk.canCraft(id);
   if (!check.ok) return false;
-  state.scrap -= recipe.scrap;
+  if (!economy.spend({ scrap: recipe.scrap })) return false;
   if (recipe.ammo) {
     state.ammo[recipe.ammo] = (state.ammo[recipe.ammo] || 0) + recipe.amount;
   } else {
-    state.components = Math.min(COMPONENT_CAP, (state.components || 0) + recipe.amount);
+    economy.add('components', recipe.amount);
   }
   return true;
 };
@@ -569,11 +563,11 @@ campFolk.reloadUnit = (person) => {
   return person.mag;
 };
 campFolk.onWaterProduced = (n = 1) => {
-  state.water = Math.min(state.waterCap || 80, state.water + n);
+  economy.add('water', n);
   ui.updateHUD(state);
 };
 campFolk.onFoodProduced = (n = 1) => {
-  state.food = Math.min(state.foodCap || 80, state.food + n);
+  economy.add('food', n);
   ui.updateHUD(state);
 };
 campFolk.onLeave = (person) => {
@@ -661,6 +655,7 @@ let shadowAutoFallback = false;
 let autoLowTime = 0;
 window.__ashfall = {
   state,
+  economy,
   ui,
   seed: WORLD_SEED,
   worldField,
@@ -1006,7 +1001,7 @@ function doPlace() {
   }
   const def = settlement.selected;
   const compCost = def?.components || 0;
-  if (compCost && state.components < compCost) {
+  if (compCost && !economy.canAfford({ components: compCost })) {
     ui.toast(`NEED ${compCost} COMPONENTS · CRAFT THEM IN THE WORKSHOP`, true);
     return;
   }
@@ -1015,8 +1010,7 @@ function doPlace() {
     ui.toast(res.reason, true);
     return;
   }
-  state.scrap -= res.cost;
-  if (compCost) state.components -= compCost;
+  economy.spend({ scrap: res.cost, components: compCost });
   const free = campFolk.people.some((p) => !p.dead && !p.left && !p.home && !p.job && !p.onExpedition);
   ui.toast(
     `${res.building.def.name} SITE${free ? ' · A FREE SURVIVOR WILL BUILD IT' : ' · ALL SURVIVORS ARE BUSY'}`,
@@ -1029,9 +1023,7 @@ function doPlace() {
 }
 
 function grantScrap(amount) {
-  const result = addResource(state.scrap, amount, state.scrapCap || 80);
-  state.scrap = result.value;
-  return result.accepted;
+  return economy.add('scrap', amount);
 }
 
 function doStress(kind) {
@@ -1201,6 +1193,7 @@ function loadGame() {
   player.refreshWeapon();
 
   settlement.restore(save.buildings);
+  economy.syncFromState();
   campFolk.restore(save.units, (id) => settlement.buildings.find((b) => b.id === id) || null);
   refreshUnits();
   power.restore(save.power);
@@ -1484,11 +1477,10 @@ function broadcastRelay(relay) {
     return false;
   }
   const cost = 10;
-  if (state.scrap < cost) {
+  if (!economy.spend({ scrap: cost })) {
     ui.toast(`NEED ${cost} SCRAP TO BROADCAST`, true);
     return false;
   }
-  state.scrap -= cost;
   comms.broadcastDay = state.day;
   const chance = 0.7 + (settlement.count('chapel') > 0 ? 0.15 : 0);
   const fire = campCenter();
@@ -1527,15 +1519,13 @@ function dawnTick(day) {
   let watered = 0;
   for (const p of campFolk.people) {
     if (!p.active || p.dead || p.left || p.pending) continue;
-    if (state.water > 0) {
-      state.water--;
+    if (economy.take('water', 1)) {
       p.thirst = 0;
       watered++;
     } else {
       p.thirst = (p.thirst || 0) + 1;
     }
-    if (state.food > 0) {
-      state.food--;
+    if (economy.take('food', 1)) {
       p.hunger = 0;
       fed++;
     } else {
@@ -2115,7 +2105,7 @@ if (debugParams.has('armory')) {
 }
 if (debugParams.has('upgrade')) {
   setTimeout(() => {
-    state.scrap = Math.max(state.scrap, 200);
+    economy.set('scrap', Math.max(state.scrap, 200));
     ui.updateHUD(state);
     ui.cb.armoryUpgrade?.(debugParams.get('upgrade'));
     openUnits();

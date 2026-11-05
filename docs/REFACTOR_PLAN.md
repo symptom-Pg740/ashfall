@@ -59,10 +59,12 @@ Suggested order:
    checks, assignment validation and production timers live in `features/survivors/`. Roster
    predicates, the recruit pool and newcomer creation now live there too; `npcs.js`, `commander.js`,
    `buildingcard.js` and expeditions use them. This pass also fixed a real bug where the call-to-fire
-   job was caught by the scrap-gather handler. Next: start the economy slice so `state.scrap` has one
-   owner.
-2. **economy** — stockpile, production, hauling, workshop, trade. Removes direct `state.scrap`
-   mutation from the rest of the game.
+   job was caught by the scrap-gather handler. The economy slice now owns the stockpile; next is
+   workshop production and hauling.
+2. **economy** — stockpile, production, hauling, workshop, trade. **Started:** `features/economy/`
+   owns scrap/water/food/components, capacity, atomic spending and component caps. Construction,
+   crafting, trade, power links, armory upgrades, raid loot and dawn upkeep now go through it. Next:
+   move workshop/recipe stock and production output behind the same API, then hauling.
 3. **camp** — buildings, placement, construction, demolition, warehouse clusters.
 4. **power** — graph, poles, batteries, consumers, broadcast power requirement.
 5. **threats** — ghouls, raiders, bats, raids, damage, guards.

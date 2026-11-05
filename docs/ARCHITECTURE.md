@@ -9,8 +9,9 @@ tests. `rng.js` is now a world-seed adapter; `save.js` is a compatibility shim o
 call core rules. `features/survivors/` now owns explicit activity/status derivation, job kinds, job validation,
 newcomer/removal transitions, roster predicates, recruit-pool/newcomer creation, job-phase helpers,
 work-loop selection and assignment validation; `npcs.js`, `commander.js`, `buildingcard.js` and
-expeditions consume it. The next slice is the economy (stockpile ownership), then placement/power
-rules.
+expeditions consume it. `features/economy/` now owns the camp stockpile and its capacity; construction,
+crafting, trade, power links, upgrades, raid loot and dawn upkeep go through it. The next slice is
+placement/power rules, then workshop production and hauling.
 
 This document exists because Ashfall grew from a rendering prototype into a settlement game with
 survivors, needs, morale, jobs, power, raids, expeditions and a save format. The current problem is

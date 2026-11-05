@@ -87,8 +87,9 @@ export function resolveWeapon(id, upgrades) {
 }
 
 export class Armory {
-  constructor(state) {
+  constructor(state, economy = null) {
     this.state = state;
+    this.economy = economy;
     if (!state.ammo || typeof state.ammo !== 'object') state.ammo = { ...STARTER_AMMO };
     for (const key of Object.keys(STARTER_AMMO)) {
       if (!Number.isFinite(state.ammo[key])) state.ammo[key] = STARTER_AMMO[key];
@@ -174,8 +175,8 @@ export class Armory {
   /** Buy the next tier of a track. Returns true when the scrap was spent. */
   buyUpgrade(weaponId, trackId) {
     const next = this.next(weaponId, trackId);
-    if (!next || this.state.scrap < next.cost) return false;
-    this.state.scrap -= next.cost;
+    if (!next) return false;
+    if (!this.economy || !this.economy.spend({ scrap: next.cost })) return false;
     const row = (this.state.upgrades[weaponId] ||= {});
     row[trackId] = next.tier;
     this._resolved.clear();
@@ -192,7 +193,7 @@ export class Armory {
     return {
       id: weaponId,
       name: spec.name,
-      scrap: this.state.scrap,
+      scrap: this.economy ? this.economy.amount('scrap') : this.state.scrap,
       mag: this.magOf(weaponId),
       magazine: base.magazine,
       reserve: this.reserve(weaponId),

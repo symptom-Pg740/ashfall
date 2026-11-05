@@ -4,7 +4,7 @@ import { box, cyl, dodeca, merge, paint, bakeBaseAO, glowTexture, PALETTE } from
 import { buildAdobeHouse } from './kit.js';
 import { makeRng, deriveSeed, hash32, WORLD_SEED } from './rng.js';
 import { makeDetailSet } from './textures.js';
-import { storageCapacity, clampResource } from './core/stockpile.js';
+import { storageCapacity } from './core/stockpile.js';
 
 const CAMP_RADIUS = 110;
 const GRID = 1;
@@ -1998,12 +1998,8 @@ export class Settlement {
 
   syncStorage() {
     const cap = this.storageCap();
-    this.state.scrapCap = cap;
-    this.state.waterCap = cap;
-    this.state.foodCap = cap;
-    this.state.scrap = clampResource(this.state.scrap, cap);
-    this.state.water = clampResource(this.state.water, cap);
-    this.state.food = clampResource(this.state.food, cap);
+    // The economy owns the stockpile and its caps. The settlement only reports the capacity.
+    this.onStorageChanged?.(cap);
     return cap;
   }
 

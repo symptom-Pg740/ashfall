@@ -75,9 +75,10 @@ function packAnimalGeometry() {
  * the same road all the time. All of it is scenery — no gameplay is attached to the figures.
  */
 export class TradeNetwork {
-  constructor({ settlement, state, ui, onSave }) {
+  constructor({ settlement, state, economy = null, ui, onSave }) {
     this.settlement = settlement;
     this.state = state;
+    this.economy = economy;
     this.ui = ui;
     this.onSave = onSave || (() => {});
     this.rng = makeRng(deriveSeed('caravan'));
@@ -331,22 +332,26 @@ export class TradeNetwork {
 
   available(offer) {
     if (!offer || offer.used) return false;
-    const cap = this.state.scrapCap || 80;
+    const economy = this.economy;
+    const amount = (type) => (economy ? economy.amount(type) : this.state[type] || 0);
+    const cap = economy ? economy.capacityFor('scrap') : this.state.scrapCap || 80;
     if (offer.kind === 'sell') {
-      return (this.state[offer.resource] || 0) >= offer.amount && this.state.scrap + offer.scrap <= cap;
+      return amount(offer.resource) >= offer.amount && amount('scrap') + offer.scrap <= cap;
     }
     if (offer.resource === 'components') {
-      return this.state.scrap >= offer.scrap && (this.state.components || 0) + offer.amount <= COMPONENT_CAP;
+      const componentCap = economy ? economy.capacityFor('components') : COMPONENT_CAP;
+      return amount('scrap') >= offer.scrap && amount('components') + offer.amount <= componentCap;
     }
-    return this.state.scrap >= offer.scrap;
+    return amount('scrap') >= offer.scrap;
   }
 
   execute(index) {
     const offer = this.offers[index];
-    if (!offer || offer.used) return false;
+    if (!offer || offer.used || !this.economy) return false;
     if (!this.available(offer)) {
-      const cap = this.state.scrapCap || 80;
-      if (offer.kind === 'sell' && this.state.scrap + offer.scrap > cap) {
+      const cap = this.economy ? this.economy.capacityFor('scrap') : this.state.scrapCap || 80;
+      const scrap = this.economy ? this.economy.amount('scrap') : this.state.scrap;
+      if (offer.kind === 'sell' && scrap + offer.scrap > cap) {
         this.ui.toast('SCRAP STORE FULL · SPEND BEFORE TRADING', true);
       } else {
         this.ui.toast('NOT ENOUGH GOODS', true);
@@ -354,12 +359,12 @@ export class TradeNetwork {
       return false;
     }
     if (offer.kind === 'sell') {
-      this.state[offer.resource] = (this.state[offer.resource] || 0) - offer.amount;
-      this.state.scrap += offer.scrap;
+      this.economy.take(offer.resource, offer.amount);
+      this.economy.add('scrap', offer.scrap);
       this.ui.toast(`TRADE · +${offer.scrap} SCRAP FOR ${offer.amount} ${offer.name}`);
     } else {
-      this.state.scrap -= offer.scrap;
-      this.state.components = (this.state.components || 0) + offer.amount;
+      this.economy.spend({ scrap: offer.scrap });
+      this.economy.add('components', offer.amount);
       this.ui.toast(`TRADE · -${offer.scrap} SCRAP FOR ${offer.amount} ${offer.name}`);
     }
     offer.used = true;
