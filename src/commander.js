@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { canAttack } from './actors.js';
 import { levelInfo, perkFor } from './levels.js';
-import { survivorStatus, deriveActivity } from './features/survivors/index.js';
+import { survivorStatus, deriveActivity, roster } from './features/survivors/index.js';
 
 /**
  * Command layer: selection and contextual orders. There is no direct-control mode any more.
@@ -84,8 +84,10 @@ export class Commander {
   // -------------------------------------------------------------------------
 
   units() {
-    if (this.inCell) return (this.cellMembers || []).filter((p) => p.active && !p.left);
-    return this.campFolk.people.filter((p) => p.active && !p.left && !p.onExpedition);
+    return roster(this.campFolk.people, {
+      inCell: this.inCell,
+      cellMembers: this.cellMembers,
+    });
   }
 
   keyOf(unit) {

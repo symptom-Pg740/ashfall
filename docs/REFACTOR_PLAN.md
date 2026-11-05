@@ -56,9 +56,11 @@ Suggested order:
    complexity and the source of most “why did they do that?” questions. **Started:** explicit
    activity/status derivation, job kinds (`gather` vs `rally`), job validation,
    newcomer/removal transitions, job-phase arrival/progress helpers, work-loop selection, work-post
-   checks, assignment validation and production timers live in `features/survivors/`; `npcs.js` and
-   `commander.js` use them. This pass also fixed a real bug where the call-to-fire job was caught by
-   the scrap-gather handler. Next: move recruitment/roster ownership, then start the economy slice.
+   checks, assignment validation and production timers live in `features/survivors/`. Roster
+   predicates, the recruit pool and newcomer creation now live there too; `npcs.js`, `commander.js`,
+   `buildingcard.js` and expeditions use them. This pass also fixed a real bug where the call-to-fire
+   job was caught by the scrap-gather handler. Next: start the economy slice so `state.scrap` has one
+   owner.
 2. **economy** — stockpile, production, hauling, workshop, trade. Removes direct `state.scrap`
    mutation from the rest of the game.
 3. **camp** — buildings, placement, construction, demolition, warehouse clusters.

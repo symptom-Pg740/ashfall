@@ -1,5 +1,6 @@
 import { makeRng, deriveSeed, clamp } from './rng.js';
 import { XP } from './levels.js';
+import { isAvailableForWork } from './features/survivors/index.js';
 
 const SITE_LABEL = {
   wreck: 'CAR WRECK',
@@ -43,10 +44,7 @@ export class ExpeditionSystem {
   freeSurvivors() {
     return this.campFolk.people
       .map((p, index) => ({ p, index }))
-      .filter(({ p }) =>
-        p.active && !p.dead && !p.left && !p.pending && !p.possessed && !p.onExpedition &&
-        !p.home && !p.manning && !p.job,
-      );
+      .filter(({ p }) => isAvailableForWork(p));
   }
 
   targets() {

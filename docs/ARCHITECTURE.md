@@ -7,9 +7,10 @@ bundle; the folder structure below is the destination, not a claim that every fi
 tests. `rng.js` is now a world-seed adapter; `save.js` is a compatibility shim over
 `adapters/storage/localSave.js`. `campFolk.evaluateMorale`, `grantScrap` and `settlement.syncStorage`
 call core rules. `features/survivors/` now owns explicit activity/status derivation, job kinds, job validation,
-newcomer/removal transitions, job-phase helpers, work-loop selection and assignment validation;
-`npcs.js` and `commander.js` consume it. The next slices are recruitment/roster ownership, then the
-economy (stockpile ownership) and placement/power rules.
+newcomer/removal transitions, roster predicates, recruit-pool/newcomer creation, job-phase helpers,
+work-loop selection and assignment validation; `npcs.js`, `commander.js`, `buildingcard.js` and
+expeditions consume it. The next slice is the economy (stockpile ownership), then placement/power
+rules.
 
 This document exists because Ashfall grew from a rendering prototype into a settlement game with
 survivors, needs, morale, jobs, power, raids, expeditions and a save format. The current problem is

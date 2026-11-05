@@ -24,6 +24,16 @@ export {
   nextRepairHp,
 } from './jobs.js';
 export {
+  isOnRoster,
+  isAvailableForWork,
+  isAvailableForAssignment,
+  roster,
+  acceptedPeople,
+  availableForWork,
+  findRecruitSlot,
+  recruitPatch,
+} from './roster.js';
+export {
   workLoopKind,
   workPost,
   atWorkPost,

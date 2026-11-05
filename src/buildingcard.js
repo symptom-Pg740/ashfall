@@ -1,4 +1,5 @@
 import { RECIPES, recipeCap, recipeStock, nextRecipe } from './recipes.js';
+import { isAvailableForAssignment } from './features/survivors/index.js';
 
 /**
  * The floating building card.
@@ -110,7 +111,7 @@ export class BuildingCard {
     let best = null;
     let bestD = Infinity;
     for (const p of this.campFolk.people) {
-      if (p.dead || p.pending || p.possessed || p.onExpedition || p.manning || p.job) continue;
+      if (!isAvailableForAssignment(p)) continue;
       if (armed && !p.weapon) continue;
       const d = Math.hypot(p.rig.group.position.x - this.building.x, p.rig.group.position.z - this.building.z);
       if (d < bestD) {

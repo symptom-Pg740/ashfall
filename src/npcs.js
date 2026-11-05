@@ -28,6 +28,8 @@ import {
   atWorkPost,
   canAssignWorkplace,
   advanceWorkTimer,
+  findRecruitSlot,
+  recruitPatch,
 } from './features/survivors/index.js';
 
 const NAMES = ['MARA', 'SILAS', 'REN', 'ODA', 'JUNO', 'KADE'];
@@ -504,36 +506,10 @@ export class CampFolk {
 
   /** Bring one of the reserved survivors to the fire as a newcomer awaiting welcome. */
   recruit(x, z, pending = true) {
-    const p = this.people.find((q) => !q.active);
+    const p = findRecruitSlot(this.people);
     if (!p) return null;
-    p.active = true;
-    p.dead = false;
-    p.left = false;
-    p.pending = pending;
-    p.activity = pending ? 'pending' : 'idle';
-    p.onExpedition = false;
-    p.hp = p.maxHp;
-    p.role = pending ? 'newcomer' : 'scavenger';
-    p.home = null;
-    p.job = null;
-    p.attention = null;
-    p.carry = 0;
-    p.hunger = 0;
-    p.thirst = 0;
-    p.morale = 70;
-    p.moraleTarget = 70;
-    p.moraleFactors = ['FED', 'WATERED'];
-    p.leaveWarn = '';
+    Object.assign(p, recruitPatch({ pending, x, z, maxHp: p.maxHp }));
     this.applyLevelStats(p, true);
-    p.anchor = { x, z };
-    p.spawnAnchor = { x, z };
-    p.target = { x, z };
-    p.holdTimer = pending ? 30 : 0;
-    p.timer = 1;
-    p.path = null;
-    p.pathIndex = 0;
-    p.pathKey = '';
-    p.pathTimer = 0;
     p.rig.group.position.set(x, heightAt(x, z), z);
     p.heading = p.rng() * Math.PI * 2;
     p.rig.group.rotation.y = p.heading;
