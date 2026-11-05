@@ -110,7 +110,7 @@ export class BuildingCard {
     let best = null;
     let bestD = Infinity;
     for (const p of this.campFolk.people) {
-      if (p.dead || p.possessed || p.onExpedition || p.manning || p.job) continue;
+      if (p.dead || p.pending || p.possessed || p.onExpedition || p.manning || p.job) continue;
       if (armed && !p.weapon) continue;
       const d = Math.hypot(p.rig.group.position.x - this.building.x, p.rig.group.position.z - this.building.z);
       if (d < bestD) {
@@ -124,7 +124,7 @@ export class BuildingCard {
   /** Prefer the selected survivor when the player selected one before tapping the building. */
   preferred(armed = false) {
     const unit = this.getSelected();
-    if (unit && !unit.isLeader && !unit.dead && !unit.possessed) {
+    if (unit && !unit.isLeader && !unit.dead && !unit.pending && !unit.possessed) {
       if (!armed || unit.weapon) return unit;
     }
     return this.nearestFree(armed);
@@ -293,6 +293,7 @@ export class BuildingCard {
     const actions = [];
     if (!built) {
       actions.push({ id: 'build', label: builder ? 'BUILDING…' : 'BUILD', kind: 'primary', disabled: !!builder });
+      actions.push({ id: 'cancelSite', label: 'CANCEL SITE', kind: 'danger' });
     } else {
       if (def.power && ports < maxPorts) {
         actions.push({ id: 'link', label: 'LINK', kind: 'primary' });
@@ -304,6 +305,11 @@ export class BuildingCard {
       }
       if (def.id === 'workshop') {
         actions.push({ id: 'recipe', label: 'NEXT RECIPE', kind: 'ghost' });
+      }
+      if (def.id === 'campfire') {
+        actions.push({ id: 'callIdle', label: 'CALL IDLE', kind: 'primary' });
+        actions.push({ id: 'callAll', label: 'CALL ALL', kind: 'ghost' });
+        actions.push({ id: 'dismiss', label: 'DISMISS', kind: 'ghost' });
       }
       if (def.id === 'trade' && this.trade?.arrived) {
         this.trade.offers.forEach((offer, i) => {
@@ -328,6 +334,7 @@ export class BuildingCard {
       if (b.hp < b.maxHp) {
         actions.push({ id: 'repair', label: 'REPAIR', kind: 'ghost' });
       }
+      actions.push({ id: 'demolish', label: 'DEMOLISH', kind: 'danger' });
     }
 
     return {
@@ -410,7 +417,7 @@ export class BuildingCard {
     let best = null;
     let bestD = Infinity;
     for (const p of this.campFolk.people) {
-      if (p.dead || p.possessed || p.onExpedition || p.manning || p.home || p.job) continue;
+      if (p.dead || p.pending || p.possessed || p.onExpedition || p.manning || p.home || p.job) continue;
       if (p.role === 'builder') continue;
       const d = Math.hypot(
         p.rig.group.position.x - this.building.x,
@@ -423,7 +430,7 @@ export class BuildingCard {
     }
     if (best) return best;
     for (const p of this.campFolk.people) {
-      if (p.dead || p.possessed || p.manning || p.home || p.job) continue;
+      if (p.dead || p.pending || p.possessed || p.manning || p.home || p.job) continue;
       return p;
     }
     return null;
@@ -440,6 +447,43 @@ export class BuildingCard {
     if (id === 'broadcast' && b.def.id === 'relay') {
       this.onBroadcast(b);
       this.refresh(true);
+      return;
+    }
+    if (id === 'callIdle' && b.def.id === 'campfire') {
+      const n = this.campFolk.callToFire(b, false);
+      this.ui.toast(n ? `${n} IDLE SURVIVOR${n === 1 ? '' : 'S'} CALLED TO THE FIRE` : 'NO IDLE SURVIVORS');
+      this.refresh(true);
+      return;
+    }
+    if (id === 'callAll' && b.def.id === 'campfire') {
+      const n = this.campFolk.callToFire(b, true);
+      this.ui.toast(n ? `${n} SURVIVOR${n === 1 ? '' : 'S'} CALLED TO THE FIRE` : 'NO ONE TO CALL');
+      this.refresh(true);
+      return;
+    }
+    if (id === 'dismiss' && b.def.id === 'campfire') {
+      const n = this.campFolk.dismissFire(b);
+      this.ui.toast(n ? `${n} RELEASED` : 'NO ONE AT THE FIRE');
+      this.refresh(true);
+      return;
+    }
+    if (id === 'cancelSite' && !b.built) {
+      this.close();
+      this.settlement.cancelSite(b);
+      return;
+    }
+    if (id === 'demolish' && b.built) {
+      const now = performance.now();
+      if (this._demolishId === b.id && now - this._demolishAt < 4000) {
+        this._demolishId = 0;
+        this.close();
+        this.settlement.demolish(b);
+      } else {
+        this._demolishId = b.id;
+        this._demolishAt = now;
+        this.ui.toast(`TAP DEMOLISH AGAIN TO CONFIRM ${b.def.name}`, true);
+        this.refresh(true);
+      }
       return;
     }
     if (id === 'recipe' && b.def.id === 'workshop') {

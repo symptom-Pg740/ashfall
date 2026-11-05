@@ -408,35 +408,63 @@ function vickersHead() {
   return merge(p);
 }
 
-function warehouse() {
-  const adobe = '#c9a878';
-  const adobeDark = '#a98a61';
-  const wood = '#6b4a2e';
-  const woodDark = '#4e3522';
-  const tarp = '#7c6447';
+/** Shared warehouse colours. */
+const WAREHOUSE_COLORS = {
+  adobe: '#c9a878',
+  adobeDark: '#a98a61',
+  wood: '#6b4a2e',
+  woodDark: '#4e3522',
+  tarp: '#7c6447',
+};
+
+/** The open stockpile floor: base, slab, corner posts, door awning and lantern. */
+function warehouseBase() {
+  const { adobeDark, wood, woodDark, tarp } = WAREHOUSE_COLORS;
   const p = [baseDisc(3.15)];
-  // slab + back/side walls, open front with two piers
   p.push(box(4.6, 0.12, 3.8, '#8f7552', 0, 0.06, 0));
-  p.push(box(4.4, 2.5, 0.2, adobe, 0, 1.25, -1.7));
-  p.push(box(0.2, 2.5, 3.4, adobe, -2.2, 1.25, 0));
-  p.push(box(0.2, 2.5, 3.4, adobe, 2.2, 1.25, 0));
-  p.push(box(1.25, 2.2, 0.2, adobe, -1.67, 1.1, 1.7));
-  p.push(box(1.25, 2.2, 0.2, adobe, 1.67, 1.1, 1.7));
+  for (const sx of [-2.15, 2.15]) {
+    for (const sz of [-1.65, 1.65]) {
+      p.push(box(0.22, 2.6, 0.22, woodDark, sx, 1.3, sz));
+    }
+  }
   p.push(box(4.4, 0.45, 0.22, adobeDark, 0, 2.42, 1.7));
+  // Tarp awning over the loading door.
+  p.push(box(3.2, 0.06, 1.15, tarp, 0, 2.33, 2.25, 0.16, 0, 0));
+  for (let i = 0; i < 4; i++) {
+    p.push(cyl(0.04, 0.04, 1.2, 4, wood, -1.2 + i * 0.8, 1.9, 2.2, 0.32, 0, 0));
+  }
+  p.push(box(0.16, 0.2, 0.16, '#ffb35e', 0, 2.02, 1.45));
+  return merge(p);
+}
+
+/** Four wall panels plus the two front door piers, each separable so neighbours can open up. */
+function warehouseWalls() {
+  const { adobe } = WAREHOUSE_COLORS;
+  return [
+    { dir: 'back', geo: merge([box(4.4, 2.5, 0.2, adobe, 0, 1.25, -1.7)]) },
+    { dir: 'left', geo: merge([box(0.2, 2.5, 3.4, adobe, -2.2, 1.25, 0)]) },
+    { dir: 'right', geo: merge([box(0.2, 2.5, 3.4, adobe, 2.2, 1.25, 0)]) },
+    { dir: 'frontL', geo: merge([box(1.25, 2.2, 0.2, adobe, -1.67, 1.1, 1.7)]) },
+    { dir: 'frontR', geo: merge([box(1.25, 2.2, 0.2, adobe, 1.67, 1.1, 1.7)]) },
+  ];
+}
+
+/** The removable roof: slab and exposed beams. */
+function warehouseRoof() {
+  const { wood } = WAREHOUSE_COLORS;
+  const p = [];
   p.push(box(4.9, 0.16, 4.0, '#b78f5d', 0, 2.62, 0));
   for (let i = 0; i < 5; i++) {
     p.push(box(0.12, 0.1, 3.9, wood, -1.8 + i * 0.9, 2.73, 0));
   }
-  // tarp awning over the loading door
-  p.push(box(3.2, 0.06, 1.15, tarp, 0, 2.33, 2.25, 0.16, 0, 0));
-  for (let i = 0; i < 4; i++) {
-    p.push(cyl(0.04, 0.04, 1.2, 4, woodDark, -1.2 + i * 0.8, 1.9, 2.2, 0.32, 0, 0));
-  }
-  // a couple of permanent crates + a lantern
-  p.push(box(0.7, 0.5, 0.7, '#8a6a42', 1.4, 0.3, -1.1, 0, 0.2, 0));
-  p.push(box(0.55, 0.4, 0.55, '#9b7a4e', 1.3, 0.75, -1.15, 0, 0.7, 0));
-  p.push(box(0.16, 0.2, 0.16, '#ffb35e', 0, 2.02, 1.45));
   return merge(p);
+}
+
+/** Full warehouse silhouette for the placement ghost. */
+function warehouse() {
+  const parts = [warehouseBase(), warehouseRoof()];
+  for (const wall of warehouseWalls()) parts.push(wall.geo);
+  return merge(parts);
 }
 
 function scavengerHut() {
@@ -979,6 +1007,7 @@ export class Settlement {
     this.occlusionHits = [];
     this.selected = null;
     this.placing = false;
+    this.ghostHeading = 0;
     this.canPlace = false;
     this.reason = '';
     this.prodTimer = 0;
@@ -1000,6 +1029,37 @@ export class Settlement {
       this.geos[def.id] = geo;
     }
     this.turretHeadGeo = vickersHead();
+
+    // Warehouse visuals are component-based: the roof lifts off when goods are inside and the
+    // walls facing an adjacent warehouse open up so two sheds read as one larger stockpile.
+    this.warehouseBaseGeo = warehouseBase();
+    this.warehouseRoofGeo = warehouseRoof();
+    this.warehouseWallGeos = warehouseWalls();
+    this.warehouseLinkGroup = new THREE.Group();
+    this.warehouseLinkGroup.name = 'warehouse-links';
+    this.warehousePadMat = new THREE.MeshLambertMaterial({ color: 0xa98a61, flatShading: true });
+    scene.add(this.warehouseLinkGroup);
+    this.warehouseLinkSig = '';
+    this.stockMaterial = {
+      scrap: new THREE.MeshLambertMaterial({ color: 0x8a6a42, flatShading: true }),
+      water: new THREE.MeshLambertMaterial({ color: 0x6f8f8b, flatShading: true }),
+      food: new THREE.MeshLambertMaterial({ color: 0xb49a6a, flatShading: true }),
+      components: new THREE.MeshLambertMaterial({ color: 0x777a78, flatShading: true }),
+    };
+    this.stockGeo = {
+      scrap: new THREE.BoxGeometry(0.5, 0.4, 0.5),
+      water: new THREE.CylinderGeometry(0.22, 0.26, 0.65, 8),
+      food: new THREE.SphereGeometry(0.28, 6, 5),
+      components: new THREE.BoxGeometry(0.4, 0.3, 0.35),
+    };
+    this._stockObj = new THREE.Object3D();
+    this.warehouseTimer = 0;
+    this.stockPileSlots = {
+      scrap: [-1.25, -0.75],
+      water: [1.25, -0.75],
+      food: [-1.25, 0.75],
+      components: [1.25, 0.75],
+    };
 
     this.syncStorage();
 
@@ -1163,6 +1223,7 @@ export class Settlement {
     if (!def) return;
     this.selected = def;
     this.placing = true;
+    this.ghostHeading = 0;
     this.ghost.geometry = def.geometry;
     this.ghost.visible = true;
     this.ghostMat.color.set(0x9fdc86);
@@ -1180,6 +1241,7 @@ export class Settlement {
   cancel() {
     this.selected = null;
     this.placing = false;
+    this.ghostHeading = 0;
     this.canPlace = false;
     this.reason = '';
     this.ghost.visible = false;
@@ -1187,6 +1249,16 @@ export class Settlement {
     this.powerRing.visible = false;
     this.powerTarget.visible = false;
     this.wallPreview.visible = false;
+  }
+
+  /** Rotate the placement ghost in 45-degree steps (or by an arbitrary delta). */
+  rotateGhost(radians = Math.PI / 4) {
+    if (!this.placing) return;
+    this.ghostHeading = (this.ghostHeading + radians) % (Math.PI * 2);
+    this.ghost.rotation.y = this.ghostHeading;
+    if (this.selected?.id === 'wall') {
+      this.updateWallPreview(this.ghost.position.x, this.ghost.position.z, this.ghost.position.y);
+    }
   }
 
   /** Existing power nodes, used by the placement preview and the reach snap. */
@@ -1252,6 +1324,7 @@ export class Settlement {
 
     const y = heightAt(gx, gz);
     this.ghost.position.set(gx, y + 0.02, gz);
+    this.ghost.rotation.y = this.ghostHeading;
     this.ring.position.set(gx, y + 0.06, gz);
     if (this.powerRing.visible) this.powerRing.position.set(gx, y + 0.05, gz);
     this.validate(origin);
@@ -1299,7 +1372,13 @@ export class Settlement {
     else if (slopeAt(gx, gz, 1.1) > 0.26) reason = 'UNEVEN GROUND';
     else {
       for (const b of this.buildings) {
-        if (Math.hypot(b.x - gx, b.z - gz) < b.radius + def.radius + 0.15) {
+        // Warehouses may be placed tight against another warehouse so the two sheds merge into a
+        // larger depot. Everything else keeps the normal footprint clearance.
+        const minDist =
+          def.id === 'warehouse' && b.type === 'warehouse'
+            ? 5.2
+            : b.radius + def.radius + 0.15;
+        if (Math.hypot(b.x - gx, b.z - gz) < minDist) {
           reason = 'BLOCKED BY STRUCTURE';
           break;
         }
@@ -1323,10 +1402,11 @@ export class Settlement {
   }
 
   /** Create one building at a world position. Shared by placement and save restore. */
-  createBuilding(def, x, z, id = null, built = true, progress = 1) {
+  createBuilding(def, x, z, id = null, built = true, progress = 1, heading = 0) {
     const y = heightAt(x, z);
     const group = new THREE.Group();
     group.position.set(x, y, z);
+    group.rotation.y = heading;
     const model = new THREE.Group();
     group.add(model);
 
@@ -1338,12 +1418,44 @@ export class Settlement {
       geo = rng() < 0.25 ? this.geos.house : buildAdobeHouse(rng);
     }
     const baseMat = def.id === 'house' ? this.houseMat : this.buildMat;
-    const mesh = new THREE.Mesh(geo, baseMat.clone());
-    mesh.material.transparent = true;
-    mesh.material.opacity = 1;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    model.add(mesh);
+    let mesh;
+    let warehouseWalls = null;
+    let warehouseRoof = null;
+    let warehouseStock = null;
+    if (def.id === 'warehouse') {
+      // Open stockpile: floor/posts, removable roof and separate wall panels. The ghost still uses
+      // the merged silhouette; the real building exposes its interior once goods are stored.
+      mesh = new THREE.Mesh(this.warehouseBaseGeo, baseMat.clone());
+      mesh.material.transparent = true;
+      mesh.material.opacity = 1;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      model.add(mesh);
+
+      warehouseWalls = [];
+      for (const part of this.warehouseWallGeos) {
+        const wall = new THREE.Mesh(part.geo, baseMat.clone());
+        wall.material.transparent = true;
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        wall.userData.dir = part.dir;
+        model.add(wall);
+        warehouseWalls.push(wall);
+      }
+      warehouseRoof = new THREE.Mesh(this.warehouseRoofGeo, baseMat.clone());
+      warehouseRoof.material.transparent = true;
+      warehouseRoof.castShadow = true;
+      warehouseRoof.receiveShadow = true;
+      model.add(warehouseRoof);
+      warehouseStock = this.createWarehouseStock(model);
+    } else {
+      mesh = new THREE.Mesh(geo, baseMat.clone());
+      mesh.material.transparent = true;
+      mesh.material.opacity = 1;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      model.add(mesh);
+    }
 
     mesh.geometry.computeBoundingSphere();
     group.updateMatrixWorld(true);
@@ -1362,11 +1474,16 @@ export class Settlement {
       x,
       z,
       y,
+      heading,
       radius: def.radius,
       group,
       model,
       mesh,
       sphere,
+      walls: warehouseWalls,
+      roof: warehouseRoof,
+      stock: warehouseStock,
+      linkPads: [],
       built,
       buildProgress: built ? 1 : Math.max(0, Math.min(1, progress)),
       buildTime: def.buildTime || 2 + def.cost * 0.16,
@@ -1379,30 +1496,6 @@ export class Settlement {
       flame: null,
       glow: null,
     };
-
-    if (def.id === 'warehouse') {
-      this.crateGeo ||= new THREE.BoxGeometry(0.46, 0.36, 0.46);
-      this.crateMat ||= new THREE.MeshStandardMaterial({
-        color: 0x8a6a42,
-        roughness: 0.85,
-        metalness: 0.05,
-      });
-      const spots = [
-        [-0.75, 0, -1.1], [-0.25, 0, -1.15], [0.25, 0, -1.1], [0.75, 0, -1.05],
-        [-0.5, 0.38, -1.1], [0, 0.38, -1.12], [0.5, 0.38, -1.08], [-0.25, 0.76, -1.1],
-      ];
-      building.crates = [];
-      building._crateLevel = -1;
-      for (const [cx, cy, cz] of spots) {
-        const crate = new THREE.Mesh(this.crateGeo, this.crateMat);
-        crate.position.set(cx, 0.22 + cy, cz);
-        crate.rotation.y = (cx * 7 + cz * 3) % 0.35;
-        crate.castShadow = false;
-        crate.receiveShadow = true;
-        model.add(crate);
-        building.crates.push(crate);
-      }
-    }
 
     if (def.id === 'turret') {
       const head = new THREE.Mesh(this.turretHeadGeo, this.buildMat.clone());
@@ -1529,6 +1622,120 @@ export class Settlement {
     return building;
   }
 
+  /** Four stock piles (scrap/water/food/components), each an instanced stack inside the shed. */
+  createWarehouseStock(model) {
+    const group = new THREE.Group();
+    group.position.y = 0.12;
+    model.add(group);
+    const piles = {};
+    for (const type of ['scrap', 'water', 'food', 'components']) {
+      const inst = new THREE.InstancedMesh(this.stockGeo[type], this.stockMaterial[type], 8);
+      inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      inst.castShadow = false;
+      inst.receiveShadow = true;
+      inst.count = 0;
+      group.add(inst);
+      piles[type] = inst;
+    }
+    return { group, piles };
+  }
+
+  /** Show one pile per material, sized by that material's fill fraction. */
+  updateWarehouseStock(b) {
+    if (!b.stock) return;
+    const count = Math.max(1, this.count('warehouse'));
+    const values = {
+      scrap: (this.state.scrap || 0) / count,
+      water: (this.state.water || 0) / count,
+      food: (this.state.food || 0) / count,
+      components: (this.state.components || 0) / count,
+    };
+    const maxes = { scrap: 120, water: 120, food: 120, components: 12 };
+    const o = this._stockObj;
+    for (const type of ['scrap', 'water', 'food', 'components']) {
+      const inst = b.stock.piles[type];
+      if (!inst) continue;
+      const value = values[type];
+      const fraction = Math.max(0, Math.min(1, value / maxes[type]));
+      const count = value > 0 ? Math.max(1, Math.ceil(fraction * 8)) : 0;
+      inst.count = count;
+      const [cx, cz] = this.stockPileSlots[type];
+      for (let i = 0; i < count; i++) {
+        const layer = Math.floor(i / 4);
+        const idx = i % 4;
+        const dx = (idx % 2 ? 0.28 : -0.28);
+        const dz = (idx < 2 ? -0.28 : 0.28);
+        const y = type === 'water' ? 0.33 : type === 'food' ? 0.26 : 0.2;
+        o.position.set(cx + dx, y + layer * 0.34, cz + dz);
+        o.rotation.set(0, (i * 1.7) % 6.28, 0);
+        o.scale.setScalar(type === 'food' ? 0.9 : 1);
+        o.updateMatrix();
+        inst.setMatrixAt(i, o.matrix);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  /** Adjacent warehouses open their facing walls and get a shared floor pad between them. */
+  updateWarehouseVisuals() {
+    const warehouses = this.buildings.filter(
+      (b) => b.type === 'warehouse' && b.built && !b.destroyed,
+    );
+    const total =
+      (this.state.scrap || 0) + (this.state.water || 0) + (this.state.food || 0) + (this.state.components || 0);
+    for (const b of warehouses) {
+      if (b.roof) b.roof.visible = total <= 0.001;
+      const hide = { back: false, left: false, right: false, frontL: false, frontR: false };
+      for (const other of warehouses) {
+        if (other === b) continue;
+        const dx = other.x - b.x;
+        const dz = other.z - b.z;
+        if (Math.hypot(dx, dz) > 6.6) continue;
+        // The walls are local to the shed, so rotate the neighbour into the shed's frame before
+        // deciding which side opens up.
+        const h = -(b.heading || 0);
+        const lx = dx * Math.cos(h) - dz * Math.sin(h);
+        const lz = dx * Math.sin(h) + dz * Math.cos(h);
+        if (lz < -2.2) hide.back = true;
+        if (lz > 2.2) {
+          hide.frontL = true;
+          hide.frontR = true;
+        }
+        if (lx < -2.2) hide.left = true;
+        if (lx > 2.2) hide.right = true;
+      }
+      if (b.walls) {
+        for (const wall of b.walls) wall.visible = !hide[wall.userData.dir];
+      }
+      this.updateWarehouseStock(b);
+    }
+
+    // One floor pad per adjacent pair, rebuilt only when the cluster layout changes.
+    const sig = warehouses.map((b) => `${b.id}:${b.x.toFixed(1)}:${b.z.toFixed(1)}`).join('|');
+    if (sig === this.warehouseLinkSig) return;
+    this.warehouseLinkSig = sig;
+    for (const child of [...this.warehouseLinkGroup.children]) {
+      this.warehouseLinkGroup.remove(child);
+      child.geometry.dispose();
+    }
+    const mat = this.warehousePadMat;
+    for (let i = 0; i < warehouses.length; i++) {
+      for (let j = i + 1; j < warehouses.length; j++) {
+        const a = warehouses[i];
+        const b = warehouses[j];
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const len = Math.hypot(dx, dz);
+        if (len > 6.6 || len < 0.4) continue;
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.08, len), mat);
+        pad.position.set((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.04, (a.z + b.z) / 2);
+        pad.rotation.y = Math.atan2(dx, dz);
+        pad.receiveShadow = true;
+        this.warehouseLinkGroup.add(pad);
+      }
+    }
+  }
+
   /** A pad, scaffold and progress bar shown while a building is a construction site. */
   makeSite(def) {
     const radius = def.radius;
@@ -1602,6 +1809,35 @@ export class Settlement {
     this.syncStorage();
     this.rebuildWalls();
     this.onBuildingDestroyed?.(building);
+  }
+
+  /** Player demolish/cancel. Returns the refund, or 0 if the structure was not removable. */
+  removeStructure(building, reason = 'demolished') {
+    if (!building || building.destroyed) return 0;
+    const refund = Math.max(0, Math.floor((building.def?.cost || 0) * (reason === 'cancelled' ? 1 : 0.5)));
+    building.destroyed = true;
+    building.built = false;
+    this.particles.burst(building.x, building.y + 0.7, building.z, '#b09572', 14, 2.6);
+    this.scene.remove(building.group);
+    const index = this.buildings.indexOf(building);
+    if (index >= 0) this.buildings.splice(index, 1);
+    this.syncStorage();
+    this.rebuildWalls();
+    this.updateWarehouseVisuals();
+    this.onBuildingRemoved?.(building, refund, reason);
+    return refund;
+  }
+
+  /** Stop a construction site and recover half its cost. */
+  cancelSite(building) {
+    if (!building || building.built) return 0;
+    return this.removeStructure(building, 'cancelled');
+  }
+
+  /** Tear down a finished structure and recover half its cost. */
+  demolish(building) {
+    if (!building || !building.built) return 0;
+    return this.removeStructure(building, 'demolished');
   }
 
   /** Turn a site into a finished building. Returns false if it was already done. */
@@ -1681,6 +1917,7 @@ export class Settlement {
           Number.isFinite(item.id) ? item.id : null,
           built,
           Number.isFinite(item.buildProgress) ? item.buildProgress : 1,
+          Number.isFinite(item.heading) ? item.heading : 0,
         );
         building.charge = Number.isFinite(item.charge) ? item.charge : 0;
         if (Number.isFinite(item.hp)) building.hp = Math.max(0, Math.min(building.maxHp, item.hp));
@@ -1698,6 +1935,7 @@ export class Settlement {
         type: b.type,
         x: b.x,
         z: b.z,
+        heading: b.heading || 0,
         charge: b.charge || 0,
         built: b.built !== false,
         buildProgress: b.buildProgress ?? 1,
@@ -1717,7 +1955,7 @@ export class Settlement {
     const def = this.selected;
     const x = this.ghost.position.x;
     const z = this.ghost.position.z;
-    const building = this.createBuilding(def, x, z, null, false, 0);
+    const building = this.createBuilding(def, x, z, null, false, 0, this.ghostHeading);
     this.syncStorage();
     const y = building.y;
     this.particles.burst(x, y + 0.4, z, '#b09572', 18, 3.2);
@@ -2032,15 +2270,11 @@ export class Settlement {
       b.site.bar.position.x = -b.site.width * 0.5 * (1 - p);
     }
 
-    // warehouse fill
-    const fill = Math.min(1, this.state.scrap / Math.max(1, this.storageCap()));
-    for (const b of this.buildings) {
-      if (!b.crates || !b.built) continue;
-      const level = Math.round(b.crates.length * fill);
-      if (level !== b._crateLevel) {
-        b._crateLevel = level;
-        for (let i = 0; i < b.crates.length; i++) b.crates[i].visible = i < level;
-      }
+    // warehouse stock piles + roof/wall state (cheap, but no need to touch every frame)
+    this.warehouseTimer += dt;
+    if (this.warehouseTimer >= 0.2) {
+      this.warehouseTimer = 0;
+      this.updateWarehouseVisuals();
     }
 
     // water production

@@ -472,6 +472,22 @@ settlement.onBuildingDestroyed = (building) => {
   ui.updateHUD(state);
   saveGame();
 };
+settlement.onBuildingRemoved = (building, refund, reason) => {
+  power.removeBuilding(building);
+  if (buildingCard.building === building) buildingCard.close();
+  for (const person of campFolk.people) {
+    if (person.home === building) campFolk.releaseWorkplace(person, true);
+    if (person.manning === building) campFolk.releaseTower(person);
+  }
+  const gained = grantScrap(refund || 0);
+  ui.toast(
+    `${building.def.name} ${reason === 'cancelled' ? 'CANCELLED' : 'DEMOLISHED'}${gained ? ` · +${gained} SCRAP` : ''}`,
+  );
+  ui.updateHUD(state);
+  refreshUnits();
+  saveGame();
+};
+
 settlement.onBuildingDamage = (building) => {
   if (Math.hypot(building.x - player.x, building.z - player.z) < 24) {
     cameraShake = Math.max(cameraShake, 0.12);
@@ -604,6 +620,7 @@ const input = new Input(canvas, activeCamera, {
   buildSelect: selectBuilding,
   place: doPlace,
   cancelPlace: cancelPlacement,
+  placeRotate: (rad) => settlement.rotateGhost(rad),
   perf: () => ui.togglePerf(),
   units: () => openUnits(),
   fullscreen: () => ui.handleFullscreenGesture(),
@@ -738,12 +755,48 @@ ui.on('unitsSelect', (key) => {
   commander.selectKey(key);
   refreshUnits();
 });
+let expelConfirm = { key: '', at: 0 };
+
 ui.on('unitAction', (key, action) => {
   const unit = commander.unitByKey(key);
   if (!unit) return;
   if (action === 'focus') {
     commander.select(unit);
     commander.onFocus(unit);
+  } else if (action === 'welcome') {
+    const living = campFolk.people.filter((p) => p.active && !p.left && !p.dead && !p.pending).length;
+    const cap = Math.min(6, 3 + settlement.count('house'));
+    if (living >= cap) {
+      ui.toast('NO FREE BED · BUILD A HOUSE FIRST', true);
+    } else if (campFolk.welcome(unit)) {
+      ui.toast(`${unit.name} JOINED THE CAMP`);
+      commander.select(unit);
+      saveGame();
+    }
+  } else if (action === 'reject') {
+    const name = unit.name;
+    if (campFolk.reject(unit)) {
+      ui.toast(`${name} WAS TURNED AWAY`);
+      if (commander.selected === unit) commander.clear();
+      saveGame();
+    }
+  } else if (action === 'expel') {
+    const now = performance.now();
+    if (expelConfirm.key === key && now - expelConfirm.at < 4000) {
+      const name = unit.name;
+      expelConfirm = { key: '', at: 0 };
+      if (campFolk.expel(unit)) {
+        ui.toast(`${name} WAS EXPELLED`);
+        if (commander.selected === unit) commander.clear();
+        const left = campFolk.people.filter((p) => p.active && !p.left && !p.pending && !p.dead).length;
+        const pending = campFolk.people.filter((p) => p.active && !p.left && p.pending).length;
+        if (left === 0 && pending === 0) endCamp('THE CAMP IS EMPTY');
+        saveGame();
+      }
+    } else {
+      expelConfirm = { key, at: now };
+      ui.toast(`TAP EXPEL AGAIN TO CONFIRM ${unit.name}`, true);
+    }
   } else if (action === 'release') {
     commander.releasePost(unit);
   } else if (action === 'guard') {
@@ -789,6 +842,7 @@ ui.on('buildClose', closeBuild);
 ui.on('buildSelect', selectBuilding);
 ui.on('place', doPlace);
 ui.on('cancelPlace', cancelPlacement);
+ui.on('placeRotate', (rad) => settlement.rotateGhost(rad));
 ui.on('cellLoot', () => {
   if (cells.interact() === 'loot') {
     ui.toast('CACHE LOOTED');
@@ -1437,14 +1491,15 @@ function broadcastRelay(relay) {
   state.scrap -= cost;
   comms.broadcastDay = state.day;
   const chance = 0.7 + (settlement.count('chapel') > 0 ? 0.15 : 0);
+  const fire = campCenter();
   const recruit = Math.random() < chance
-    ? campFolk.recruit(relay.x + 2.2, relay.z + 1.2)
+    ? campFolk.recruit(fire.x + 2.2, fire.z + 1.2)
     : null;
   comms.lastResult = recruit ? `${recruit.name} ANSWERED` : 'STATIC';
   ui.updateHUD(state);
   if (recruit) {
     ui.toast(`${recruit.name} ANSWERED THE BROADCAST`);
-    ui.hint('A SIGNAL CAME BACK · A SURVIVOR IS WALKING IN', 4200);
+    ui.hint('A NEWCOMER IS WAITING AT THE FIRE · WELCOME OR REJECT', 5200);
     refreshUnits();
   } else {
     ui.toast('THE STATIC ANSWERS NOTHING', true);
@@ -1471,7 +1526,7 @@ function dawnTick(day) {
   let fed = 0;
   let watered = 0;
   for (const p of campFolk.people) {
-    if (!p.active || p.dead || p.left) continue;
+    if (!p.active || p.dead || p.left || p.pending) continue;
     if (state.water > 0) {
       state.water--;
       p.thirst = 0;
@@ -1492,7 +1547,7 @@ function dawnTick(day) {
 
   const report = campFolk.evaluateMorale(day, state, settlement);
   state.lastWarnings = report.warnings || [];
-  let living = campFolk.people.filter((p) => p.active && !p.dead && !p.left).length;
+  let living = campFolk.people.filter((p) => p.active && !p.dead && !p.left && !p.pending).length;
   const cap = Math.min(6, 3 + settlement.count('house'));
   let recruited = null;
   if (
@@ -1503,7 +1558,6 @@ function dawnTick(day) {
     day >= (state.nextRecruit || 0)
   ) {
     const spot =
-      settlement.nearestOfType('house', player.x, player.z) ||
       settlement.nearestOfType('campfire', player.x, player.z) ||
       { x: player.x, z: player.z, radius: 2 };
     const recruit = campFolk.recruit(spot.x + (spot.radius || 2), spot.z + 1);
@@ -1511,7 +1565,7 @@ function dawnTick(day) {
       recruited = recruit;
       living++;
       state.nextRecruit = day + 2 + Math.floor(Math.random() * 2);
-      ui.toast(`${recruit.name} JOINED THE CAMP`);
+      ui.toast(`${recruit.name} IS WAITING AT THE FIRE`);
     }
   }
   if (campFolk.people.filter((p) => p.active && !p.left && !p.dead).length === 0) {
@@ -1526,7 +1580,7 @@ function dawnTick(day) {
   ui.hint(
     warning
       ? `DAY ${day} · ${warning.text}`
-      : `DAY ${day} · ${living}/${cap} SURVIVORS · FOOD ${state.food} · WATER ${state.water}${recruited ? ` · ${recruited.name} JOINED` : ''}${short ? ' · SHORT SUPPLIES' : ''}`,
+      : `DAY ${day} · ${living}/${cap} SURVIVORS · FOOD ${state.food} · WATER ${state.water}${recruited ? ` · ${recruited.name} WAITING AT THE FIRE` : ''}${short ? ' · SHORT SUPPLIES' : ''}`,
     warning ? 7000 : 5200,
   );
   saveGame();
@@ -1910,6 +1964,10 @@ const showPaths = new URLSearchParams(window.location.search).has('paths');
 pathDebug.setEnabled(showPaths);
 ui.setToggle('paths', showPaths);
 ui.setSeed(WORLD_SEED);
+// A 45-degree yaw reads more of each building's side and roof than a straight-on view.
+const startYaw = new URLSearchParams(window.location.search).has('yaw0') ? 0 : Math.PI / 4;
+yaw.current = startYaw;
+yaw.target = startYaw;
 input.camera = activeCamera;
 ui.updateHUD(state);
 ui.setQuality(initialQuality);

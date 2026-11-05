@@ -53,6 +53,8 @@ export class Input {
       else if (k === 'u') this.cb.units?.();
       else if (k === 'escape') this.cb.cancel?.();
       else if (k === 'enter') this.cb.place?.();
+      else if (k === 'q') this.cb.placeRotate?.(-Math.PI / 4);
+      else if (k === 'e') this.cb.placeRotate?.(Math.PI / 4);
       else if (k === 'tab') {
         e.preventDefault();
         this.cb.cycleUnit?.(e.shiftKey ? -1 : 1);

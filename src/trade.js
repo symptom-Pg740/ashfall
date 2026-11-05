@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { makeRng, deriveSeed } from './rng.js';
 import { COMPONENT_CAP } from './recipes.js';
 import { heightAt, highwayZ, PLAY_HALF_X } from './terrain.js';
+import { buildSkinnedHumanoid } from './skinned.js';
 import { box, cyl, merge, PALETTE } from './geo.js';
 
 const SELL = [
@@ -12,8 +13,6 @@ const SELL = [
 const BUY = [
   { resource: 'components', amount: 2, price: [16, 22], name: 'COMPONENTS' },
 ];
-
-const _o = new THREE.Object3D();
 
 /** Two-wheel cart under a patched canvas hood, built facing +Z. */
 function wagonGeometry() {
@@ -62,22 +61,6 @@ function packAnimalGeometry() {
   }
   p.push(box(0.07, 0.4, 0.07, hideDark, 0, 0.95, -0.66, -0.35));
   p.push(cyl(0.22, 0.22, 0.62, 7, '#7a6a4c', 0, 1.28, -0.12, 0, 0, Math.PI / 2));
-  return merge(p);
-}
-
-/** A cheap walking figure: traveller with a bedroll and a staff. */
-function travellerGeometry() {
-  const p = [];
-  p.push(box(0.18, 0.66, 0.22, '#4d4536', -0.11, 0.33, 0));
-  p.push(box(0.18, 0.66, 0.22, '#5a5140', 0.11, 0.33, 0));
-  p.push(box(0.5, 0.62, 0.3, '#6b5c45', 0, 0.98, 0));
-  p.push(box(0.56, 0.16, 0.34, '#7c6a4e', 0, 1.16, 0));
-  p.push(box(0.16, 0.5, 0.16, '#5c503c', -0.31, 0.94, 0.02, 0.1));
-  p.push(box(0.16, 0.5, 0.16, '#5c503c', 0.31, 0.94, 0.02, -0.1));
-  p.push(box(0.28, 0.28, 0.26, PALETTE.skin, 0, 1.48, 0.02));
-  p.push(box(0.32, 0.1, 0.3, PALETTE.scarf, 0, 1.62, 0.02));
-  p.push(cyl(0.16, 0.16, 0.5, 6, '#7a6a4c', 0, 1.14, -0.24, 0, 0, Math.PI / 2));
-  p.push(box(0.05, 1.5, 0.05, '#5a4630', 0.42, 0.75, 0.12, 0.05));
   return merge(p);
 }
 
@@ -147,17 +130,28 @@ export class TradeNetwork {
     this.caravanGroup.add(wagon, ...this.mules);
     this.group.add(this.caravanGroup);
 
-    // Three walkers in one instanced mesh: one draw call for the road traffic.
-    this.travellerMesh = new THREE.InstancedMesh(
-      travellerGeometry(),
-      material,
-      this.travellers.length,
+    // Road traffic uses the same skinned survivor rig as the camp, not a box proxy. There are only
+    // three of them and they are usually far away, so the cost is bounded.
+    this.travellerRigs = this.travellers.map((t, i) =>
+      buildSkinnedHumanoid(deriveSeed(`traveller:${i}`), {
+        detail: 'low',
+        castShadow: false,
+        archetype: ['lean', 'stocky', 'tall'][i % 3],
+        equipment: {
+          head: i % 2 ? 'wrap' : 'cap',
+          face: 'scarf',
+          torso: i % 2 ? 'coat' : 'vest',
+          legs: 'trousers',
+          feet: 'boots',
+          shoulders: 'none',
+          hands: 'none',
+          back: 'bedroll',
+          waist: 'tool',
+          weapon: 'none',
+        },
+      }),
     );
-    this.travellerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.travellerMesh.frustumCulled = false;
-    this.travellerMesh.castShadow = true;
-    this.travellerMesh.receiveShadow = true;
-    this.group.add(this.travellerMesh);
+    for (const rig of this.travellerRigs) this.group.add(rig.group);
 
     scene.add(this.group);
     this.updateTravellers(0);
@@ -180,11 +174,12 @@ export class TradeNetwork {
   }
 
   updateTravellers(dt) {
-    if (!this.travellerMesh) return;
+    if (!this.travellerRigs) return;
     const span = PLAY_HALF_X - 8;
     const list = this.travellers;
     for (let i = 0; i < list.length; i++) {
       const t = list[i];
+      const rig = this.travellerRigs[i];
       t.x += t.dir * t.speed * dt;
       if (t.x > span) t.x = -span;
       else if (t.x < -span) t.x = span;
@@ -192,14 +187,13 @@ export class TradeNetwork {
       const slope = (highwayZ(t.x + 1) - highwayZ(t.x - 1)) * 0.5;
       const yaw = Math.atan2(t.dir, t.dir * slope);
       t.phase += dt * (3.2 + t.speed * 1.4);
-      const bob = Math.abs(Math.sin(t.phase)) * 0.05;
-      _o.position.set(t.x, heightAt(t.x, z) + bob, z);
-      _o.rotation.set(0, yaw, 0);
-      _o.scale.setScalar(1);
-      _o.updateMatrix();
-      this.travellerMesh.setMatrixAt(i, _o.matrix);
+      rig.group.position.set(t.x, heightAt(t.x, z), z);
+      rig.group.rotation.y = yaw;
+      if (dt > 0) {
+        rig.setPose(dt, true, t.phase);
+        rig.plantFeet(true);
+      }
     }
-    this.travellerMesh.instanceMatrix.needsUpdate = true;
   }
 
   /** Send the wagon in from the far end of the highway toward the post. */

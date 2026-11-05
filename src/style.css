@@ -3250,3 +3250,26 @@ body.perf-open .action-rail {
 .wardrobe-panel {
   z-index: 29;
 }
+
+/* destructive actions and placement rotation */
+.bcard-action.danger {
+  border-color: rgba(225, 113, 81, 0.6);
+  color: var(--red);
+}
+.bcard-action.danger:active {
+  background: rgba(225, 113, 81, 0.14);
+}
+.place-rotate {
+  white-space: nowrap;
+  padding: 8px 10px;
+  font-size: 9px;
+}
+
+/* the v2 build tray is a full-width sheet, not the old centered fixed-width bar */
+.build-bar {
+  left: calc(8px + var(--safe-l));
+  right: calc(8px + var(--safe-r));
+  width: auto;
+  transform: none;
+  clip-path: none;
+}

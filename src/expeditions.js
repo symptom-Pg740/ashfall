@@ -44,7 +44,7 @@ export class ExpeditionSystem {
     return this.campFolk.people
       .map((p, index) => ({ p, index }))
       .filter(({ p }) =>
-        p.active && !p.dead && !p.left && !p.possessed && !p.onExpedition &&
+        p.active && !p.dead && !p.left && !p.pending && !p.possessed && !p.onExpedition &&
         !p.home && !p.manning && !p.job,
       );
   }

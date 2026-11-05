@@ -14,7 +14,8 @@ import { WORLD_RADIUS, inPlayArea } from './terrain.js';
  */
 
 const BOUNDS = WORLD_RADIUS;
-const CELL = BOUNDS > 220 ? 2 : 1;
+// 1.5 m keeps doorways and wall gaps passable without the memory cost of a full 1 m grid.
+const CELL = BOUNDS > 220 ? 1.5 : 1;
 const SIZE = Math.floor((BOUNDS * 2) / CELL) + 1;
 const DIAG = Math.SQRT2;
 const CLEAR_LIMIT = 3;
@@ -145,8 +146,8 @@ export class NavGrid {
       }
     };
 
-    for (const b of this.settlement.solids()) mark(b.x, b.z, (b.radius || 0.5) + 0.6);
-    for (const o of this.wasteland.obstacles) mark(o.x, o.z, (o.r || 0.5) + 0.45);
+    for (const b of this.settlement.solids()) mark(b.x, b.z, (b.radius || 0.5) + 0.4);
+    for (const o of this.wasteland.obstacles) mark(o.x, o.z, (o.r || 0.5) + 0.3);
 
     // Soft clearance: distance in cells to the nearest blocked cell, capped at CLEAR_LIMIT.
     clearance.fill(255);
@@ -190,6 +191,10 @@ export class NavGrid {
   }
 
   /** Nearest free cell to a world point, searching outward. */
+  nearestFreeWorld(x, z, maxRing = 8) {
+    return cellWorld(this.nearestFree(x, z, maxRing));
+  }
+
   nearestFree(x, z, maxRing = 8) {
     if (!this.blockedAt(x, z)) return cellIndex(x, z);
     for (let r = 1; r <= maxRing; r++) {

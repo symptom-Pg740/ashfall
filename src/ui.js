@@ -72,6 +72,7 @@ export class UI {
       placeStatus: document.getElementById('place-status'),
       placeConfirm: document.getElementById('place-confirm'),
       placeCancel: document.getElementById('place-cancel'),
+      placeRotate: document.getElementById('place-rotate'),
       menuBtn: document.getElementById('menu-btn'),
       menuSheet: document.getElementById('menu-sheet'),
       perfBtn: document.getElementById('perf-btn'),
@@ -246,6 +247,11 @@ export class UI {
     this.el.placeCancel.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.cb.cancelPlace?.();
+    });
+    this.el.placeRotate?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.cb.placeRotate?.(Math.PI / 4);
     });
 
     this.el.menuBtn?.addEventListener('pointerdown', (e) => {
@@ -683,15 +689,21 @@ export class UI {
 
     const actions = document.createElement('div');
     actions.className = 'detail-actions';
-    const actionDefs = [
-      { id: 'focus', label: 'FOCUS' },
-      { id: 'release', label: 'RELEASE POST', disabled: !u.home },
-      { id: 'guard', label: 'GUARD POST', disabled: !u.canMan },
-    ];
+    const actionDefs = u.pending
+      ? [
+          { id: 'welcome', label: 'WELCOME' },
+          { id: 'reject', label: 'REJECT' },
+        ]
+      : [
+          { id: 'focus', label: 'FOCUS' },
+          { id: 'release', label: 'RELEASE POST', disabled: !u.home },
+          { id: 'guard', label: 'GUARD POST', disabled: !u.canMan },
+          { id: 'expel', label: 'EXPEL', disabled: false },
+        ];
     for (const a of actionDefs) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `bcard-action ${a.id === 'focus' ? 'primary' : 'ghost'}`;
+      btn.className = `bcard-action ${a.id === 'focus' || a.id === 'welcome' ? 'primary' : a.id === 'expel' ? 'danger' : 'ghost'}`;
       btn.textContent = a.label;
       btn.disabled = !!a.disabled;
       btn.addEventListener('pointerdown', (e) => {

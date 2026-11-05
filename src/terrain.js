@@ -77,7 +77,7 @@ const ash = new THREE.Color('#b18e68');
 const rust = new THREE.Color('#b96a43');
 const pale = new THREE.Color('#e8c98e');
 const char = new THREE.Color('#805c3f');
-const road = new THREE.Color('#e4d0a9');
+const road = new THREE.Color('#d8c39b');
 const cool = new THREE.Color('#a09078');
 const rock = new THREE.Color('#8f8069');
 const _c = new THREE.Color();
@@ -102,91 +102,12 @@ function paintVertex(x, z, y, out) {
   out.lerp(char, (1 - lowness) * 0.22);
   out.lerp(rock, smoothstep(0.2, 0.62, slope) * 0.62);
   if (d < 18) out.lerp(char, (1 - d / 18) * 0.1);
-  out.lerp(road, roadMix * (0.72 + patch * 0.2));
-
-  // The highway is the map's defining line. The physical road mask is ~6 m wide, but terrain
-  // vertices are 2 m apart, so it is painted as a wider graded dust band with darker shoulders;
-  // that is what makes it legible from the top-down camera without changing the mask itself.
-  const highwayDist = Math.abs(z - highwayZ(x));
-  const highwayBand = smoothstep(7.6, 3.0, highwayDist);
-  out.lerp(road, highwayBand * (0.34 + patch * 0.14));
-  const shoulder = smoothstep(10.2, 6.4, highwayDist) * (1 - smoothstep(6.4, 4.4, highwayDist));
-  out.lerp(char, shoulder * 0.26);
+  // The road is only a light dust tint on the ground, like the old map. No ribbon mesh: a raised
+  // strip reads as a wall from the tilted camera and fights the terrain silhouette.
+  out.lerp(road, roadMix * (0.62 + patch * 0.16));
 
   out.multiplyScalar(0.84 + speck(x, z) * 0.24);
   if (slope > 0.16) out.multiplyScalar(0.86);
-}
-
-/**
- * One ribbon mesh along the highway. The terrain paint alone is too coarse at 2 m vertices to read
- * as a road, so the main east-west route gets a real surface: a pale dust strip with darker
- * shoulders that follows the field's road centre line. ~1800 triangles, one draw call.
- */
-function buildHighwayRibbon() {
-  const step = 3;
-  const cols = [-2.9, -1.3, 1.3, 2.9];
-  const tint = ['#b8996f', '#ddc8a0', '#ddc8a0', '#b8996f'];
-  const start = -PLAY_HALF_X - 24;
-  const end = PLAY_HALF_X + 24;
-  const rows = Math.floor((end - start) / step) + 1;
-  const count = rows * cols.length;
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const c = new THREE.Color();
-  const tinted = tint.map((hex) => new THREE.Color(hex));
-
-  for (let i = 0; i < rows; i++) {
-    const x = start + i * step;
-    const z0 = highwayZ(x);
-    const slope = (highwayZ(x + 1) - highwayZ(x - 1)) * 0.5;
-    const inv = 1 / Math.hypot(slope, 1);
-    const nx = -slope * inv;
-    const nz = inv;
-    for (let j = 0; j < cols.length; j++) {
-      const px = x + nx * cols[j];
-      const pz = z0 + nz * cols[j];
-      const k = (i * cols.length + j) * 3;
-      positions[k] = px;
-      positions[k + 1] = heightAt(px, pz) + 0.07;
-      positions[k + 2] = pz;
-      c.copy(tinted[j]);
-      colors[k] = c.r;
-      colors[k + 1] = c.g;
-      colors[k + 2] = c.b;
-    }
-  }
-
-  const index = [];
-  const stride = cols.length;
-  for (let i = 0; i < rows - 1; i++) {
-    for (let j = 0; j < stride - 1; j++) {
-      const a = i * stride + j;
-      const b = a + 1;
-      const d = a + stride;
-      const e = d + 1;
-      index.push(a, b, d, b, e, d);
-    }
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geo.setIndex(index);
-  geo.computeVertexNormals();
-  geo.computeBoundingSphere();
-  const material = new THREE.MeshLambertMaterial({
-    vertexColors: true,
-    polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
-  });
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.name = 'highway';
-  mesh.receiveShadow = true;
-  mesh.castShadow = false;
-  mesh.matrixAutoUpdate = false;
-  mesh.updateMatrix();
-  return mesh;
 }
 
 /**
@@ -212,10 +133,6 @@ export class TerrainStreamer {
       normalMap: sand.normalMap,
       normalScale: new THREE.Vector2(0.35, 0.35),
     });
-
-    // The highway itself is not streamed: it is one static ribbon that always exists.
-    this.road = buildHighwayRibbon();
-    this.scene.add(this.road);
 
     // Populate the opening view immediately; later tiles stream in as the camera moves.
     for (let iz = -1; iz <= 1; iz++) {
@@ -303,7 +220,6 @@ export class TerrainStreamer {
 
   setVisible(v) {
     this.enabled = v;
-    this.road.visible = v;
     for (const mesh of this.tiles.values()) mesh.visible = v;
   }
 

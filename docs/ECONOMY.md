@@ -4,7 +4,9 @@
 >
 > # Workplaces, jobs and the settlement economy
 
-**Status:** Phases **5a, 5b, 5c and 6 are implemented** (free builder role, Scavenger Hut, Well
+**Status:** Phases **5a, 5b, 5c and 6 are implemented**, with later revisions: the free builder role
+has been removed (any free survivor answers the construction queue), the relay is a command centre
+rather than a win state, and accepted survivors no longer leave on their own. (Scavenger Hut, Well
 Wheel, Farm, Workshop, daily needs, food/water HUD, recruitment, saved roles and needs, relay
 project and final assault). **Morale** is still design for Phase 8. Numbers are provisional; we are
 still in the testing phase, so costs, rates and even the job names will move.

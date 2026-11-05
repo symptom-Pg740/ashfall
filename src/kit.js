@@ -43,9 +43,11 @@ function sideWindow(p, x, y, z, shutter, style, out) {
 /** Full modular house. Origin is the ground centre; footprint stays inside `radius` 3.0. */
 export function buildAdobeHouse(rng, style = ADOBE_STYLE) {
   const p = [];
-  const w = rng.range(4.4, 5.5);
-  const d = rng.range(3.4, 4.2);
-  const h = rng.range(2.45, 2.75);
+  // Keep the footprint nearly uniform between variants. A 25% width swing made adjacent houses
+  // read as different scales under the tilted camera, especially when stacked on screen.
+  const w = rng.range(4.75, 5.05);
+  const d = rng.range(3.65, 3.95);
+  const h = rng.range(2.58, 2.7);
   const wall = rng.pick(style.walls);
   const shutter = rng.pick(style.shutters);
   const baseY = 0.22;

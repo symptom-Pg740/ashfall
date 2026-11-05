@@ -56,6 +56,12 @@ Requirements: Node 20+ and a WebGL2 browser. Tested in Chrome; Safari is the nex
 | Assign a workplace slot | tap the hut's `SCAVENGER · ASSIGN` slot with a survivor selected | same |
 | Release a workplace slot | tap the filled slot | same |
 | Build a site | site card → `BUILD`, or let any free survivor take it | same |
+| Rotate a placement | `⟳ 45°` in the place bar | `Q` / `E` |
+| Cancel a site | site card → `CANCEL SITE` | same |
+| Demolish a building | building card → `DEMOLISH`, tap again to confirm | same |
+| Call survivors to the fire | campfire card → `CALL IDLE` / `CALL ALL` / `DISMISS` | same |
+| Welcome / reject a newcomer | `UNITS` → newcomer → `WELCOME` / `REJECT` | same |
+| Expel an accepted survivor | `UNITS` → `EXPEL`, tap again to confirm | same |
 | Cycle a workshop recipe | workshop card → `NEXT RECIPE` | same |
 | Broadcast from the relay | relay card → `BROADCAST` (after power) | same |
 | Man the guard post | post card → `ASSIGN` | same |
@@ -87,8 +93,9 @@ screen-relative, so `W` is always "up", and during placement the same ground dra
 instead of panning.
 
 **Command mode is the only mode.** There is no player body and no joystick: every survivor is the
-same kind of unit, and you command them. Idle units drift back to the campfire and warm themselves
-in a ring around it; a free survivor automatically takes the oldest construction site. A unit
+same kind of unit, and you command them. Idle units stay near their own post or anchor; the
+campfire card has `CALL IDLE` / `CALL ALL` / `DISMISS` when you want to gather them. A free survivor
+automatically takes the oldest construction site. A unit
 ordered to a salvage site walks there, harvests, carries the load back to camp and deposits it;
 ordered at a ghoul or raider it closes to weapon range and fights. The `UNITS` clipboard is the
 reliable way to select a unit, inspect morale, and change its outfit and equipment when the camp is
@@ -103,8 +110,10 @@ crowded.
    amber shards. Each visit yields **8–14 scrap** and every site has a fixed total. Depleted sites
    never respawn. In command mode, select a survivor and tap a site: they gather a load and haul it
    back to the nearest **Warehouse**, or to camp if there is none.
-2. Build a **Warehouse** (22) early: **+120 storage** and the hauling drop point. The crates inside
-   fill as scrap accumulates. Placing a structure marks a **site**; a survivor with the **builder**
+2. Build a **Warehouse** (22) early: **+120 storage** and the hauling drop point. It is an open
+   stockpile: the roof lifts off when goods are inside, and separate piles show scrap, water, food
+   and components at a glance. Warehouses built tight together open their facing walls and read as
+   one larger depot. Placing a structure marks a **site**; a survivor with the **builder**
    role walks there and finishes it. A **Barricade** (4) gives solid cover.
 3. Power the camp: a **Solar Array** (14), a **Power Pole** (3), a **Battery Bank** (16, stores
    **150 power**) and a **Yard Light** (8). Wires cost scrap per metre. The lower-right panel shows
@@ -285,8 +294,9 @@ The graph keeps the last ~45 seconds.
   ammo, it only shows stock and the upgrade tracks. Player and survivor reloads both draw from the
   shared pool, so guns can run dry. The HUD/workshop card shows the selected recipe, output, cost and
   stock; `NEXT RECIPE` cycles it. A **house** raises the survivor cap by one (base 3, max 6). At
-  dawn, a camp with at least **2 spare food and water per survivor** and a free slot recruits a new
-  survivor every **2–3 days**; recruits arrive as free scavengers.
+  dawn, a camp with at least **2 spare food and water per survivor** and a free slot attracts a
+  **newcomer** every **2–3 days**. Newcomers wait at the campfire; open `UNITS` and press `WELCOME`
+  or `REJECT`. Accepted survivors never leave on their own, but can be `EXPEL`led from the clipboard.
 - **Relay as a command centre (continuous camp)** — the relay costs **40 scrap + 8 components**, is a
   power consumer, and must be linked to the grid. There is no win condition and no final assault:
   the relay is the camp's communications hub. `BROADCAST` (10 scrap, once per day, needs a free bed)
@@ -299,8 +309,9 @@ The graph keeps the last ~45 seconds.
   a 14 m reach ring is drawn around the ghost and the nearest existing node is highlighted. The ghost
   snaps to the farthest reachable point of that node, so a pole chain can be built at exact span.
 - **Rectangular highway world** — the playable world is **760 × 440 m**, wider east-west than
-  north-south. The east-west highway is the map's main line: a pale graded road with a visible ribbon
-  mesh, a wagon and pack mules that drive to the trade post, and neutral travellers walking the road.
+  north-south. The east-west highway is the map's main line, painted as a light dust tint on the
+  ground (no raised ribbon), with a wagon and pack mules that drive to the trade post and neutral
+  travellers walking the road on the same skinned survivor rig.
 - **Playable expeditions** — pick a salvage site or cave in `CAMP`, assign up to three free survivors,
   and launch. They travel, then the game builds a **runtime-generated interior cell**: floor, walls,
   cover, a hostile pack and a sealed cache. Command the same team with tap orders, clear the pack,
@@ -469,7 +480,8 @@ Observations:
 ## Design choices for mobile comfort
 
 1. **A fixed-pitch orthographic camera** with compass-driven yaw, drag-to-pan, a recenter control,
-   damped follow and a separately tuned portrait framing (landscape is the primary view).
+   damped follow and a separately tuned portrait framing (landscape is the primary view). It opens
+   at a **45° yaw** so roofs and side walls both read, and placements can be rotated in 45° steps.
 2. **One low-resolution shadow map focused on the camp**, not a cascaded shadow stack. Casters are
    limited to meaningful scenery; grass only receives.
 3. **Instancing and merging everywhere.** Terrain is one mesh; scenery groups, grass, contact shadows,
@@ -571,8 +583,8 @@ fallbacks, PWA install, and a 30 fps battery mode are Phase 8 gates, not forgott
   still provisional and needs long-session playtests.
 - Expeditions are saved while travelling; a team already inside a cell is not saved (the save is
   skipped while the cell is open), so reloading mid-expedition returns the team to the road.
-- Recruitment needs a house and 2 spare days of food/water; there is no recruitment UI beyond the
-  dawn notice, and no way to dismiss a survivor.
+- Recruitment needs a house and 2 spare days of food/water; newcomers are welcomed or rejected from
+  the `UNITS` clipboard, and accepted survivors can be expelled from the same place.
 - Workshop recipes run while staffed; there is no production queue or per-artisan assignment.
 - No building removal or rotation; weapon upgrades exist but there is no settlement tech tree.
 - Ghouls, hostile rifle raiders and the camp guard only; pistol, pipe rifle and sawn-off.

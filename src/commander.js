@@ -118,6 +118,7 @@ export class Commander {
       armed: !!unit.weapon,
       dead: !!unit.dead,
       onExpedition: !!unit.onExpedition,
+      pending: !!unit.pending,
       level: info.level,
       xp: info.xp,
       xpNeed: info.need,
@@ -130,14 +131,16 @@ export class Commander {
       ammoText: unit.weapon ? `${unit.mag}/${unit.weapon.magazine}` : '—',
       carryText: unit.carry ? `${unit.carry} LOAD` : 'EMPTY',
       equipment: { ...unit.rig.equipment },
-      canMan: !!unit.weapon,
+      canMan: !!unit.weapon && !unit.pending,
+      canWork: !unit.pending,
     };
   }
 
   warningOf(unit) {
     if (!unit || unit.dead) return '';
+    if (unit.pending) return 'NEWCOMER · WELCOME OR REJECT';
     if (unit.leaveWarn) return unit.leaveWarn;
-    if ((unit.morale ?? 70) <= 25) return 'UNHAPPY · MAY LEAVE';
+    if ((unit.morale ?? 70) <= 25) return 'UNHAPPY';
     if (unit.hunger > 0) return `HUNGRY ${unit.hunger}/2`;
     if (unit.thirst > 0) return `THIRSTY ${unit.thirst}/2`;
     return '';
@@ -159,6 +162,7 @@ export class Commander {
   statusOf(unit) {
     if (!unit) return 'IDLE';
     if (unit.dead) return 'DOWN';
+    if (unit.pending) return 'WAITING AT THE FIRE';
     if (unit.manning) return 'ON THE GUARD POST';
     if (unit.onExpedition && !this.inCell) return 'ON EXPEDITION';
     if (unit.attention && !unit.job) return unit.attention;
@@ -169,6 +173,7 @@ export class Commander {
       return unit.armed ? 'ON WATCH' : 'FREE';
     }
     if (job.type === 'move') return 'MOVING';
+    if (job.type === 'gather') return 'GATHERING AT THE FIRE';
     if (job.type === 'attack') return 'ENGAGING';
     if (job.type === 'gather') {
       if (job.phase === 'harvest') return 'SCAVENGING';

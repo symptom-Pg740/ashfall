@@ -143,6 +143,7 @@ export class CampFolk {
         moraleFactors: ['FED', 'WATERED'],
         leaveWarn: '',
         left: false,
+        pending: false,
         workTimer: 0,
         waterTimer: 0,
         pathFail: 0,
@@ -213,7 +214,7 @@ export class CampFolk {
   }
 
   issueJob(person, job) {
-    if (!person || person.dead) return false;
+    if (!person || person.dead || person.pending) return false;
     if (person.manning && job?.type !== 'man') this.releaseTower(person);
     person.job = job;
     person.holdTimer = 0;
@@ -222,6 +223,7 @@ export class CampFolk {
     person.pathKey = '';
     person.pathTimer = 0;
     person.attention = null;
+    person.retryAt = 0;
     person.pathFail = 0;
     person.replan = 0;
     person.stuckCount = 0;
@@ -249,7 +251,7 @@ export class CampFolk {
   /** Put a survivor on a building's job slot. Clears any builder role and manual job. */
   assignWorkplace(person, building) {
     const job = building?.def?.job;
-    if (!person || !person.active || person.dead || person.onExpedition || !job || !building.built || building.destroyed) return false;
+    if (!person || !person.active || person.dead || person.pending || person.onExpedition || !job || !building.built || building.destroyed) return false;
     if (person.home !== building && this.workersOf(building).length >= job.slots) return false;
     if (person.manning) this.releaseTower(person);
     person.home = building;
@@ -324,7 +326,12 @@ export class CampFolk {
 
   /** Ran once per update while the survivor has no manual job. */
   runWorkLoop(person, time, buildings = [], dt = 0.016) {
-    if (person.dead) return;
+    if (person.dead || person.pending) return;
+    if (person.retryAt) {
+      if (performance.now() < person.retryAt) return;
+      person.retryAt = 0;
+      person.attention = null;
+    }
     const b = person.home;
     if (!b) {
       // Any free survivor answers the construction queue. There is no dedicated builder role and
@@ -471,16 +478,17 @@ export class CampFolk {
     return 0;
   }
 
-  /** Bring one of the reserved survivors into the camp. */
-  recruit(x, z) {
+  /** Bring one of the reserved survivors to the fire as a newcomer awaiting welcome. */
+  recruit(x, z, pending = true) {
     const p = this.people.find((q) => !q.active);
     if (!p) return null;
     p.active = true;
     p.dead = false;
     p.left = false;
+    p.pending = pending;
     p.onExpedition = false;
     p.hp = p.maxHp;
-    p.role = 'scavenger';
+    p.role = pending ? 'newcomer' : 'scavenger';
     p.home = null;
     p.job = null;
     p.attention = null;
@@ -495,6 +503,7 @@ export class CampFolk {
     p.anchor = { x, z };
     p.spawnAnchor = { x, z };
     p.target = { x, z };
+    p.holdTimer = pending ? 30 : 0;
     p.timer = 1;
     p.path = null;
     p.pathIndex = 0;
@@ -509,6 +518,56 @@ export class CampFolk {
     if (p.farTier) p.farTier.visible = false;
     p.aim?.setLock(null);
     return p;
+  }
+
+  /** Accept a newcomer waiting at the fire. */
+  welcome(person) {
+    if (!person || !person.pending || person.left) return false;
+    person.pending = false;
+    person.active = true;
+    person.dead = false;
+    person.left = false;
+    person.role = person.armed ? 'guard' : 'scavenger';
+    person.holdTimer = 0;
+    person.attention = null;
+    person.hp = Math.max(1, person.hp || person.maxHp);
+    person.morale = 65;
+    person.leaveWarn = '';
+    this.onWelcome?.(person);
+    return true;
+  }
+
+  /** Turn a newcomer away; they walk off and the pool slot is freed. */
+  reject(person) {
+    if (!person || !person.pending) return false;
+    this.removeUnit(person);
+    this.onReject?.(person);
+    return true;
+  }
+
+  /** Remove an accepted survivor from the camp. They do not leave on their own. */
+  expel(person) {
+    if (!person || person.pending || person.left) return false;
+    this.removeUnit(person);
+    this.onExpel?.(person);
+    return true;
+  }
+
+  removeUnit(person) {
+    if (person.manning) this.releaseTower(person);
+    if (person.home) this.releaseWorkplace(person, true);
+    person.active = false;
+    person.dead = false;
+    person.left = true;
+    person.pending = false;
+    person.job = null;
+    person.carry = 0;
+    person.attention = 'LEFT CAMP';
+    person.rig.group.visible = false;
+    person.rig.mesh.visible = false;
+    if (person.farTier) person.farTier.visible = false;
+    person.aim?.setLock(null);
+    person.aim && (person.aim.target = null);
   }
 
   /** A survivor with no food/water or no hope walks out of the camp. The reason is kept for the UI. */
@@ -550,6 +609,7 @@ export class CampFolk {
     const warnings = [];
     const left = [];
     for (const p of living) {
+      if (p.pending) continue;
       let target = 55;
       const factors = [];
       if (p.hunger > 0) {
@@ -600,20 +660,17 @@ export class CampFolk {
       p.moraleTarget = target;
       p.morale = Math.round((p.morale ?? 70) * 0.35 + target * 0.65);
       p.moraleFactors = factors;
+      const moraleFactor = p.morale < 25 ? 0.85 : 1;
+      p.speed = p.baseSpeed * ((p.hunger > 0 || p.thirst > 0) ? 0.8 : 1) * (1 + 0.02 * ((p.level || 1) - 1)) * moraleFactor;
 
-      const starving = p.hunger >= 2 || p.thirst >= 2;
-      const hopeless = p.morale <= 5;
-      if (starving) {
-        p.leaveWarn = `WILL LEAVE · ${p.hunger >= 2 ? 'STARVING' : 'DEHYDRATED'}`;
-        this.leaveCamp(p, p.hunger >= 2 ? 'LEFT CAMP · STARVING' : 'LEFT CAMP · DEHYDRATED');
-        left.push(p.name);
-      } else if (hopeless) {
-        p.leaveWarn = 'WILL LEAVE · NO HOPE';
-        this.leaveCamp(p, 'LEFT CAMP · NO HOPE');
-        left.push(p.name);
+      // Accepted survivors do not leave on their own. Hunger and misery hurt morale, speed and
+      // work, but only the player can expel them.
+      if (p.hunger >= 2 || p.thirst >= 2) {
+        p.leaveWarn = p.hunger >= 2 ? 'STARVING' : 'DEHYDRATED';
+        warnings.push({ name: p.name, text: `${p.name} IS ${p.hunger >= 2 ? 'STARVING' : 'DEHYDRATED'} · MORALE AND WORK ARE SUFFERING` });
       } else if (p.hunger > 0 || p.thirst > 0) {
-        p.leaveWarn = `AT RISK · ${p.hunger > 0 ? `HUNGRY ${p.hunger}/2` : `THIRSTY ${p.thirst}/2`}`;
-        warnings.push({ name: p.name, text: `${p.name} IS ${p.hunger > 0 ? 'HUNGRY' : 'THIRSTY'} · ONE MORE UNFED DAWN AND THEY LEAVE` });
+        p.leaveWarn = p.hunger > 0 ? `HUNGRY ${p.hunger}/2` : `THIRSTY ${p.thirst}/2`;
+        warnings.push({ name: p.name, text: `${p.name} IS ${p.hunger > 0 ? 'HUNGRY' : 'THIRSTY'} · FEED THEM AT DAWN` });
       } else if (p.morale <= 30) {
         p.leaveWarn = 'UNHAPPY';
         warnings.push({ name: p.name, text: `${p.name} IS UNHAPPY · ${factors.join(' · ')}` });
@@ -640,9 +697,52 @@ export class CampFolk {
     this.issueJob(person, { type: 'gather', node, phase: 'toNode', timer: 0, work: true });
   }
 
+  /**
+   * Call units to the fire. Idle-only is the default; `all` pulls workers off their posts for a
+   * while, and they resume the work loop when the hold expires.
+   */
+  callToFire(fire, all = false) {
+    if (!fire) return 0;
+    const units = this.people.filter(
+      (p) =>
+        p.active && !p.dead && !p.left && !p.pending && !p.onExpedition && !p.manning &&
+        (all || (!p.home && !p.job)),
+    );
+    units.forEach((p, i) => {
+      const a = p.fireAngle + i * 2.399963;
+      const r = 2.0 + (i % 3) * 0.7;
+      this.issueJob(p, {
+        type: 'gather',
+        x: fire.x + Math.cos(a) * r,
+        z: fire.z + Math.sin(a) * r,
+        hold: all ? 30 : 45,
+        fire,
+      });
+      p.attention = null;
+    });
+    return units.length;
+  }
+
+  /** Release everyone called to this fire; workers walk back to their posts. */
+  dismissFire(fire) {
+    let n = 0;
+    for (const p of this.people) {
+      if (p.job?.type !== 'gather' || p.job.fire !== fire) continue;
+      p.job = null;
+      p.holdTimer = 0;
+      p.attention = null;
+      p.path = null;
+      p.pathIndex = 0;
+      p.pathKey = '';
+      p.pathTimer = 0;
+      n++;
+    }
+    return n;
+  }
+
   /** A free survivor (no workplace, no manual job) takes the oldest unclaimed site. */
   freeLoop(person, buildings = []) {
-    if (person.manning) return;
+    if (person.manning || person.pending) return;
     let site = null;
     const now = performance.now();
     for (const b of buildings) {
@@ -675,7 +775,9 @@ export class CampFolk {
     person.replan = 0;
     person.stuckCount = 0;
     person.attention = reason;
-    person.holdTimer = 3;
+    person.holdTimer = 2;
+    // Work loops retry on their own; a manual order reports and waits for the player.
+    person.retryAt = job?.type === 'move' || job?.type === 'attack' ? 0 : performance.now() + 4000;
     person.aim?.setLock(null);
     // Do not immediately re-issue the same unreachable target every frame.
     if (job?.type === 'build' && job.building) {
@@ -895,6 +997,16 @@ export class CampFolk {
       if (distTo(j.x, j.z) < 0.6) {
         p.job = null;
         p.holdTimer = 4 + Math.random() * 3;
+        return null;
+      }
+      return { x: j.x, z: j.z };
+    }
+
+    if (j.type === 'gather') {
+      if (distTo(j.x, j.z) < 0.75) {
+        p.job = null;
+        p.holdTimer = j.hold || 20;
+        p.heading = Math.atan2(j.fire.x - pos.x, j.fire.z - pos.z);
         return null;
       }
       return { x: j.x, z: j.z };
@@ -1165,7 +1277,6 @@ export class CampFolk {
       }
       const pos = p.rig.group.position;
       const toPlayer = Math.hypot(player.x - pos.x, player.z - pos.z);
-      const campfire = this.campfireNear(buildings, pos.x, pos.z);
 
       // Hysteresis so a survivor walking along the threshold does not flicker between tiers.
       if (p.farTier) {
@@ -1290,7 +1401,7 @@ export class CampFolk {
             p.path = this.nav.path(pos.x, pos.z, jobTarget.x, jobTarget.z);
             p.pathIndex = 0;
             p.pathKey = key;
-            p.pathTimer = p.path ? 2.5 : 0.15;
+            p.pathTimer = p.path ? 1.5 : 0.15;
           }
           if (!p.path) {
             p.pathFail += dt;
@@ -1346,26 +1457,6 @@ export class CampFolk {
           lookZ = j.building.z;
         }
         p.phase += dt * 1.2;
-      } else if (campfire && Math.hypot(campfire.x - pos.x, campfire.z - pos.z) < 5.6) {
-        // Off duty: sit in a ring around the fire instead of drifting off into the dark.
-        const spot = this.campfireSpot(p, campfire);
-        const sd = Math.hypot(spot.x - pos.x, spot.z - pos.z);
-        if (sd > 0.7) {
-          const step = Math.min(p.speed * dt, sd);
-          const dir = this.steerAround(p, (spot.x - pos.x) / sd, (spot.z - pos.z) / sd, solids);
-          pos.x += dir.x * step;
-          pos.z += dir.z * step;
-          p.heading = Math.atan2(dir.x, dir.z);
-          moving = true;
-          p.phase += dt * (5.2 + p.speed);
-        } else {
-          p.heading = Math.atan2(campfire.x - pos.x, campfire.z - pos.z);
-          lookX = campfire.x;
-          lookZ = campfire.z;
-          p.target.x = spot.x;
-          p.target.z = spot.z;
-          p.phase += dt * 0.8;
-        }
       } else if (p.holdTimer > 0) {
         p.holdTimer = Math.max(0, p.holdTimer - dt);
         p.phase += dt * 1.2;
@@ -1386,10 +1477,10 @@ export class CampFolk {
           p.timer -= dt;
           if (p.timer <= 0) {
             p.timer = p.rng.range(3.5, 8);
-            const center = campfire ? { x: campfire.x, z: campfire.z } : p.anchor;
+            const center = p.anchor;
             for (let tries = 0; tries < 10; tries++) {
               const a = p.rng() * Math.PI * 2;
-              const r = campfire ? 1.9 + p.rng() * 1.7 : p.rng() * 3.2;
+              const r = p.rng() * 3.2;
               const tx = center.x + Math.cos(a) * r;
               const tz = center.z + Math.sin(a) * r;
               let blocked = false;
@@ -1433,7 +1524,19 @@ export class CampFolk {
             p.pathKey = '';
             p.path = null;
             if (p.replan >= 2 && p.job) {
-              this.failJob(p, 'NO PATH');
+              // Last-resort nudge to the nearest free nav cell before giving up. This clears the
+              // corner/wall cases where steering and collision push against each other forever.
+              const free = this.nav?.nearestFreeWorld(pos.x, pos.z, 6);
+              if (free && Math.hypot(free.x - pos.x, free.z - pos.z) < 4) {
+                pos.x = free.x;
+                pos.z = free.z;
+                pos.y = heightAt(pos.x, pos.z);
+                p.pathTimer = 0;
+                p.pathKey = '';
+                p.replan = 1;
+              } else if (p.replan >= 4) {
+                this.failJob(p, 'NO PATH');
+              }
             }
           }
         }
@@ -1489,6 +1592,7 @@ export class CampFolk {
       hp: Math.max(0, Math.round(p.hp)),
       dead: !!p.dead,
       left: !!p.left,
+      pending: !!p.pending,
       expedition: !!p.onExpedition,
       hunger: p.hunger || 0,
       thirst: p.thirst || 0,
@@ -1516,6 +1620,7 @@ export class CampFolk {
           : (home?.def?.job?.label || home?.def?.job?.role)?.toLowerCase() || s.role || p.role;
       p.dead = !!s.dead;
       p.left = !!s.left;
+      p.pending = !!s.pending;
       p.onExpedition = !!s.expedition;
       p.hunger = Number.isFinite(s.hunger) ? s.hunger : 0;
       p.thirst = Number.isFinite(s.thirst) ? s.thirst : 0;
